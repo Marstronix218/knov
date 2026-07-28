@@ -63,7 +63,7 @@ a { color: inherit; text-decoration: none; }
 .error-message { color: var(--danger); font-size: 10px; }
 .sidebar { position: fixed; inset: 0 auto 0 0; width: 220px; display: flex; flex-direction: column; padding: 24px 16px 18px; border-right: 1px solid var(--line); background: var(--sidebar); z-index: 10; }
 .brand-lockup { display: flex; align-items: center; gap: 11px; padding: 0 8px 27px; }
-.brand-mark { width: 34px; height: 34px; display: grid; place-items: center; color: var(--accent-ink); background: var(--accent); border-radius: 10px; box-shadow: 0 0 24px rgba(183, 255, 60, .14); }
+.brand-mark { width: 34px; height: 34px; display: block; border-radius: 10px; box-shadow: 0 0 24px rgba(183, 255, 60, .14); }
 .brand-name { font-weight: 760; letter-spacing: -.03em; }
 .brand-caption { margin-top: 2px; color: var(--muted); font-size: 11px; }
 .sidebar-nav { display: grid; gap: 5px; }

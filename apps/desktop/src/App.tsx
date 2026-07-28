@@ -138,7 +138,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
   return (
     <div className="setup-shell">
       <section className="setup-panel">
-        <div className="setup-brand"><div className="brand-mark"><Sparkles size={18} /></div><strong>Knoveyla</strong></div>
+        <div className="setup-brand"><LogoMark /><strong>Knoveyla</strong></div>
         <div className="setup-progress">
           {steps.map((label, index) => (
             <div className={index <= step ? "active" : ""} key={label}>
@@ -237,7 +237,7 @@ function Sidebar({ route }: { route: string }) {
   return (
     <aside className="sidebar">
       <div className="brand-lockup">
-        <div className="brand-mark"><Sparkles size={18} /></div>
+        <LogoMark />
         <div>
           <div className="brand-name">Knoveyla</div>
           <div className="brand-caption">Personal context</div>
@@ -273,6 +273,10 @@ function Sidebar({ route }: { route: string }) {
       </div>
     </aside>
   );
+}
+
+function LogoMark() {
+  return <img className="brand-mark" src="/knoveyla-icon.svg" alt="" aria-hidden="true" />;
 }
 
 function PageHeader({

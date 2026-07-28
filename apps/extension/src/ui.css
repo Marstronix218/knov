@@ -58,15 +58,10 @@ h2 {
 }
 
 .brand-mark {
-  display: grid;
+  display: block;
   width: 38px;
   height: 38px;
-  place-items: center;
   border-radius: 12px;
-  color: #f9f6ef;
-  background: #234c3d;
-  font-family: Georgia, serif;
-  font-size: 23px;
 }
 
 .eyebrow,
