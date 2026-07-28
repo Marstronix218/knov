@@ -23,7 +23,7 @@ use uuid::Uuid;
 use crate::{
     db::Database,
     error::{AppError, AppResult},
-    models::{ChatMessage, DashboardRequest, HistoryRequest, UserCorrection},
+    models::{ChatMessage, DashboardRequest, HistoryRequest, Settings, UserCorrection},
     platform::{
         collection_status, discover_chrome_profiles, ensure_pairing_token,
         import_selected_chrome_history, RuntimeStatus,
@@ -615,7 +615,7 @@ pub fn start_scheduler(state: Arc<AppState>) {
             Err(_) => continue,
         };
         let today = Local::now().format("%Y-%m-%d").to_string();
-        if settings.last_profile_refresh_day.as_deref() == Some(&today) {
+        if !scheduled_refresh_due(&settings, &today) {
             continue;
         }
         let Some(provider) = settings.selected_provider else {
@@ -635,6 +635,11 @@ pub fn start_scheduler(state: Arc<AppState>) {
             }
         }
     });
+}
+
+fn scheduled_refresh_due(settings: &Settings, today: &str) -> bool {
+    settings.initial_profile_completed
+        && settings.last_profile_refresh_day.as_deref() != Some(today)
 }
 
 fn settings_to_ui(state: &AppState) -> AppResult<Value> {
@@ -784,5 +789,32 @@ fn format_duration(seconds: i64) -> String {
         format!("{:.1} hours", seconds as f64 / 3600.0)
     } else {
         format!("{} minutes", (seconds / 60).max(1))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scheduled_refresh_waits_for_bootstrap_and_runs_once_per_day() {
+        let mut settings = Settings::default();
+        assert!(!scheduled_refresh_due(&settings, "2026-07-27"));
+
+        settings.initial_profile_completed = true;
+        assert!(scheduled_refresh_due(&settings, "2026-07-27"));
+
+        settings.last_profile_refresh_day = Some("2026-07-27".into());
+        assert!(!scheduled_refresh_due(&settings, "2026-07-27"));
+    }
+
+    #[test]
+    fn refresh_permit_releases_lock_after_failure_scope() {
+        let lock = Arc::new(AtomicBool::new(false));
+        let permit = acquire_refresh(&lock).expect("first refresh should acquire the lock");
+        assert!(acquire_refresh(&lock).is_err());
+
+        drop(permit);
+        assert!(acquire_refresh(&lock).is_ok());
     }
 }

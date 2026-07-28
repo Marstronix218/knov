@@ -125,7 +125,7 @@ impl ProviderClient {
             role: "user".into(),
             content: message.into(),
         });
-        self.complete(provider, &system, &turns, 1600).await
+        self.complete(provider, &system, &turns, 1600, None).await
     }
 
     pub async fn refresh_profile(
@@ -162,11 +162,10 @@ impl ProviderClient {
                     content: prompt,
                 }],
                 2400,
+                Some(profile_response_format()),
             )
             .await?;
-        let parsed: Value = serde_json::from_str(strip_json_fence(&raw)).map_err(|_| {
-            AppError::Provider("The provider returned an invalid profile format.".into())
-        })?;
+        let parsed = parse_json_response(&raw)?;
         let profile_value = parsed.get("profile").cloned().ok_or_else(|| {
             AppError::Provider("The provider response did not include a profile.".into())
         })?;
@@ -250,6 +249,7 @@ impl ProviderClient {
         system: &str,
         messages: &[ChatMessage],
         max_tokens: u32,
+        response_format: Option<Value>,
     ) -> AppResult<String> {
         let key = self.key(provider)?;
         match provider {
@@ -258,16 +258,20 @@ impl ProviderClient {
                 input.extend(messages.iter().map(|m| {
                     json!({"role": if m.role == "assistant" {"assistant"} else {"user"}, "content":m.content})
                 }));
+                let mut request = json!({
+                    "model":"gpt-5-mini",
+                    "input":input,
+                    "max_output_tokens":max_tokens,
+                    "store":false
+                });
+                if let Some(format) = response_format {
+                    request["text"] = json!({"format":format});
+                }
                 let response = self
                     .http
                     .post("https://api.openai.com/v1/responses")
                     .bearer_auth(key)
-                    .json(&json!({
-                        "model":"gpt-5-mini",
-                        "input":input,
-                        "max_output_tokens":max_tokens,
-                        "store":false
-                    }))
+                    .json(&request)
                     .send()
                     .await?;
                 let status = response.status();
@@ -353,6 +357,65 @@ fn strip_json_fence(value: &str) -> &str {
         .trim()
 }
 
+fn parse_json_response(value: &str) -> AppResult<Value> {
+    let trimmed = strip_json_fence(value);
+    if let Ok(parsed) = serde_json::from_str(trimmed) {
+        return Ok(parsed);
+    }
+
+    let object_start = trimmed.find('{').ok_or_else(invalid_profile_format)?;
+    serde_json::Deserializer::from_str(&trimmed[object_start..])
+        .into_iter::<Value>()
+        .next()
+        .transpose()
+        .map_err(|_| invalid_profile_format())?
+        .ok_or_else(invalid_profile_format)
+}
+
+fn invalid_profile_format() -> AppError {
+    AppError::Provider("The provider returned an invalid profile format.".into())
+}
+
+fn profile_response_format() -> Value {
+    json!({
+        "type":"json_schema",
+        "name":"knoveyla_profile_refresh",
+        "strict":true,
+        "schema":{
+            "type":"object",
+            "properties":{
+                "profile":{
+                    "type":"object",
+                    "properties":{
+                        "summary":{"type":"string"},
+                        "interests":{"type":"array","items":{"type":"string"}},
+                        "skills":{"type":"array","items":{"type":"string"}},
+                        "activeProjects":{"type":"array","items":{"type":"string"}},
+                        "patterns":{"type":"array","items":{"type":"string"}}
+                    },
+                    "required":["summary","interests","skills","activeProjects","patterns"],
+                    "additionalProperties":false
+                },
+                "recommendations":{
+                    "type":"array",
+                    "items":{
+                        "type":"object",
+                        "properties":{
+                            "kind":{"type":"string"},
+                            "text":{"type":"string"},
+                            "evidence":{"type":"string"}
+                        },
+                        "required":["kind","text","evidence"],
+                        "additionalProperties":false
+                    }
+                }
+            },
+            "required":["profile","recommendations"],
+            "additionalProperties":false
+        }
+    })
+}
+
 fn unsafe_guidance(value: &str) -> bool {
     let normalized = value.to_ascii_lowercase();
     [
@@ -413,6 +476,24 @@ fn conflicts_with_truth(value: &str, corrections: &[UserCorrection]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_profile_json_wrapped_in_provider_commentary() {
+        let parsed = parse_json_response(
+            "Here is the requested profile:\n{\"profile\":{\"summary\":\"Focused\"},\"recommendations\":[]}\nDone.",
+        )
+        .expect("embedded JSON should be accepted");
+
+        assert_eq!(parsed["profile"]["summary"], "Focused");
+    }
+
+    #[test]
+    fn rejects_response_without_json() {
+        assert!(matches!(
+            parse_json_response("I could not generate a profile."),
+            Err(AppError::Provider(_))
+        ));
+    }
 
     #[test]
     fn blocks_judgmental_or_diagnostic_guidance() {
