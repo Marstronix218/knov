@@ -9,6 +9,10 @@ provider.
 This repository implements the alpha described in
 [`knoveyla_prd.md`](knoveyla_prd.md). It is not a production-ready release.
 
+## Screenshot
+
+![Knoveyla dashboard showing tracked time, application usage, web attention, and recent activity](docs/screenshots/dashboard.jpg)
+
 ## Alpha status
 
 Implemented and usable from source:

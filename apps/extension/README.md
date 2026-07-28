@@ -4,6 +4,10 @@ Manifest V3 extension for accurate active-tab timing. It observes only Chrome's
 tab metadata APIs and sends URL, title, focus timestamps, and duration to the
 paired Knoveyla app on the same computer.
 
+## Screenshot
+
+![Knoveyla Chrome companion settings for Native Messaging pairing](../../docs/screenshots/chrome-companion-settings.jpg)
+
 ## Build and load
 
 ```sh
