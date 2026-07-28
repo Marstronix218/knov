@@ -2,8 +2,8 @@
 
 **A behavioral context layer for personal AI**
 
-Version 0.4 — Draft · Technical-user alpha scope
-Architecture: native Mac collector + Chrome extension + chat interface
+Version 0.5 — Draft · Technical-user alpha scope
+Architecture: native Apple Silicon macOS collector + Chrome extension + chat interface
 
 ---
 
@@ -61,6 +61,7 @@ The following table sets the boundary of the MVP. Items marked out of scope are 
 | In scope (MVP) | Out of scope (MVP) |
 |---|---|
 | Foreground app + window title capture | Reading inside other apps' content |
+| Apple Silicon macOS application | Intel Macs, Windows, and Linux |
 | Local browser history ingestion | Screen recording or audio capture |
 | Chrome extension for active-tab URL, title, and duration | Browser page-body or DOM capture |
 | Local activity database | Mobile (iOS / Android) clients |
@@ -81,7 +82,7 @@ The following table sets the boundary of the MVP. Items marked out of scope are 
 
 ### 2.1 Target user
 
-The primary user of the alpha is a technically capable, AI-heavy knowledge worker: a developer, technical freelancer, researcher, or similar individual who already uses AI assistants daily and is frustrated at having to re-establish context each time. This user runs multiple parallel projects and interests, is comfortable installing development-stage desktop software and a manually distributed browser extension, already has or can obtain an OpenAI or Anthropic API key, and is willing to grant system permissions in exchange for clear value. They are privacy-aware and will reject a product that feels like surveillance.
+The primary user of the alpha is a technically capable, AI-heavy knowledge worker using an Apple Silicon Mac: a developer, technical freelancer, researcher, or similar individual who already uses AI assistants daily and is frustrated at having to re-establish context each time. This user runs multiple parallel projects and interests, is comfortable installing development-stage desktop software and a manually distributed browser extension, already has or can obtain an OpenAI or Anthropic API key, and is willing to grant system permissions in exchange for clear value. They are privacy-aware and will reject a product that feels like surveillance.
 
 ### 2.2 Why this user first
 
@@ -123,7 +124,7 @@ This constraint is also strategically favorable: because the data requires a nat
 
 ### 3.3 Recommended starting shape
 
-The collector is implemented as a lightweight native Mac agent (for example Tauri with a native macOS helper, or a small Swift/Rust background process). The chat interface may be delivered inside the desktop application using a web-based UI layer, which keeps interface development fast while preserving native data access underneath. A companion Chrome extension provides accurate active-tab metadata and communicates only with the local Mac application. The split is: native for device collection, extension-based for live browser focus, flexible for interface, and local for storage.
+The collector is implemented as a lightweight native Apple Silicon macOS agent (for example Tauri with a native macOS helper, or a small Swift/Rust background process). The alpha is built and tested for the `arm64` architecture only; Intel (`x86_64`) and universal binaries are not required. The chat interface may be delivered inside the desktop application using a web-based UI layer, which keeps interface development fast while preserving native data access underneath. A companion Chrome extension provides accurate active-tab metadata and communicates only with the local Mac application. The split is: native for device collection, extension-based for live browser focus, flexible for interface, and local for storage.
 
 The technical-user alpha may use a development-stage Mac build and an unpacked Chrome extension installed through browser developer mode. Chrome Web Store publication, polished installers, Apple notarization, and consumer-grade installation are deferred until the behavioral-context hypothesis is validated. Setup documentation must nevertheless be explicit, reproducible, and honest about every permission.
 
@@ -232,6 +233,12 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | FR-48 | Support `.env`-based credentials only as an optional development convenience for contributors running from source, never as the required alpha-user setup. | Should |
 | FR-49 | Show actionable errors for missing, invalid, revoked, rate-limited, or out-of-credit provider keys without exposing the credential. | Must |
 
+### 4.8 Platform support
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-50 | Build and run the alpha natively on Apple Silicon (`arm64`) Macs; Intel Mac, universal-binary, Windows, and Linux support are out of scope. | Must |
+
 ---
 
 ## 5. Data requirements
@@ -301,8 +308,8 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | NFR-4 | Security | Local data must be protected at rest using the operating system's available protections. |
 | NFR-5 | Usability | A technical alpha user must be able to follow documented setup, grant permissions, configure a provider key, and generate the first profile without undocumented steps. |
 | NFR-6 | Transparency | Privacy-relevant state (collecting / paused, what is stored) must be visible at a glance. |
-| NFR-7 | Portability | Architecture should not preclude a later second platform (the MVP may target one OS first). |
-| NFR-8 | Distribution | The technical alpha may use a development-stage Mac build and an unpacked Chrome extension; code signing, notarization, and Chrome Web Store publication are not alpha release gates. |
+| NFR-7 | Portability | Architecture should not unnecessarily preclude later Intel Mac, Windows, or Linux support, but no cross-platform implementation work is required for the alpha. |
+| NFR-8 | Distribution | The technical alpha may use an Apple Silicon-only development build and an unpacked Chrome extension; universal binaries, code signing, notarization, and Chrome Web Store publication are not alpha release gates. |
 | NFR-9 | Setup | Technical-user setup must be documented and reproducible, including Mac permissions, extension installation, local pairing, Chrome-profile selection, and in-app API-key validation. |
 | NFR-10 | Degraded operation | The Mac app must remain usable when the extension is unavailable and clearly distinguish imported history from accurately timed live-tab activity. |
 | NFR-11 | Credential security | Provider credentials must be retrieved from macOS Keychain only when needed and must be redacted from logs, error reports, UI diagnostics, and exported data. |
@@ -314,12 +321,14 @@ Because chat turns, relevant profile context, and minimized activity digests are
 ### 8.1 Assumptions
 
 - The target user will grant the system permissions a native collector requires, given clear value and control.
+- Alpha users have an Apple Silicon Mac; Intel Macs are not supported.
 - Window titles and browser URLs provide sufficient signal to produce a profile the user finds accurate and useful.
 - A profile that fits within a language model's context window is sufficient for the MVP; retrieval over a larger store is not yet needed.
 
 ### 8.2 Dependencies
 
 - Operating-system APIs for foreground-window and app-usage information.
+- An Apple Silicon Mac and an `arm64`-capable macOS development toolchain.
 - Read access to the local browser history store.
 - Chrome extension APIs for active-tab metadata and a secure local pairing/communication mechanism.
 - A third-party language model API (e.g. Claude or GPT) for profiling and chat.
@@ -337,6 +346,7 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | The wrong Chrome profile is ingested or personal profiles are mixed unintentionally. | High | Require explicit multi-profile selection during onboarding, ingest only selected profiles, label profile sources in activity history, and allow the selection to be changed later. |
 | Browser-extension permissions feel invasive or cause abandonment. | High | Request tab metadata only, prohibit page-content access, explain every captured field, provide immediate pause/exclusions, and keep all extension events local. |
 | Manual extension installation or native-app pairing creates alpha setup friction. | Medium | Provide exact technical setup instructions, verify pairing in the app, and maintain a history-import degraded mode when live-tab capture is unavailable. |
+| Apple Silicon-only support reduces the available tester pool. | Low for alpha | Recruit alpha testers with Apple Silicon Macs and revisit Intel or other platforms only after the core hypothesis is validated. |
 | User-supplied API keys are mishandled or exposed. | High | Store keys only in macOS Keychain, redact credentials from all diagnostics, keep keys out of the extension and database, and send requests directly to the selected provider. |
 | Provider errors, quotas, or user billing interrupt profiling and chat. | Medium | Validate keys in settings, surface actionable provider errors, preserve local collection during outages, and retry profiling only after the user resolves the provider issue. |
 | Next-step recommendations feel judgmental, distracting, or incorrect. | Medium | Keep them inside the app, distinguish recommendations from observed facts, make them dismissible, and collect relevance feedback. |
@@ -361,6 +371,7 @@ Because the MVP exists to test the central hypothesis, success is defined in ter
 - Users understand their time allocation from the dashboard and find the activity history accurate.
 - Users find at least some next-step recommendations relevant and useful rather than intrusive.
 - Technical alpha users can follow the setup documentation, pair the extension, select Chrome profiles, enter their own provider key in the app, and reach a populated dashboard without undocumented intervention.
+- The alpha runs natively on supported Apple Silicon test Macs without requiring Rosetta.
 - Users do not uninstall over privacy discomfort after seeing what is collected.
 
 ### 9.3 Explicit anti-goal
@@ -377,6 +388,6 @@ These are recorded to show direction. None are part of the MVP and none should i
 - **Proactive assistance.** Goal-aware nudges, once the interaction-design problem of avoiding notification fatigue can be addressed responsibly.
 - **Context layer for other AI tools.** Exposing the profile through a standard interface so any external AI assistant can draw on it, turning the product from an app into infrastructure.
 - **Consumer-ready distribution.** Signed and notarized Mac builds, Chrome Web Store publication, automatic updates, and onboarding designed for non-technical users.
-- **Second platform and sync.** Extending beyond the first operating system and across a user's devices.
+- **Additional platforms and sync.** Adding Intel Mac support if justified, extending to Windows or Linux, and later synchronizing across a user's devices.
 
 **Deliberately excluded.** Capturing in-app content from social media platforms is not a viable direction: their APIs are closed and provide no access to what the user sees or does inside them. The roadmap must not depend on it.
