@@ -2,7 +2,7 @@
 
 **A behavioral context layer for personal AI**
 
-Version 0.11 — Draft · Technical-user alpha scope
+Version 0.12 — Draft · Technical-user alpha scope
 Architecture: native Apple Silicon macOS collector + Chrome extension + chat interface
 
 ---
@@ -178,7 +178,7 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | FR-13 | Filter, redact, deduplicate, and aggregate recent activity locally before remote profile generation; never send the complete raw activity database. | Must |
 | FR-14 | Express inferences with appropriate uncertainty; avoid stating weak guesses as fact. | Must |
 | FR-15 | Store the profile in a format the user can read and edit directly. | Must |
-| FR-16 | Preserve user edits to the profile across regenerations rather than overwriting them. | Should |
+| FR-16 | Preserve user edits and corrections as authoritative user-authored truth across all automatic profile regenerations until the user explicitly changes or removes them. | Must |
 | FR-17 | Retrieve only the relevant portion of a large profile for a given query (deferred until profile size requires it). | Could |
 
 ### 4.3 Assistant
@@ -295,6 +295,16 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | FR-75 | Let the user dismiss individual behavioral suggestions and disable the behavioral-guidance category without disabling work-continuity recommendations. | Must |
 | FR-76 | Keep all behavioral guidance inside the app for the alpha; do not generate push, system, or background notifications. | Must |
 
+### 4.14 User-authored profile truth
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-77 | Store user-authored profile edits and corrections separately from automatically generated inferences. | Must |
+| FR-78 | Give user-authored profile truth absolute precedence over conflicting automatic inferences in profiling, recommendations, and assistant context. | Must |
+| FR-79 | Never overwrite, weaken, or silently remove a user-authored correction during nightly, manual, or bootstrap profile generation. | Must |
+| FR-80 | Let the user view, edit, and remove each authoritative correction; automatic inference may resume for that subject only after the correction is removed or changed. | Must |
+| FR-81 | When new activity appears to conflict with an existing correction, preserve the correction and optionally surface the conflict for review rather than changing the profile automatically. | Must |
+
 ---
 
 ## 5. Data requirements
@@ -318,7 +328,9 @@ Each captured event should record at minimum: a timestamp, the application name,
 
 ### 5.3 The profile
 
-The profile is the central artifact. It is a structured but human-readable summary — interests, apparent skills and expertise level, active projects, and behavioral patterns such as working rhythm. It must be small enough to supply to a language model as context and legible enough that the user can read and edit it directly. For the MVP a single editable structured document is sufficient; retrieval over a larger store is deferred until profile size demands it.
+The profile is the central artifact. It is a structured but human-readable summary — interests, apparent skills and expertise level, active projects, and behavioral patterns such as working rhythm. It must be small enough to supply to a language model as context and legible enough that the user can read and edit it directly.
+
+The stored profile must distinguish three provenance layers: observed activity facts, automatically generated inferences, and authoritative user-authored truth. User-authored edits and corrections always win when layers conflict and remain locked until the user changes or removes them. Automatic regeneration may update non-conflicting inferred content but cannot rewrite the authoritative layer. Retrieval over a larger profile store is deferred until profile size demands it.
 
 ### 5.4 Retention
 
@@ -330,7 +342,7 @@ The editable generated profile and preserved user corrections remain available b
 
 ### 5.5 Local storage technology
 
-SQLite is the alpha's embedded local database. It stores activity events, browser-profile source metadata, profile versions, user corrections, recommendations, settings that are not secrets, and retention state. Schema changes must use versioned migrations.
+SQLite is the alpha's embedded local database. It stores activity events, browser-profile source metadata, profile versions, authoritative user corrections, provenance metadata, recommendations, settings that are not secrets, and retention state. Schema changes must use versioned migrations.
 
 Hosted Supabase is excluded because raw behavioral data and profiles are required to remain local. Running the full Supabase stack locally is also excluded because it would add a container runtime and multiple services to a lightweight background application. Supabase may be reconsidered later for explicitly opt-in account, sync, or collaboration features, but it must not become a prerequisite for the local alpha.
 
@@ -427,6 +439,7 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | Scheduled profiling is missed during sleep or produces duplicate runs after wake. | Medium | Track the last successful refresh and an idempotent run identifier, perform one catch-up refresh when needed, and update the profile and recommendations atomically. |
 | Behavioral guidance feels judgmental, paternalistic, or medically suggestive. | High | Make guidance optional, show the evidence behind it, use neutral language, separate facts from inference, prohibit diagnosis and productivity scoring, and let users disable the category independently. |
 | Activity summaries overstate what the system observed, such as claiming a video was watched completely. | Medium | Report active pages, foreground duration, and counts precisely; never infer completion, comprehension, or intent without supporting evidence. |
+| Automatic regeneration overwrites or contradicts an explicit user correction. | High | Store corrections separately, give them absolute merge precedence, test every generation path against locked corrections, and surface conflicts for review instead of mutating user-authored truth. |
 | User-supplied API keys are mishandled or exposed. | High | Store keys only in macOS Keychain, redact credentials from all diagnostics, keep keys out of the extension and database, and send requests directly to the selected provider. |
 | Provider errors, quotas, or user billing interrupt profiling and chat. | Medium | Validate keys in settings, surface actionable provider errors, preserve local collection during outages, and retry profiling only after the user resolves the provider issue. |
 | Next-step recommendations feel judgmental, distracting, or incorrect. | Medium | Keep them inside the app, distinguish recommendations from observed facts, make them dismissible, and collect relevance feedback. |
@@ -452,6 +465,7 @@ Because the MVP exists to test the central hypothesis, success is defined in ter
 - Users find at least some next-step recommendations relevant and useful rather than intrusive.
 - Users recognize activity and topical summaries as accurate descriptions of the available signal.
 - Users who enable behavioral guidance find at least some suggestions supportive rather than judgmental and can disable the category independently.
+- User-authored profile corrections survive bootstrap, nightly, and manual regeneration unchanged until the user explicitly edits or removes them.
 - Technical alpha users can follow the setup documentation, pair the extension, select Chrome profiles, enter their own provider key in the app, and reach a populated dashboard without undocumented intervention.
 - The alpha runs natively on Apple Silicon macOS 26 test Macs without requiring Rosetta.
 - Older Apple Silicon macOS releases are supported only when they pass the existing implementation without delaying macOS 26 delivery.
