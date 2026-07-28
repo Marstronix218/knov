@@ -2,7 +2,7 @@
 
 **A behavioral context layer for personal AI**
 
-Version 0.5 — Draft · Technical-user alpha scope
+Version 0.6 — Draft · Technical-user alpha scope
 Architecture: native Apple Silicon macOS collector + Chrome extension + chat interface
 
 ---
@@ -61,7 +61,7 @@ The following table sets the boundary of the MVP. Items marked out of scope are 
 | In scope (MVP) | Out of scope (MVP) |
 |---|---|
 | Foreground app + window title capture | Reading inside other apps' content |
-| Apple Silicon macOS application | Intel Macs, Windows, and Linux |
+| Apple Silicon application targeting macOS 26 | Intel Macs, Windows, and Linux |
 | Local browser history ingestion | Screen recording or audio capture |
 | Chrome extension for active-tab URL, title, and duration | Browser page-body or DOM capture |
 | Local activity database | Mobile (iOS / Android) clients |
@@ -82,7 +82,7 @@ The following table sets the boundary of the MVP. Items marked out of scope are 
 
 ### 2.1 Target user
 
-The primary user of the alpha is a technically capable, AI-heavy knowledge worker using an Apple Silicon Mac: a developer, technical freelancer, researcher, or similar individual who already uses AI assistants daily and is frustrated at having to re-establish context each time. This user runs multiple parallel projects and interests, is comfortable installing development-stage desktop software and a manually distributed browser extension, already has or can obtain an OpenAI or Anthropic API key, and is willing to grant system permissions in exchange for clear value. They are privacy-aware and will reject a product that feels like surveillance.
+The primary user of the alpha is a technically capable, AI-heavy knowledge worker using an Apple Silicon Mac running macOS 26: a developer, technical freelancer, researcher, or similar individual who already uses AI assistants daily and is frustrated at having to re-establish context each time. This user runs multiple parallel projects and interests, is comfortable installing development-stage desktop software and a manually distributed browser extension, already has or can obtain an OpenAI or Anthropic API key, and is willing to grant system permissions in exchange for clear value. They are privacy-aware and will reject a product that feels like surveillance.
 
 ### 2.2 Why this user first
 
@@ -124,7 +124,7 @@ This constraint is also strategically favorable: because the data requires a nat
 
 ### 3.3 Recommended starting shape
 
-The collector is implemented as a lightweight native Apple Silicon macOS agent (for example Tauri with a native macOS helper, or a small Swift/Rust background process). The alpha is built and tested for the `arm64` architecture only; Intel (`x86_64`) and universal binaries are not required. The chat interface may be delivered inside the desktop application using a web-based UI layer, which keeps interface development fast while preserving native data access underneath. A companion Chrome extension provides accurate active-tab metadata and communicates only with the local Mac application. The split is: native for device collection, extension-based for live browser focus, flexible for interface, and local for storage.
+The collector is implemented as a lightweight native Apple Silicon macOS agent (for example Tauri with a native macOS helper, or a small Swift/Rust background process). The alpha is built and tested for the `arm64` architecture and macOS 26; Intel (`x86_64`) and universal binaries are not required. The deployment target may be lowered to support older Apple Silicon macOS releases only when the chosen dependencies and APIs work without a separate compatibility implementation, meaningful additional testing burden, or delay to the macOS 26 alpha. The chat interface may be delivered inside the desktop application using a web-based UI layer, which keeps interface development fast while preserving native data access underneath. A companion Chrome extension provides accurate active-tab metadata and communicates only with the local Mac application. The split is: native for device collection, extension-based for live browser focus, flexible for interface, and local for storage.
 
 The technical-user alpha may use a development-stage Mac build and an unpacked Chrome extension installed through browser developer mode. Chrome Web Store publication, polished installers, Apple notarization, and consumer-grade installation are deferred until the behavioral-context hypothesis is validated. Setup documentation must nevertheless be explicit, reproducible, and honest about every permission.
 
@@ -237,7 +237,8 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 
 | ID | Requirement | Priority |
 |---|---|---|
-| FR-50 | Build and run the alpha natively on Apple Silicon (`arm64`) Macs; Intel Mac, universal-binary, Windows, and Linux support are out of scope. | Must |
+| FR-50 | Build and run the alpha natively on Apple Silicon (`arm64`) Macs running macOS 26; Intel Mac, universal-binary, Windows, and Linux support are out of scope. | Must |
+| FR-51 | Support older Apple Silicon macOS releases only when doing so requires no separate compatibility code path, no material additional testing burden, and no delay to the macOS 26 alpha. | Should |
 
 ---
 
@@ -313,6 +314,7 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | NFR-9 | Setup | Technical-user setup must be documented and reproducible, including Mac permissions, extension installation, local pairing, Chrome-profile selection, and in-app API-key validation. |
 | NFR-10 | Degraded operation | The Mac app must remain usable when the extension is unavailable and clearly distinguish imported history from accurately timed live-tab activity. |
 | NFR-11 | Credential security | Provider credentials must be retrieved from macOS Keychain only when needed and must be redacted from logs, error reports, UI diagnostics, and exported data. |
+| NFR-12 | OS compatibility | macOS 26 is the required and fully tested target. Any older Apple Silicon support is best-effort and must not introduce alternate product behavior or delay the required target. |
 
 ---
 
@@ -321,14 +323,15 @@ Because chat turns, relevant profile context, and minimized activity digests are
 ### 8.1 Assumptions
 
 - The target user will grant the system permissions a native collector requires, given clear value and control.
-- Alpha users have an Apple Silicon Mac; Intel Macs are not supported.
+- Required alpha users have an Apple Silicon Mac running macOS 26; Intel Macs are not supported.
+- Older Apple Silicon macOS releases may work when compatibility is effectively free, but they are not allowed to block or delay the required macOS 26 release.
 - Window titles and browser URLs provide sufficient signal to produce a profile the user finds accurate and useful.
 - A profile that fits within a language model's context window is sufficient for the MVP; retrieval over a larger store is not yet needed.
 
 ### 8.2 Dependencies
 
 - Operating-system APIs for foreground-window and app-usage information.
-- An Apple Silicon Mac and an `arm64`-capable macOS development toolchain.
+- An Apple Silicon Mac running macOS 26 and an `arm64`-capable macOS development toolchain.
 - Read access to the local browser history store.
 - Chrome extension APIs for active-tab metadata and a secure local pairing/communication mechanism.
 - A third-party language model API (e.g. Claude or GPT) for profiling and chat.
@@ -347,6 +350,7 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | Browser-extension permissions feel invasive or cause abandonment. | High | Request tab metadata only, prohibit page-content access, explain every captured field, provide immediate pause/exclusions, and keep all extension events local. |
 | Manual extension installation or native-app pairing creates alpha setup friction. | Medium | Provide exact technical setup instructions, verify pairing in the app, and maintain a history-import degraded mode when live-tab capture is unavailable. |
 | Apple Silicon-only support reduces the available tester pool. | Low for alpha | Recruit alpha testers with Apple Silicon Macs and revisit Intel or other platforms only after the core hypothesis is validated. |
+| Supporting older macOS releases expands compatibility work and delays the alpha. | Medium | Treat macOS 26 as the only release gate; lower the deployment target only when the implementation and dependencies already work without separate code paths or material extra testing. |
 | User-supplied API keys are mishandled or exposed. | High | Store keys only in macOS Keychain, redact credentials from all diagnostics, keep keys out of the extension and database, and send requests directly to the selected provider. |
 | Provider errors, quotas, or user billing interrupt profiling and chat. | Medium | Validate keys in settings, surface actionable provider errors, preserve local collection during outages, and retry profiling only after the user resolves the provider issue. |
 | Next-step recommendations feel judgmental, distracting, or incorrect. | Medium | Keep them inside the app, distinguish recommendations from observed facts, make them dismissible, and collect relevance feedback. |
@@ -371,7 +375,8 @@ Because the MVP exists to test the central hypothesis, success is defined in ter
 - Users understand their time allocation from the dashboard and find the activity history accurate.
 - Users find at least some next-step recommendations relevant and useful rather than intrusive.
 - Technical alpha users can follow the setup documentation, pair the extension, select Chrome profiles, enter their own provider key in the app, and reach a populated dashboard without undocumented intervention.
-- The alpha runs natively on supported Apple Silicon test Macs without requiring Rosetta.
+- The alpha runs natively on Apple Silicon macOS 26 test Macs without requiring Rosetta.
+- Older Apple Silicon macOS releases are supported only when they pass the existing implementation without delaying macOS 26 delivery.
 - Users do not uninstall over privacy discomfort after seeing what is collected.
 
 ### 9.3 Explicit anti-goal
