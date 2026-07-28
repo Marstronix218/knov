@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Knoveyla Companion",
+  "description": "Sends active-tab URL, title, and focus duration only to your paired local Knoveyla app.",
+  "version": "0.1.0",
+  "minimum_chrome_version": "120",
+  "permissions": ["alarms", "nativeMessaging", "storage", "tabs"],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*",
+    "http://[::1]/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Knoveyla Companion"
+  },
+  "options_page": "options.html",
+  "incognito": "not_allowed"
+}

@@ -1,0 +1,242 @@
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import App from "./App";
+import { api } from "./lib/api";
+import { mockBrowsers, mockDashboard, mockProfile, mockSettings } from "./lib/mockData";
+import type { ChatMessage, ProfileData } from "./types";
+
+function clone<T>(value: T): T {
+  return structuredClone(value);
+}
+
+function stubApi() {
+  vi.spyOn(api, "settings").mockResolvedValue(clone(mockSettings));
+  vi.spyOn(api, "dashboard").mockResolvedValue(clone(mockDashboard));
+  vi.spyOn(api, "activity").mockResolvedValue(clone(mockDashboard.recentActivity));
+  vi.spyOn(api, "profile").mockResolvedValue(clone(mockProfile));
+  vi.spyOn(api, "browserProfiles").mockResolvedValue(clone(mockBrowsers));
+  vi.spyOn(api, "setCollectionEnabled").mockImplementation(async (enabled) => ({
+    ...clone(mockSettings),
+    collectionStatus: { ...clone(mockSettings.collectionStatus), enabled },
+  }));
+  vi.spyOn(api, "saveSettings").mockImplementation(async (settings) => ({
+    ...clone(mockSettings),
+    ...settings,
+  }));
+  vi.spyOn(api, "setBrowserProfiles").mockResolvedValue(undefined);
+  vi.spyOn(api, "dismissRecommendation").mockResolvedValue(undefined);
+  vi.spyOn(api, "refreshProfile").mockResolvedValue(clone(mockProfile));
+}
+
+async function renderRoute(hash: string) {
+  window.location.hash = hash;
+  render(<App />);
+  await screen.findByText("Knoveyla");
+}
+
+describe("application navigation", () => {
+  beforeEach(stubApi);
+
+  it("redirects unknown routes to the dashboard", async () => {
+    await renderRoute("#/unknown");
+
+    expect(await screen.findByRole("heading", { name: "Good afternoon." })).toBeInTheDocument();
+  });
+
+  it("navigates from the dashboard to activity history", async () => {
+    await renderRoute("#/dashboard");
+
+    fireEvent.click(screen.getByRole("link", { name: "Activity" }));
+
+    expect(await screen.findByRole("heading", { name: "Your local timeline" })).toBeInTheDocument();
+  });
+});
+
+describe("onboarding", () => {
+  beforeEach(stubApi);
+
+  it("completes consent without changing the hook order", async () => {
+    localStorage.clear();
+    window.location.hash = "";
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    const profiles = await screen.findAllByRole("checkbox");
+    fireEvent.click(profiles[0]);
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    fireEvent.change(screen.getByLabelText("API key"), {
+      target: { value: "sk-test-only" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Build my first profile/ }));
+
+    expect(await screen.findByRole("heading", { name: "Good afternoon." })).toBeInTheDocument();
+    expect(localStorage.getItem("knoveyla.setup-complete")).toBe("true");
+  });
+});
+
+describe("dashboard", () => {
+  beforeEach(stubApi);
+
+  it("renders tracked and focused time from dashboard data", async () => {
+    await renderRoute("#/dashboard");
+
+    const trackedMetric = (await screen.findByText("Tracked time")).closest("article");
+    const focusedMetric = screen.getByText("Focused time").closest("article");
+
+    expect(trackedMetric).toHaveTextContent("6h 06m");
+    expect(focusedMetric).toHaveTextContent("4h 39m");
+    expect(focusedMetric).toHaveTextContent("76% of tracked time");
+  });
+
+  it("labels observed activity separately from cautious inferences", async () => {
+    await renderRoute("#/dashboard");
+
+    expect(await screen.findByText("Observed facts from this Mac")).toBeInTheDocument();
+    expect(screen.getByText("Facts and cautious inferences")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Recommendations" })).toBeInTheDocument();
+  });
+
+  it("requests new dashboard data when the range changes", async () => {
+    const dashboardSpy = vi.mocked(api.dashboard);
+    await renderRoute("#/dashboard");
+
+    fireEvent.click(await screen.findByRole("button", { name: "7 days" }));
+
+    await waitFor(() => expect(dashboardSpy).toHaveBeenCalledWith("7d"));
+  });
+});
+
+describe("profile corrections", () => {
+  beforeEach(stubApi);
+
+  it("saves a correction as authoritative user-authored truth", async () => {
+    const correctedProfile: ProfileData = {
+      ...clone(mockProfile),
+      sections: [
+        ...clone(mockProfile.sections),
+        {
+          id: "new-truth",
+          title: "Authoritative truth",
+          items: [
+            {
+              id: "correction-2",
+              label: "Project Atlas is complete",
+              description: "Do not infer that it is active.",
+              provenance: "user",
+            },
+          ],
+        },
+      ],
+    };
+    const saveCorrection = vi.spyOn(api, "saveCorrection").mockResolvedValue(correctedProfile);
+    await renderRoute("#/profile");
+    await screen.findByText(mockProfile.summary);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add correction" }));
+    const dialog = screen.getByRole("dialog", { name: "Add authoritative correction" });
+    fireEvent.change(within(dialog).getByLabelText("What should Knoveyla know?"), {
+      target: { value: "Project Atlas is complete" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Optional context"), {
+      target: { value: "Do not infer that it is active." },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save as truth" }));
+
+    await waitFor(() =>
+      expect(saveCorrection).toHaveBeenCalledWith(
+        "Project Atlas is complete",
+        "Do not infer that it is active.",
+      ),
+    );
+    expect(await screen.findByText("Project Atlas is complete")).toBeInTheDocument();
+    expect(screen.getAllByText("user").length).toBeGreaterThan(0);
+  });
+
+  it("removes a correction by its stable identifier", async () => {
+    const updatedProfile: ProfileData = {
+      ...clone(mockProfile),
+      sections: mockProfile.sections.map((section) => ({
+        ...section,
+        items: section.items.filter((item) => item.id !== "truth-local"),
+      })),
+    };
+    const removeCorrection = vi.spyOn(api, "removeCorrection").mockResolvedValue(updatedProfile);
+    await renderRoute("#/profile");
+    await screen.findByText("Knoveyla is local-first");
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove correction" }));
+
+    await waitFor(() => expect(removeCorrection).toHaveBeenCalledWith("truth-local"));
+    await waitFor(() => expect(screen.queryByText("Knoveyla is local-first")).not.toBeInTheDocument());
+  });
+});
+
+describe("settings privacy disclosures", () => {
+  beforeEach(stubApi);
+
+  it("states that provider keys travel directly from the Mac", async () => {
+    await renderRoute("#/settings");
+
+    expect(await screen.findByText("Your key goes directly from this Mac to the selected provider.")).toBeInTheDocument();
+  });
+
+  it("states which metadata collection includes", async () => {
+    await renderRoute("#/settings");
+
+    expect(await screen.findByText("Foreground app, window title, and permitted browser metadata.")).toBeInTheDocument();
+  });
+
+  it("discloses the full scope of permanent deletion", async () => {
+    await renderRoute("#/settings");
+
+    expect(
+      await screen.findByText(
+        "Permanently removes activity, profiles, corrections, recommendations, settings, and provider credentials.",
+      ),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("assistant chat", () => {
+  beforeEach(stubApi);
+
+  it("sends the full visible conversation and renders the assistant response", async () => {
+    const response: ChatMessage = {
+      id: "assistant-response",
+      role: "assistant",
+      content: "Continue validating the macOS permission bridge.",
+      createdAt: "2026-07-27T17:05:00.000Z",
+    };
+    const chat = vi.spyOn(api, "chat").mockResolvedValue(response);
+    await renderRoute("#/assistant");
+
+    fireEvent.change(screen.getByPlaceholderText("What should I focus on next?"), {
+      target: { value: "What should I work on?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send/ }));
+
+    await waitFor(() => expect(chat).toHaveBeenCalledTimes(1));
+    const sentMessages = chat.mock.calls[0][0];
+    expect(sentMessages.map(({ role, content }) => ({ role, content }))).toEqual([
+      {
+        role: "assistant",
+        content: "I’m ready. I’ll use your local profile naturally and I’ll distinguish what you told me from what I inferred.",
+      },
+      { role: "user", content: "What should I work on?" },
+    ]);
+    expect(await screen.findByText(response.content)).toBeInTheDocument();
+  });
+
+  it("does not send whitespace-only messages", async () => {
+    const chat = vi.spyOn(api, "chat");
+    await renderRoute("#/assistant");
+
+    fireEvent.change(screen.getByPlaceholderText("What should I focus on next?"), {
+      target: { value: "   " },
+    });
+
+    expect(screen.getByRole("button", { name: /Send/ })).toBeDisabled();
+    expect(chat).not.toHaveBeenCalled();
+  });
+});

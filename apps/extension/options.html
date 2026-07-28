@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Knoveyla Companion Settings</title>
+    <script type="module" src="/src/options.ts"></script>
+  </head>
+  <body>
+    <main class="options-shell">
+      <header class="options-header">
+        <div class="brand-mark" aria-hidden="true">K</div>
+        <div>
+          <p class="eyebrow">Knoveyla</p>
+          <h1>Chrome companion settings</h1>
+          <p>
+            This extension reads only the active tab URL and title. It never reads
+            page contents, form input, or keystrokes.
+          </p>
+        </div>
+      </header>
+
+      <form id="settings-form">
+        <section class="panel">
+          <h2>Local app connection</h2>
+          <p class="section-help">
+            Native Messaging is the secure default. Copy the pairing token shown
+            by the Knoveyla Mac app to authorize this Chrome profile.
+          </p>
+
+          <label>
+            Connection method
+            <select id="transport" name="transport">
+              <option value="native">Native Messaging (recommended)</option>
+              <option value="localhost">Local HTTP (development only)</option>
+            </select>
+          </label>
+
+          <label id="endpoint-field" hidden>
+            Local app address
+            <input
+              id="endpoint"
+              name="endpoint"
+              type="url"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="http://127.0.0.1:48321"
+              required
+            />
+          </label>
+
+          <label>
+            Pairing token
+            <input
+              id="pairing-token"
+              name="pairingToken"
+              type="password"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Paste a token from the Mac app"
+            />
+          </label>
+
+          <label>
+            Approved Chrome profile ID
+            <input
+              id="browser-profile-id"
+              name="browserProfileId"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Copy the profile ID from Knoveyla Settings"
+              required
+            />
+          </label>
+
+          <div class="button-row">
+            <button class="primary" type="submit">Save and verify</button>
+            <button id="test-connection" class="secondary" type="button">
+              Test connection
+            </button>
+          </div>
+          <p id="connection-result" class="form-result" aria-live="polite"></p>
+        </section>
+
+        <section class="panel">
+          <h2>Excluded websites</h2>
+          <p class="section-help">
+            One domain per line. A rule such as <code>example.com</code> also
+            excludes its subdomains. Matching pages are stopped immediately and
+            never queued.
+          </p>
+          <label>
+            Domains to exclude
+            <textarea
+              id="excluded-domains"
+              name="excludedDomains"
+              rows="8"
+              spellcheck="false"
+              placeholder="bank.example.com&#10;private.example"
+            ></textarea>
+          </label>
+        </section>
+      </form>
+
+      <section class="privacy-note">
+        <h2>What leaves Chrome</h2>
+        <p>
+          URL, page title, focus start time, and duration are sent to the paired
+          Knoveyla app through Chrome Native Messaging. The extension contains no
+          content scripts and cannot inspect the page body.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

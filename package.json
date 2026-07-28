@@ -1,15 +1,29 @@
 {
   "name": "knoveyla",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first behavioral context layer for personal AI",
+  "workspaces": [
+    "apps/desktop",
+    "apps/extension"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "npm run dev --workspace @knoveyla/desktop",
+    "dev:desktop": "npm run tauri dev --workspace @knoveyla/desktop",
+    "build": "npm run build --workspaces --if-present",
+    "build:desktop": "npm run bundle --workspace @knoveyla/desktop",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "check:rust": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "test:rust": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "keywords": [
+    "tauri",
+    "personal-ai",
+    "local-first"
+  ],
+  "author": "Noriaki Kishida",
+  "license": "UNLICENSED",
   "devDependencies": {
     "oh-my-codex": "^0.20.3"
   }
