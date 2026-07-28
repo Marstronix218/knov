@@ -2,7 +2,7 @@
 
 **A behavioral context layer for personal AI**
 
-Version 0.3 — Draft · MVP scope
+Version 0.4 — Draft · Technical-user alpha scope
 Architecture: native Mac collector + Chrome extension + chat interface
 
 ---
@@ -69,6 +69,7 @@ The following table sets the boundary of the MVP. Items marked out of scope are 
 | Activity dashboard with usage percentages and history | Background or push notifications |
 | In-app recommendations for useful next steps | Autonomous actions taken on the user's behalf |
 | Selection of one or more Chrome profiles during onboarding | Automatic ingestion from Chrome profiles the user did not select |
+| Bring-your-own OpenAI or Anthropic API key | Knoveyla-hosted LLM proxy, billing, or user accounts |
 | User view + edit + delete of profile | Proactive notifications / distraction coaching |
 | Single device, single user | Multi-device sync; cloud accounts |
 
@@ -80,7 +81,7 @@ The following table sets the boundary of the MVP. Items marked out of scope are 
 
 ### 2.1 Target user
 
-The primary user of the MVP is an AI-heavy knowledge worker: a freelancer, developer, researcher, or similar individual who already uses AI assistants daily and is frustrated at having to re-establish context each time. This user runs multiple parallel projects and interests, is comfortable installing desktop software, and is willing to grant system permissions in exchange for clear value. They are privacy-aware and will reject a product that feels like surveillance.
+The primary user of the alpha is a technically capable, AI-heavy knowledge worker: a developer, technical freelancer, researcher, or similar individual who already uses AI assistants daily and is frustrated at having to re-establish context each time. This user runs multiple parallel projects and interests, is comfortable installing development-stage desktop software and a manually distributed browser extension, already has or can obtain an OpenAI or Anthropic API key, and is willing to grant system permissions in exchange for clear value. They are privacy-aware and will reject a product that feels like surveillance.
 
 ### 2.2 Why this user first
 
@@ -95,7 +96,8 @@ This user is reachable, feels the problem acutely, and can evaluate the result. 
 5. **Activity review.** The user opens a dashboard to see time allocation and usage percentages by application or site and to browse a chronological history of what they were working on or viewing.
 6. **Next-step guidance.** The user receives optional, non-interruptive recommendations in the app based on recent activity and the current profile, such as a relevant task to resume or a logical next action.
 7. **Chrome profile consent.** During onboarding, the user sees the Chrome profiles available on the device and explicitly selects one or more profiles whose history Knoveyla may ingest.
-8. **Guided installation.** A non-technical user installs the signed Mac app, adds the published Chrome extension, grants permissions through plain-language prompts, and reaches a working dashboard without using Terminal or developer mode.
+8. **Technical alpha setup.** A technical user installs a development-stage Mac build, loads or installs the companion Chrome extension, grants permissions, selects Chrome profiles, and connects their own LLM provider key.
+9. **Provider configuration.** The user selects OpenAI or Anthropic, enters an API key in the app, verifies the connection, and has the credential stored in macOS Keychain rather than in the activity database or a required `.env` file.
 
 ---
 
@@ -112,7 +114,7 @@ This constraint is also strategically favorable: because the data requires a nat
 | Component | Responsibility | Runtime |
 |---|---|---|
 | Collector | Capture foreground app, window title, browser history; write to local store | Native background agent |
-| Chrome extension | Capture active-tab URL, title, and focus duration without reading page content; forward events to the local collector | Published Chrome extension |
+| Chrome extension | Capture active-tab URL, title, and focus duration without reading page content; forward events to the local collector | Companion Chrome extension; unpacked installation permitted for alpha |
 | Local store | Persist raw activity events and the generated profile | Local database (e.g. SQLite) |
 | Profiler | Filter and minimize raw activity locally, send a bounded digest to a remote LLM, and store the resulting structured profile locally | Local process invoking a remote LLM |
 | Assistant | Chat UI; loads profile as context; sends turns to LLM | Web or native UI on local data |
@@ -123,19 +125,22 @@ This constraint is also strategically favorable: because the data requires a nat
 
 The collector is implemented as a lightweight native Mac agent (for example Tauri with a native macOS helper, or a small Swift/Rust background process). The chat interface may be delivered inside the desktop application using a web-based UI layer, which keeps interface development fast while preserving native data access underneath. A companion Chrome extension provides accurate active-tab metadata and communicates only with the local Mac application. The split is: native for device collection, extension-based for live browser focus, flexible for interface, and local for storage.
 
-The external-user MVP must be distributed as a signed and notarized Mac application with a normal installer or drag-to-Applications flow. The Chrome companion must be installable from the Chrome Web Store. Installation must not require Terminal commands, loading an unpacked extension, disabling operating-system protections, or enabling browser developer mode.
+The technical-user alpha may use a development-stage Mac build and an unpacked Chrome extension installed through browser developer mode. Chrome Web Store publication, polished installers, Apple notarization, and consumer-grade installation are deferred until the behavioral-context hypothesis is validated. Setup documentation must nevertheless be explicit, reproducible, and honest about every permission.
+
+Knoveyla uses a bring-your-own-key model for the alpha. Users select OpenAI or Anthropic and enter their API key in the application settings. The packaged application stores the credential in macOS Keychain and uses it only for direct requests to the selected provider. A `.env` file may be supported for contributors running the source code, but it must not be required for normal alpha use.
 
 ### 3.4 Data flow
 
-1. During onboarding, the user installs or verifies the published Chrome extension, grants required macOS permissions, and explicitly selects one or more detected Chrome profiles. Browser history is ingested only from the selected profiles.
-2. The collector samples the foreground application and active window title at a fixed interval and records permitted browser-history additions, writing timestamped events to the local store.
-3. While Chrome is in use, the extension records active-tab URL, title, focus start time, and duration. It sends these metadata events only to the local Mac collector and does not read page content.
-4. The local collector deduplicates and reconciles live extension events with imported Chrome history.
-5. The dashboard queries the local store to show usage percentages, time allocation, and chronological activity history.
-6. On a schedule (for example nightly), the profiler reads recent events and locally filters, redacts, deduplicates, and aggregates them into a minimized activity digest.
-7. The minimized digest is transmitted to the configured remote LLM, which returns an updated structured profile and optional next-step recommendations. The generated profile and recommendations are stored locally; the request digest is ephemeral and discarded after the response is processed. The complete raw activity log is never transmitted.
-8. When the user opens the assistant, the current profile is loaded and supplied to the LLM as context for the conversation.
-9. Each chat turn the user sends is transmitted to the LLM provider together with the relevant profile context; the response is returned to the UI.
+1. During setup, the technical user installs or loads the Chrome extension, grants required macOS permissions, and explicitly selects one or more detected Chrome profiles. Browser history is ingested only from the selected profiles.
+2. The user selects OpenAI or Anthropic, enters an API key in the Mac application, and verifies the connection. The application stores the key in macOS Keychain.
+3. The collector samples the foreground application and active window title at a fixed interval and records permitted browser-history additions, writing timestamped events to the local store.
+4. While Chrome is in use, the extension records active-tab URL, title, focus start time, and duration. It sends these metadata events only to the local Mac collector and does not read page content.
+5. The local collector deduplicates and reconciles live extension events with imported Chrome history.
+6. The dashboard queries the local store to show usage percentages, time allocation, and chronological activity history.
+7. On a schedule (for example nightly), the profiler reads recent events and locally filters, redacts, deduplicates, and aggregates them into a minimized activity digest.
+8. Using the user's Keychain-backed API key, the minimized digest is transmitted directly to the configured remote LLM, which returns an updated structured profile and optional next-step recommendations. The generated profile and recommendations are stored locally; the request digest is ephemeral and discarded after the response is processed. The complete raw activity log is never transmitted.
+9. When the user opens the assistant, the current profile is loaded and supplied to the LLM as context for the conversation.
+10. Each chat turn the user sends is transmitted directly to the selected LLM provider using the user's API key, together with the relevant profile context; the response is returned to the UI.
 
 ---
 
@@ -214,7 +219,18 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | FR-40 | Apply collection pause and domain exclusions to extension events immediately. | Must |
 | FR-41 | Show the extension's connection and collection state in both the extension UI and the Mac application. | Must |
 | FR-42 | Detect when the extension is missing, disconnected, or lacks permission and explain that live browser-duration accuracy is degraded while history import remains available. | Must |
-| FR-43 | Guide the user through Chrome Web Store installation and verify successful pairing during onboarding without requiring developer mode. | Must |
+| FR-43 | Provide documented setup and verify successful pairing for an unpacked or manually distributed Chrome extension during the technical alpha. | Must |
+
+### 4.7 LLM provider credentials
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-44 | Let the user select a supported remote LLM provider, initially OpenAI or Anthropic. | Must |
+| FR-45 | Let the user enter, replace, validate, and remove their provider API key from the application settings. | Must |
+| FR-46 | Store provider API keys in macOS Keychain; never store them in the activity database, logs, analytics, Chrome extension, source control, or plaintext application configuration. | Must |
+| FR-47 | Send profiling and chat requests directly from the Mac application to the selected provider; do not route them through a Knoveyla-hosted proxy in the alpha. | Must |
+| FR-48 | Support `.env`-based credentials only as an optional development convenience for contributors running from source, never as the required alpha-user setup. | Should |
+| FR-49 | Show actionable errors for missing, invalid, revoked, rate-limited, or out-of-credit provider keys without exposing the credential. | Must |
 
 ---
 
@@ -283,12 +299,13 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | NFR-2 | Reliability | The collector must recover automatically after sleep, reboot, or crash without losing the local store. |
 | NFR-3 | Footprint | The local store must stay within a modest disk budget via retention limits; no unbounded growth. |
 | NFR-4 | Security | Local data must be protected at rest using the operating system's available protections. |
-| NFR-5 | Usability | Installation, permission granting, and first profile generation must be achievable by a non-expert in minutes. |
+| NFR-5 | Usability | A technical alpha user must be able to follow documented setup, grant permissions, configure a provider key, and generate the first profile without undocumented steps. |
 | NFR-6 | Transparency | Privacy-relevant state (collecting / paused, what is stored) must be visible at a glance. |
 | NFR-7 | Portability | Architecture should not preclude a later second platform (the MVP may target one OS first). |
-| NFR-8 | Distribution | The Mac app must be code-signed and notarized, and the Chrome extension must be published through the Chrome Web Store for external testers. |
-| NFR-9 | Onboarding | A non-technical user must be able to install, pair, grant permissions, select Chrome profiles, and reach a working dashboard without Terminal, developer mode, or manual configuration files. |
+| NFR-8 | Distribution | The technical alpha may use a development-stage Mac build and an unpacked Chrome extension; code signing, notarization, and Chrome Web Store publication are not alpha release gates. |
+| NFR-9 | Setup | Technical-user setup must be documented and reproducible, including Mac permissions, extension installation, local pairing, Chrome-profile selection, and in-app API-key validation. |
 | NFR-10 | Degraded operation | The Mac app must remain usable when the extension is unavailable and clearly distinguish imported history from accurately timed live-tab activity. |
+| NFR-11 | Credential security | Provider credentials must be retrieved from macOS Keychain only when needed and must be redacted from logs, error reports, UI diagnostics, and exported data. |
 
 ---
 
@@ -305,8 +322,8 @@ Because chat turns, relevant profile context, and minimized activity digests are
 - Operating-system APIs for foreground-window and app-usage information.
 - Read access to the local browser history store.
 - Chrome extension APIs for active-tab metadata and a secure local pairing/communication mechanism.
-- Apple code signing and notarization and Chrome Web Store distribution for non-technical external users.
 - A third-party language model API (e.g. Claude or GPT) for profiling and chat.
+- A user-supplied API key for a supported provider and macOS Keychain for secure credential storage.
 - Local access to the history databases for the Chrome profile or profiles selected by the user.
 
 ### 8.3 Key risks
@@ -319,8 +336,9 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | Remote profiling conflicts with user expectations of local-first behavior. | High | Explain the two egress paths before collection, minimize activity locally, never transmit the complete raw log, disclose provider retention, and let the user pause collection or delete local data. |
 | The wrong Chrome profile is ingested or personal profiles are mixed unintentionally. | High | Require explicit multi-profile selection during onboarding, ingest only selected profiles, label profile sources in activity history, and allow the selection to be changed later. |
 | Browser-extension permissions feel invasive or cause abandonment. | High | Request tab metadata only, prohibit page-content access, explain every captured field, provide immediate pause/exclusions, and keep all extension events local. |
-| Chrome Web Store review or native-app pairing delays distribution. | Medium | Keep permissions narrow, prepare store disclosure and privacy materials early, and maintain a history-import degraded mode when live-tab capture is unavailable. |
-| macOS signing, notarization, or permission prompts block non-technical users. | High | Use a standard signed installer, provide guided permission checks and recovery, and test onboarding on a clean non-developer Mac account. |
+| Manual extension installation or native-app pairing creates alpha setup friction. | Medium | Provide exact technical setup instructions, verify pairing in the app, and maintain a history-import degraded mode when live-tab capture is unavailable. |
+| User-supplied API keys are mishandled or exposed. | High | Store keys only in macOS Keychain, redact credentials from all diagnostics, keep keys out of the extension and database, and send requests directly to the selected provider. |
+| Provider errors, quotas, or user billing interrupt profiling and chat. | Medium | Validate keys in settings, surface actionable provider errors, preserve local collection during outages, and retry profiling only after the user resolves the provider issue. |
 | Next-step recommendations feel judgmental, distracting, or incorrect. | Medium | Keep them inside the app, distinguish recommendations from observed facts, make them dismissible, and collect relevance feedback. |
 | Weak signal from duration-only apps. | Medium | Weight window titles and URLs as primary; treat bare durations as corroborating only. |
 | Platform incumbents add comparable behavioral context. | Medium — long term | Compete on cross-app breadth and local-first control, which incumbents are structurally less inclined to offer. |
@@ -342,7 +360,7 @@ Because the MVP exists to test the central hypothesis, success is defined in ter
 - Users inspect their profile and find it recognizable rather than wrong or unsettling.
 - Users understand their time allocation from the dashboard and find the activity history accurate.
 - Users find at least some next-step recommendations relevant and useful rather than intrusive.
-- Non-technical external users can install the Mac app and Chrome extension, grant permissions, select Chrome profiles, and reach a populated dashboard without developer assistance.
+- Technical alpha users can follow the setup documentation, pair the extension, select Chrome profiles, enter their own provider key in the app, and reach a populated dashboard without undocumented intervention.
 - Users do not uninstall over privacy discomfort after seeing what is collected.
 
 ### 9.3 Explicit anti-goal
@@ -358,6 +376,7 @@ These are recorded to show direction. None are part of the MVP and none should i
 - **Additional signal sources.** Email and music-service integrations via OAuth add topical and emotional signal that behavioral data alone cannot supply.
 - **Proactive assistance.** Goal-aware nudges, once the interaction-design problem of avoiding notification fatigue can be addressed responsibly.
 - **Context layer for other AI tools.** Exposing the profile through a standard interface so any external AI assistant can draw on it, turning the product from an app into infrastructure.
+- **Consumer-ready distribution.** Signed and notarized Mac builds, Chrome Web Store publication, automatic updates, and onboarding designed for non-technical users.
 - **Second platform and sync.** Extending beyond the first operating system and across a user's devices.
 
 **Deliberately excluded.** Capturing in-app content from social media platforms is not a viable direction: their APIs are closed and provide no access to what the user sees or does inside them. The roadmap must not depend on it.
