@@ -2,7 +2,7 @@
 
 **A behavioral context layer for personal AI**
 
-Version 0.10 — Draft · Technical-user alpha scope
+Version 0.11 — Draft · Technical-user alpha scope
 Architecture: native Apple Silicon macOS collector + Chrome extension + chat interface
 
 ---
@@ -69,13 +69,14 @@ The following table sets the boundary of the MVP. Items marked out of scope are 
 | Periodic profile generation via LLM | Social media in-app content (no API access) |
 | Chat interface using the profile | Email, Spotify, and other OAuth sources |
 | Activity dashboard with usage percentages and history | Background or push notifications |
-| In-app recommendations for useful next steps | Autonomous actions taken on the user's behalf |
+| In-app work-continuity and behavioral recommendations | Autonomous actions taken on the user's behalf |
+| Activity insights and topical/media summaries | Medical, mental-health, or productivity diagnosis |
 | Selection of one or more Chrome profiles during onboarding | Automatic ingestion from Chrome profiles the user did not select |
 | Bring-your-own OpenAI or Anthropic API key | Knoveyla-hosted LLM proxy, billing, or user accounts |
-| User view + edit + delete of profile | Proactive notifications / distraction coaching |
+| User view + edit + delete of profile | Interruptive background notifications or coaching |
 | Single device, single user | Multi-device sync; cloud accounts |
 
-**Note on recommendations and notifications.** Contextual next-step recommendations are included inside the activity dashboard and assistant experience. Background, push, or interruptive goal-aware nudges ("you said you wanted to finish X, you've been on Y for 20 minutes") remain explicitly excluded from the MVP. They introduce a notification-fatigue problem that should not be tackled until the core hypothesis is validated.
+**Note on recommendations and notifications.** Contextual next-step and behavioral recommendations are included inside the activity dashboard and assistant experience. These may suggest continuing a project, following up on research, changing focus, or taking a break after a long uninterrupted session. Background, push, or interruptive nudges remain explicitly excluded from the MVP. Guidance must be optional, non-judgmental, grounded in visible evidence, and easy to dismiss or disable.
 
 ---
 
@@ -96,10 +97,11 @@ This user is reachable, feels the problem acutely, and can evaluate the result. 
 3. **Profile inspection.** The user opens their profile to see what the system has inferred about them, and edits or removes anything inaccurate or unwanted.
 4. **Control and deletion.** The user pauses collection, excludes specific apps or sites, or deletes all collected data at any time.
 5. **Activity review.** The user opens a dashboard to see time allocation and usage percentages by application or site and to browse a chronological history of what they were working on or viewing.
-6. **Next-step guidance.** The user receives optional, non-interruptive recommendations in the app based on recent activity and the current profile, such as a relevant task to resume or a logical next action.
-7. **Chrome profile consent.** During onboarding, the user sees the Chrome profiles available on the device and explicitly selects one or more profiles whose history Knoveyla may ingest.
-8. **Technical alpha setup.** A technical user installs a development-stage Mac build, loads or installs the companion Chrome extension, grants permissions, selects Chrome profiles, and connects their own LLM provider key.
-9. **Provider configuration.** The user selects OpenAI or Anthropic, enters an API key in the app, verifies the connection, and has the credential stored in macOS Keychain rather than in the activity database or a required `.env` file.
+6. **Next-step and behavioral guidance.** The user receives optional, non-interruptive recommendations in the app based on recent activity and the current profile, such as a relevant task to resume, a logical next action, a change in focus, or a break after sustained activity.
+7. **Activity insights.** The user sees understandable summaries such as time spent by topic, repeated research themes, focused-session length, and how many video pages or resources were active within a category.
+8. **Chrome profile consent.** During onboarding, the user sees the Chrome profiles available on the device and explicitly selects one or more profiles whose history Knoveyla may ingest.
+9. **Technical alpha setup.** A technical user installs a development-stage Mac build, loads or installs the companion Chrome extension, grants permissions, selects Chrome profiles, and connects their own LLM provider key.
+10. **Provider configuration.** The user selects OpenAI or Anthropic, enters an API key in the app, verifies the connection, and has the credential stored in macOS Keychain rather than in the activity database or a required `.env` file.
 
 ---
 
@@ -281,6 +283,18 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | FR-68 | If the Mac is asleep, powered off, or the application cannot complete the nightly run, perform the missed refresh on the next available application start or collector wake without creating duplicate daily runs. | Must |
 | FR-69 | Provide a visible manual “Refresh now” control that regenerates the profile and recommendations and shows progress, success, or an actionable provider error. | Must |
 
+### 4.13 Activity insights and behavioral guidance
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-70 | Generate dashboard insights that summarize activity by application, website, inferred topic, content category, and focused-session length for the selected time range. | Must |
+| FR-71 | Show count-based summaries where supported, such as the number of distinct video pages or resources active within an inferred topic, while avoiding claims that content was completed or understood without evidence. | Must |
+| FR-72 | Provide optional in-app behavioral suggestions such as taking a break after sustained activity, changing focus, or reviewing an unusually concentrated activity pattern. | Must |
+| FR-73 | Ground each behavioral suggestion in a concise, user-visible evidence summary and distinguish observed facts from inference. | Must |
+| FR-74 | Use supportive, non-judgmental language; do not shame the user, assign productivity scores, diagnose medical or mental-health conditions, or present weak behavioral inferences as facts. | Must |
+| FR-75 | Let the user dismiss individual behavioral suggestions and disable the behavioral-guidance category without disabling work-continuity recommendations. | Must |
+| FR-76 | Keep all behavioral guidance inside the app for the alpha; do not generate push, system, or background notifications. | Must |
+
 ---
 
 ## 5. Data requirements
@@ -341,6 +355,8 @@ The product must be presented to the user as an assistant getting to know them, 
 ### 6.3 Sensitive-content caution
 
 Behavioral data will sometimes reveal sensitive matters — health concerns, finances, personal difficulties. The profiler must avoid surfacing confident conclusions about such topics, since an incorrect or unwelcome inference ("I see you've been researching a serious illness") is a severe failure even when the underlying data is accurate. When in doubt, the system should hold back rather than presume.
+
+Behavioral guidance must not turn observed activity into a diagnosis or moral judgment. Suggestions such as taking a break may be based on sustained active time, but the product must not claim that the user is addicted, unhealthy, distracted, unproductive, or experiencing a condition. Topic and media summaries must describe the available signal accurately—for example, “12 video pages about local AI were active” rather than “you watched 12 complete videos.”
 
 ### 6.4 Provider data handling
 
@@ -409,6 +425,8 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | Temporary 90-day cold-start data persists after its intended use. | High | Track bootstrap state explicitly, purge days 31–90 immediately after successful first-profile generation, expose incomplete cleanup in diagnostics, and include bootstrap data in single-action deletion. |
 | Safari or Firefox support fragments browser ingestion and delays the alpha. | Medium | Keep Chrome as the only release gate; reuse the ingestion pipeline where practical and omit separate live-tracking implementations when they require meaningful additional work. |
 | Scheduled profiling is missed during sleep or produces duplicate runs after wake. | Medium | Track the last successful refresh and an idempotent run identifier, perform one catch-up refresh when needed, and update the profile and recommendations atomically. |
+| Behavioral guidance feels judgmental, paternalistic, or medically suggestive. | High | Make guidance optional, show the evidence behind it, use neutral language, separate facts from inference, prohibit diagnosis and productivity scoring, and let users disable the category independently. |
+| Activity summaries overstate what the system observed, such as claiming a video was watched completely. | Medium | Report active pages, foreground duration, and counts precisely; never infer completion, comprehension, or intent without supporting evidence. |
 | User-supplied API keys are mishandled or exposed. | High | Store keys only in macOS Keychain, redact credentials from all diagnostics, keep keys out of the extension and database, and send requests directly to the selected provider. |
 | Provider errors, quotas, or user billing interrupt profiling and chat. | Medium | Validate keys in settings, surface actionable provider errors, preserve local collection during outages, and retry profiling only after the user resolves the provider issue. |
 | Next-step recommendations feel judgmental, distracting, or incorrect. | Medium | Keep them inside the app, distinguish recommendations from observed facts, make them dismissible, and collect relevance feedback. |
@@ -432,6 +450,8 @@ Because the MVP exists to test the central hypothesis, success is defined in ter
 - Users inspect their profile and find it recognizable rather than wrong or unsettling.
 - Users understand their time allocation from the dashboard and find the activity history accurate.
 - Users find at least some next-step recommendations relevant and useful rather than intrusive.
+- Users recognize activity and topical summaries as accurate descriptions of the available signal.
+- Users who enable behavioral guidance find at least some suggestions supportive rather than judgmental and can disable the category independently.
 - Technical alpha users can follow the setup documentation, pair the extension, select Chrome profiles, enter their own provider key in the app, and reach a populated dashboard without undocumented intervention.
 - The alpha runs natively on Apple Silicon macOS 26 test Macs without requiring Rosetta.
 - Older Apple Silicon macOS releases are supported only when they pass the existing implementation without delaying macOS 26 delivery.
