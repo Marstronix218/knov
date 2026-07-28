@@ -44,30 +44,69 @@ Important alpha limitations:
 See [Alpha setup](docs/alpha-setup.md) for the complete setup and limitation
 notes.
 
-## Install and launch from source
+## Install the app
 
 Requirements:
 
 - Apple Silicon Mac running macOS 26
+- Git
 - Xcode Command Line Tools
 - Node.js 20.19+ or 22.12+ and npm
 - current stable Rust toolchain
 - Google Chrome 120+ for the companion extension
 
-From the repository root:
+### 1. Download the source
+
+Clone this repository and enter its directory:
+
+```sh
+git clone https://github.com/Marstronix218/knoveyla.git
+cd knoveyla
+```
+
+If you already downloaded the repository as a ZIP, extract it, open Terminal,
+type `cd ` with a trailing space, drag the extracted `knoveyla` folder into the
+Terminal window, and press Return.
+
+### 2. Install dependencies
+
+From the `knoveyla` repository root:
 
 ```sh
 npm install
+```
+
+This installs the desktop and Chrome-extension npm workspaces. Rust downloads
+and compiles the native dependencies the first time the desktop app is started
+or built.
+
+### 3. Choose how to run Knoveyla
+
+For the quickest source-development launch:
+
+```sh
 npm run dev:desktop
 ```
 
-The first command installs both npm workspaces. The second starts the Vite
-frontend inside the native Tauri application. Running `npm run dev` starts only
-the browser preview, which uses mock data and cannot collect activity, access
-Keychain, or call native commands.
+This starts the Vite frontend inside the native Tauri application. Keep the
+terminal open while using Knoveyla; stopping the process also stops activity
+collection and the local Chrome bridge.
 
-Keep the terminal open while using Knoveyla. Stopping the development process
-also stops activity collection and the local Chrome bridge.
+To create an installable macOS application instead:
+
+```sh
+npm run build:desktop
+open apps/desktop/src-tauri/target/release/bundle/macos
+```
+
+When Finder opens, drag **Knoveyla.app** into **Applications**, then launch it
+from that folder. This technical-alpha bundle is unsigned and not notarized. If
+macOS blocks the first launch, Control-click **Knoveyla.app**, choose **Open**,
+and confirm that you want to open it.
+
+Running `npm run dev` starts only the browser preview. It uses mock data and
+cannot collect activity, access Keychain, or call native commands, so it is not
+a substitute for the native app.
 
 ## First-time setup
 

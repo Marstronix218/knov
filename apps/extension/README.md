@@ -12,17 +12,28 @@ paired Knoveyla app on the same computer.
 
 The companion is useful only with the native Knoveyla desktop app running on the
 same Mac. Complete desktop onboarding first, approve the Chrome profile you want
-to pair, and leave the app open while configuring the extension.
+to pair, and leave the app open while configuring the extension. If you have not
+downloaded and installed Knoveyla yet, follow
+[Install the app](../../README.md#install-the-app) first.
 
 ## Build, load, and pair
+
+If you installed Knoveyla from a bundle but do not have the repository locally,
+download it before building the unpacked extension:
+
+```sh
+git clone https://github.com/Marstronix218/knoveyla.git
+cd knoveyla
+```
+
+From the `knoveyla` repository root:
 
 ```sh
 npm install
 npm run build --workspace @knoveyla/chrome-extension
 ```
 
-Run those commands from the repository root. Build the Native Messaging helper
-used by the development app as well:
+When using `npm run dev:desktop`, build the Native Messaging helper as well:
 
 ```sh
 cargo build \
