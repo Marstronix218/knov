@@ -2,8 +2,8 @@
 
 **A behavioral context layer for personal AI**
 
-Version 0.2 — Draft · MVP scope
-Architecture: native collector + chat interface
+Version 0.3 — Draft · MVP scope
+Architecture: native Mac collector + Chrome extension + chat interface
 
 ---
 
@@ -44,9 +44,10 @@ If an AI assistant is given an accurate, continuously updated picture of a user'
 
 ### 1.4 Solution summary
 
-Knoveyla consists of four parts working together on the user's machine:
+Knoveyla consists of five parts working together on the user's machine:
 
 - **Collector.** A native background agent that records which application is in the foreground, the active window title, and the user's browser history, with timestamps and durations.
+- **Chrome extension.** A narrowly permissioned companion that records the active tab's URL, title, and focus duration and sends those events only to the local Mac application.
 - **Profiler.** A local process that periodically filters, redacts, and summarizes the raw activity log into a minimized digest, then uses a remote language model to generate a structured, human-readable profile of the user's interests, skills, and active projects.
 - **Assistant.** A chat interface that loads the profile as context and converses with the user as an assistant that already knows them.
 - **Activity dashboard.** A clear visual account of how the user spends their time, including usage percentages, a browsable activity history, and optional recommendations for useful next steps.
@@ -61,6 +62,7 @@ The following table sets the boundary of the MVP. Items marked out of scope are 
 |---|---|
 | Foreground app + window title capture | Reading inside other apps' content |
 | Local browser history ingestion | Screen recording or audio capture |
+| Chrome extension for active-tab URL, title, and duration | Browser page-body or DOM capture |
 | Local activity database | Mobile (iOS / Android) clients |
 | Periodic profile generation via LLM | Social media in-app content (no API access) |
 | Chat interface using the profile | Email, Spotify, and other OAuth sources |
@@ -93,6 +95,7 @@ This user is reachable, feels the problem acutely, and can evaluate the result. 
 5. **Activity review.** The user opens a dashboard to see time allocation and usage percentages by application or site and to browse a chronological history of what they were working on or viewing.
 6. **Next-step guidance.** The user receives optional, non-interruptive recommendations in the app based on recent activity and the current profile, such as a relevant task to resume or a logical next action.
 7. **Chrome profile consent.** During onboarding, the user sees the Chrome profiles available on the device and explicitly selects one or more profiles whose history Knoveyla may ingest.
+8. **Guided installation.** A non-technical user installs the signed Mac app, adds the published Chrome extension, grants permissions through plain-language prompts, and reaches a working dashboard without using Terminal or developer mode.
 
 ---
 
@@ -109,6 +112,7 @@ This constraint is also strategically favorable: because the data requires a nat
 | Component | Responsibility | Runtime |
 |---|---|---|
 | Collector | Capture foreground app, window title, browser history; write to local store | Native background agent |
+| Chrome extension | Capture active-tab URL, title, and focus duration without reading page content; forward events to the local collector | Published Chrome extension |
 | Local store | Persist raw activity events and the generated profile | Local database (e.g. SQLite) |
 | Profiler | Filter and minimize raw activity locally, send a bounded digest to a remote LLM, and store the resulting structured profile locally | Local process invoking a remote LLM |
 | Assistant | Chat UI; loads profile as context; sends turns to LLM | Web or native UI on local data |
@@ -117,17 +121,21 @@ This constraint is also strategically favorable: because the data requires a nat
 
 ### 3.3 Recommended starting shape
 
-The collector is implemented as a lightweight native agent (for example Electron, Tauri, or a small Swift/Rust/Python background process). The chat interface may be delivered as a local web UI hosted by the agent, which keeps interface development fast while preserving native data access underneath. The split is: native for collection, flexible for interface, local for storage.
+The collector is implemented as a lightweight native Mac agent (for example Tauri with a native macOS helper, or a small Swift/Rust background process). The chat interface may be delivered inside the desktop application using a web-based UI layer, which keeps interface development fast while preserving native data access underneath. A companion Chrome extension provides accurate active-tab metadata and communicates only with the local Mac application. The split is: native for device collection, extension-based for live browser focus, flexible for interface, and local for storage.
+
+The external-user MVP must be distributed as a signed and notarized Mac application with a normal installer or drag-to-Applications flow. The Chrome companion must be installable from the Chrome Web Store. Installation must not require Terminal commands, loading an unpacked extension, disabling operating-system protections, or enabling browser developer mode.
 
 ### 3.4 Data flow
 
-1. During onboarding, the user grants required system permissions and explicitly selects one or more detected Chrome profiles. Browser history is ingested only from the selected profiles.
+1. During onboarding, the user installs or verifies the published Chrome extension, grants required macOS permissions, and explicitly selects one or more detected Chrome profiles. Browser history is ingested only from the selected profiles.
 2. The collector samples the foreground application and active window title at a fixed interval and records permitted browser-history additions, writing timestamped events to the local store.
-3. The dashboard queries the local store to show usage percentages, time allocation, and chronological activity history.
-4. On a schedule (for example nightly), the profiler reads recent events and locally filters, redacts, deduplicates, and aggregates them into a minimized activity digest.
-5. The minimized digest is transmitted to the configured remote LLM, which returns an updated structured profile and optional next-step recommendations. The generated profile and recommendations are stored locally; the request digest is ephemeral and discarded after the response is processed. The complete raw activity log is never transmitted.
-6. When the user opens the assistant, the current profile is loaded and supplied to the LLM as context for the conversation.
-7. Each chat turn the user sends is transmitted to the LLM provider together with the relevant profile context; the response is returned to the UI.
+3. While Chrome is in use, the extension records active-tab URL, title, focus start time, and duration. It sends these metadata events only to the local Mac collector and does not read page content.
+4. The local collector deduplicates and reconciles live extension events with imported Chrome history.
+5. The dashboard queries the local store to show usage percentages, time allocation, and chronological activity history.
+6. On a schedule (for example nightly), the profiler reads recent events and locally filters, redacts, deduplicates, and aggregates them into a minimized activity digest.
+7. The minimized digest is transmitted to the configured remote LLM, which returns an updated structured profile and optional next-step recommendations. The generated profile and recommendations are stored locally; the request digest is ephemeral and discarded after the response is processed. The complete raw activity log is never transmitted.
+8. When the user opens the assistant, the current profile is loaded and supplied to the LLM as context for the conversation.
+9. Each chat turn the user sends is transmitted to the LLM provider together with the relevant profile context; the response is returned to the UI.
 
 ---
 
@@ -195,6 +203,18 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | FR-34 | Show optional recommendations for useful next steps based on recent activity and the current profile. | Must |
 | FR-35 | Let the user dismiss a recommendation and provide feedback when it is irrelevant or unwanted. | Should |
 | FR-36 | Keep recommendations inside the app for the MVP; do not send background, push, or interruptive notifications. | Must |
+
+### 4.6 Chrome extension and browser activity
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-37 | Capture the active Chrome tab's URL, title, focus start time, and focus duration while Chrome is the foreground application. | Must |
+| FR-38 | Use browser tab metadata only; do not inject content scripts, inspect the DOM, read page bodies, capture form input, take screenshots, or record keystrokes. | Must |
+| FR-39 | Send extension events only to the paired local Mac application through an authenticated local communication channel. | Must |
+| FR-40 | Apply collection pause and domain exclusions to extension events immediately. | Must |
+| FR-41 | Show the extension's connection and collection state in both the extension UI and the Mac application. | Must |
+| FR-42 | Detect when the extension is missing, disconnected, or lacks permission and explain that live browser-duration accuracy is degraded while history import remains available. | Must |
+| FR-43 | Guide the user through Chrome Web Store installation and verify successful pairing during onboarding without requiring developer mode. | Must |
 
 ---
 
@@ -266,6 +286,9 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | NFR-5 | Usability | Installation, permission granting, and first profile generation must be achievable by a non-expert in minutes. |
 | NFR-6 | Transparency | Privacy-relevant state (collecting / paused, what is stored) must be visible at a glance. |
 | NFR-7 | Portability | Architecture should not preclude a later second platform (the MVP may target one OS first). |
+| NFR-8 | Distribution | The Mac app must be code-signed and notarized, and the Chrome extension must be published through the Chrome Web Store for external testers. |
+| NFR-9 | Onboarding | A non-technical user must be able to install, pair, grant permissions, select Chrome profiles, and reach a working dashboard without Terminal, developer mode, or manual configuration files. |
+| NFR-10 | Degraded operation | The Mac app must remain usable when the extension is unavailable and clearly distinguish imported history from accurately timed live-tab activity. |
 
 ---
 
@@ -281,6 +304,8 @@ Because chat turns, relevant profile context, and minimized activity digests are
 
 - Operating-system APIs for foreground-window and app-usage information.
 - Read access to the local browser history store.
+- Chrome extension APIs for active-tab metadata and a secure local pairing/communication mechanism.
+- Apple code signing and notarization and Chrome Web Store distribution for non-technical external users.
 - A third-party language model API (e.g. Claude or GPT) for profiling and chat.
 - Local access to the history databases for the Chrome profile or profiles selected by the user.
 
@@ -293,6 +318,9 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | Privacy perception: product reads as surveillance. | High — non-adoption | Local-first architecture, transparent onboarding, visible control, honest framing. |
 | Remote profiling conflicts with user expectations of local-first behavior. | High | Explain the two egress paths before collection, minimize activity locally, never transmit the complete raw log, disclose provider retention, and let the user pause collection or delete local data. |
 | The wrong Chrome profile is ingested or personal profiles are mixed unintentionally. | High | Require explicit multi-profile selection during onboarding, ingest only selected profiles, label profile sources in activity history, and allow the selection to be changed later. |
+| Browser-extension permissions feel invasive or cause abandonment. | High | Request tab metadata only, prohibit page-content access, explain every captured field, provide immediate pause/exclusions, and keep all extension events local. |
+| Chrome Web Store review or native-app pairing delays distribution. | Medium | Keep permissions narrow, prepare store disclosure and privacy materials early, and maintain a history-import degraded mode when live-tab capture is unavailable. |
+| macOS signing, notarization, or permission prompts block non-technical users. | High | Use a standard signed installer, provide guided permission checks and recovery, and test onboarding on a clean non-developer Mac account. |
 | Next-step recommendations feel judgmental, distracting, or incorrect. | Medium | Keep them inside the app, distinguish recommendations from observed facts, make them dismissible, and collect relevance feedback. |
 | Weak signal from duration-only apps. | Medium | Weight window titles and URLs as primary; treat bare durations as corroborating only. |
 | Platform incumbents add comparable behavioral context. | Medium — long term | Compete on cross-app breadth and local-first control, which incumbents are structurally less inclined to offer. |
@@ -314,6 +342,7 @@ Because the MVP exists to test the central hypothesis, success is defined in ter
 - Users inspect their profile and find it recognizable rather than wrong or unsettling.
 - Users understand their time allocation from the dashboard and find the activity history accurate.
 - Users find at least some next-step recommendations relevant and useful rather than intrusive.
+- Non-technical external users can install the Mac app and Chrome extension, grant permissions, select Chrome profiles, and reach a populated dashboard without developer assistance.
 - Users do not uninstall over privacy discomfort after seeing what is collected.
 
 ### 9.3 Explicit anti-goal
