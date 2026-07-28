@@ -448,7 +448,7 @@ function UsageBars({ items }: { items: UsageSlice[] }) {
             <small>{item.detail}</small>
           </div>
           <div className="usage-track"><span style={{ width: `${item.percentage}%`, backgroundColor: item.color }} /></div>
-          <strong>{item.percentage}%</strong>
+          <strong>{item.percentage.toFixed(1)}%</strong>
           <time>{formatDuration(item.seconds)}</time>
         </div>
       ))}

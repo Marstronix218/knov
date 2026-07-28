@@ -89,6 +89,23 @@ describe("dashboard", () => {
     expect(focusedMetric).toHaveTextContent("76% of tracked time");
   });
 
+  it("formats foreground application percentages to one decimal place", async () => {
+    vi.mocked(api.dashboard).mockResolvedValue({
+      ...clone(mockDashboard),
+      appUsage: [
+        { name: "Code", seconds: 60, percentage: 58.333333333333336, color: "#58c7ff" },
+        { name: "Google Chrome", seconds: 60, percentage: 41.666666666666664, color: "#adff2f" },
+        { name: "Other", seconds: 0, percentage: 0, color: "#78828f" },
+      ],
+    });
+
+    await renderRoute("#/dashboard");
+
+    expect(await screen.findByText("58.3%")).toBeInTheDocument();
+    expect(screen.getByText("41.7%")).toBeInTheDocument();
+    expect(screen.getByText("0.0%")).toBeInTheDocument();
+  });
+
   it("labels observed activity separately from cautious inferences", async () => {
     await renderRoute("#/dashboard");
 
