@@ -2,7 +2,7 @@
 
 **A behavioral context layer for personal AI**
 
-Version 0.6 — Draft · Technical-user alpha scope
+Version 0.7 — Draft · Technical-user alpha scope
 Architecture: native Apple Silicon macOS collector + Chrome extension + chat interface
 
 ---
@@ -156,7 +156,7 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | FR-1 | Capture the current foreground application name at a configurable sampling interval. | Must |
 | FR-2 | Capture the active window title alongside the app name. | Must |
 | FR-3 | Record start time and duration for each continuous app-focus session. | Must |
-| FR-4 | Ingest browser history (URL, page title, visit time) from the Chrome profile or profiles explicitly selected by the user. | Must |
+| FR-4 | On first setup, ingest up to the previous 30 days of browser history (URL, page title, visit time) from the Chrome profile or profiles explicitly selected by the user. | Must |
 | FR-5 | Run continuously in the background and resume automatically after reboot. | Must |
 | FR-6 | Respect an exclusion list of apps and domains the user does not want recorded. | Must |
 | FR-7 | Capture extracted search-query terms from browser history where present in the URL. | Should |
@@ -240,6 +240,14 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | FR-50 | Build and run the alpha natively on Apple Silicon (`arm64`) Macs running macOS 26; Intel Mac, universal-binary, Windows, and Linux support are out of scope. | Must |
 | FR-51 | Support older Apple Silicon macOS releases only when doing so requires no separate compatibility code path, no material additional testing burden, and no delay to the macOS 26 alpha. | Should |
 
+### 4.9 Retention and deletion
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-52 | Retain detailed raw activity events and detailed dashboard history in a rolling 30-day local window. | Must |
+| FR-53 | Automatically and permanently purge detailed events older than 30 days from the local store. | Must |
+| FR-54 | Retain the editable generated profile and preserved user corrections until the user deletes them or invokes single-action deletion of all Knoveyla data. | Must |
+
 ---
 
 ## 5. Data requirements
@@ -267,9 +275,9 @@ The profile is the central artifact. It is a structured but human-readable summa
 
 ### 5.4 Retention
 
-Raw activity events should be retained only as long as needed to generate and refresh the profile; a rolling window is appropriate. The user's single-action delete must remove both raw events and the generated profile.
+Detailed raw activity events and detailed dashboard history are retained locally for a rolling 30-day window. Events older than 30 days must be purged automatically and permanently. Initial Chrome-history ingestion is also limited to the previous 30 days even if the browser retains a longer history.
 
-Dashboard history must be backed by the local activity store and obey the same rolling retention window. Remote LLM requests must use an ephemeral minimized digest created for the request rather than a persistent remote copy of the raw event store.
+The editable generated profile and preserved user corrections remain available beyond the event window until the user deletes them. Dashboard history must be backed by the local activity store and cannot expose purged detailed events. Remote LLM requests must use an ephemeral minimized digest created for the request rather than a persistent remote copy of the raw event store. The user's single-action delete must remove all remaining raw events, dashboard history, profiles, corrections, recommendations, settings, and stored provider credentials.
 
 ---
 
@@ -305,7 +313,7 @@ Because chat turns, relevant profile context, and minimized activity digests are
 |---|---|---|
 | NFR-1 | Performance | The collector must run continuously with negligible CPU and memory impact; the user should not perceive system slowdown. |
 | NFR-2 | Reliability | The collector must recover automatically after sleep, reboot, or crash without losing the local store. |
-| NFR-3 | Footprint | The local store must stay within a modest disk budget via retention limits; no unbounded growth. |
+| NFR-3 | Footprint | The local store must enforce the 30-day detailed-event window and must not grow without bound. |
 | NFR-4 | Security | Local data must be protected at rest using the operating system's available protections. |
 | NFR-5 | Usability | A technical alpha user must be able to follow documented setup, grant permissions, configure a provider key, and generate the first profile without undocumented steps. |
 | NFR-6 | Transparency | Privacy-relevant state (collecting / paused, what is stored) must be visible at a glance. |
