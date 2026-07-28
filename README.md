@@ -92,6 +92,18 @@ This starts the Vite frontend inside the native Tauri application. Keep the
 terminal open while using Knoveyla; stopping the process also stops activity
 collection and the local Chrome bridge.
 
+If Tauri reports that `cargo metadata` failed with `No such file or directory`,
+Rust's tools are not available in the current shell. Restart Terminal or reload
+the environment installed by `rustup`, confirm Cargo is available, and retry:
+
+```sh
+source "$HOME/.cargo/env"
+cargo --version
+npm run dev:desktop
+```
+
+If this recurs in zsh, add `. "$HOME/.cargo/env"` to `~/.zprofile`.
+
 To create an installable macOS application instead:
 
 ```sh
