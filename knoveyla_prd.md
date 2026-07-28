@@ -2,7 +2,7 @@
 
 **A behavioral context layer for personal AI**
 
-Version 0.7 — Draft · Technical-user alpha scope
+Version 0.8 — Draft · Technical-user alpha scope
 Architecture: native Apple Silicon macOS collector + Chrome extension + chat interface
 
 ---
@@ -116,7 +116,7 @@ This constraint is also strategically favorable: because the data requires a nat
 |---|---|---|
 | Collector | Capture foreground app, window title, browser history; write to local store | Native background agent |
 | Chrome extension | Capture active-tab URL, title, and focus duration without reading page content; forward events to the local collector | Companion Chrome extension; unpacked installation permitted for alpha |
-| Local store | Persist raw activity events and the generated profile | Local database (e.g. SQLite) |
+| Local store | Persist raw activity events and the generated profile | Embedded SQLite database |
 | Profiler | Filter and minimize raw activity locally, send a bounded digest to a remote LLM, and store the resulting structured profile locally | Local process invoking a remote LLM |
 | Assistant | Chat UI; loads profile as context; sends turns to LLM | Web or native UI on local data |
 | Activity dashboard | Show usage percentages, time allocation, chronological history, and in-app next-step recommendations | Part of the assistant UI |
@@ -124,7 +124,7 @@ This constraint is also strategically favorable: because the data requires a nat
 
 ### 3.3 Recommended starting shape
 
-The collector is implemented as a lightweight native Apple Silicon macOS agent (for example Tauri with a native macOS helper, or a small Swift/Rust background process). The alpha is built and tested for the `arm64` architecture and macOS 26; Intel (`x86_64`) and universal binaries are not required. The deployment target may be lowered to support older Apple Silicon macOS releases only when the chosen dependencies and APIs work without a separate compatibility implementation, meaningful additional testing burden, or delay to the macOS 26 alpha. The chat interface may be delivered inside the desktop application using a web-based UI layer, which keeps interface development fast while preserving native data access underneath. A companion Chrome extension provides accurate active-tab metadata and communicates only with the local Mac application. The split is: native for device collection, extension-based for live browser focus, flexible for interface, and local for storage.
+The application uses Tauri 2: React and TypeScript bundled with Vite for the interface, a Rust core for collection and local orchestration, and embedded SQLite for persistent data. A narrowly scoped Swift helper may be added only for macOS APIs that cannot be implemented reliably through the Rust layer. The alpha is built and tested for the `arm64` architecture and macOS 26; Intel (`x86_64`) and universal binaries are not required. The deployment target may be lowered to support older Apple Silicon macOS releases only when the chosen dependencies and APIs work without a separate compatibility implementation, meaningful additional testing burden, or delay to the macOS 26 alpha. A companion TypeScript Chrome extension provides accurate active-tab metadata and communicates only with the local Mac application.
 
 The technical-user alpha may use a development-stage Mac build and an unpacked Chrome extension installed through browser developer mode. Chrome Web Store publication, polished installers, Apple notarization, and consumer-grade installation are deferred until the behavioral-context hypothesis is validated. Setup documentation must nevertheless be explicit, reproducible, and honest about every permission.
 
@@ -132,16 +132,18 @@ Knoveyla uses a bring-your-own-key model for the alpha. Users select OpenAI or A
 
 ### 3.4 Data flow
 
-1. During setup, the technical user installs or loads the Chrome extension, grants required macOS permissions, and explicitly selects one or more detected Chrome profiles. Browser history is ingested only from the selected profiles.
+1. During setup, the technical user installs or loads the Chrome extension, grants required macOS permissions, and explicitly selects one or more detected Chrome profiles. Up to 90 days of browser history is imported only from the selected profiles into a temporary cold-start dataset.
 2. The user selects OpenAI or Anthropic, enters an API key in the Mac application, and verifies the connection. The application stores the key in macOS Keychain.
 3. The collector samples the foreground application and active window title at a fixed interval and records permitted browser-history additions, writing timestamped events to the local store.
 4. While Chrome is in use, the extension records active-tab URL, title, focus start time, and duration. It sends these metadata events only to the local Mac collector and does not read page content.
-5. The local collector deduplicates and reconciles live extension events with imported Chrome history.
-6. The dashboard queries the local store to show usage percentages, time allocation, and chronological activity history.
-7. On a schedule (for example nightly), the profiler reads recent events and locally filters, redacts, deduplicates, and aggregates them into a minimized activity digest.
-8. Using the user's Keychain-backed API key, the minimized digest is transmitted directly to the configured remote LLM, which returns an updated structured profile and optional next-step recommendations. The generated profile and recommendations are stored locally; the request digest is ephemeral and discarded after the response is processed. The complete raw activity log is never transmitted.
-9. When the user opens the assistant, the current profile is loaded and supplied to the LLM as context for the conversation.
-10. Each chat turn the user sends is transmitted directly to the selected LLM provider using the user's API key, together with the relevant profile context; the response is returned to the UI.
+5. The local collector deduplicates and reconciles live extension events with imported browser history.
+6. For the first profile only, the profiler uses the temporary 90-day browser dataset to improve cold-start topic and project inference.
+7. After the first profile is generated successfully, imported detailed events older than the normal 30-day window are permanently deleted. The temporary bootstrap dataset must never become an ongoing 90-day retention policy.
+8. The dashboard queries the local store to show usage percentages, time allocation, and chronological activity history.
+9. On a schedule (for example nightly), the profiler reads recent events and locally filters, redacts, deduplicates, and aggregates them into a minimized activity digest.
+10. Using the user's Keychain-backed API key, the minimized digest is transmitted directly to the configured remote LLM, which returns an updated structured profile and optional next-step recommendations. The generated profile and recommendations are stored locally; the request digest is ephemeral and discarded after the response is processed. The complete raw activity log is never transmitted.
+11. When the user opens the assistant, the current profile is loaded and supplied to the LLM as context for the conversation.
+12. Each chat turn the user sends is transmitted directly to the selected LLM provider using the user's API key, together with the relevant profile context; the response is returned to the UI.
 
 ---
 
@@ -156,7 +158,7 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | FR-1 | Capture the current foreground application name at a configurable sampling interval. | Must |
 | FR-2 | Capture the active window title alongside the app name. | Must |
 | FR-3 | Record start time and duration for each continuous app-focus session. | Must |
-| FR-4 | On first setup, ingest up to the previous 30 days of browser history (URL, page title, visit time) from the Chrome profile or profiles explicitly selected by the user. | Must |
+| FR-4 | On first setup, ingest up to the previous 90 days of browser history (URL, page title, visit time) from the Chrome profile or profiles explicitly selected by the user for cold-start profile generation. | Must |
 | FR-5 | Run continuously in the background and resume automatically after reboot. | Must |
 | FR-6 | Respect an exclusion list of apps and domains the user does not want recorded. | Must |
 | FR-7 | Capture extracted search-query terms from browser history where present in the URL. | Should |
@@ -247,6 +249,18 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | FR-52 | Retain detailed raw activity events and detailed dashboard history in a rolling 30-day local window. | Must |
 | FR-53 | Automatically and permanently purge detailed events older than 30 days from the local store. | Must |
 | FR-54 | Retain the editable generated profile and preserved user corrections until the user deletes them or invokes single-action deletion of all Knoveyla data. | Must |
+| FR-55 | Treat imported browser events between 31 and 90 days old as temporary cold-start data, use them for the first profile, and permanently delete them after successful initial profile generation. | Must |
+
+### 4.10 Implementation stack
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-56 | Build the desktop application with Tauri 2 using a React and TypeScript frontend bundled with Vite. | Must |
+| FR-57 | Implement collection, local orchestration, security-sensitive operations, and native command handling in the Tauri Rust core. | Must |
+| FR-58 | Use a narrowly scoped Swift helper or native bridge only when required macOS APIs cannot be implemented reliably through the Rust layer; do not create a second general-purpose application backend. | Should |
+| FR-59 | Store all persistent alpha data in an embedded local SQLite database with versioned migrations. | Must |
+| FR-60 | Implement the Chrome extension in TypeScript using the current Chrome extension manifest format. | Must |
+| FR-61 | Do not use Next.js server-side rendering, hosted Supabase, or a local Supabase service stack in the alpha. | Must |
 
 ---
 
@@ -275,9 +289,17 @@ The profile is the central artifact. It is a structured but human-readable summa
 
 ### 5.4 Retention
 
-Detailed raw activity events and detailed dashboard history are retained locally for a rolling 30-day window. Events older than 30 days must be purged automatically and permanently. Initial Chrome-history ingestion is also limited to the previous 30 days even if the browser retains a longer history.
+Detailed raw activity events and detailed dashboard history are retained locally for a rolling 30-day window. Events older than 30 days must be purged automatically and permanently during normal operation.
 
-The editable generated profile and preserved user corrections remain available beyond the event window until the user deletes them. Dashboard history must be backed by the local activity store and cannot expose purged detailed events. Remote LLM requests must use an ephemeral minimized digest created for the request rather than a persistent remote copy of the raw event store. The user's single-action delete must remove all remaining raw events, dashboard history, profiles, corrections, recommendations, settings, and stored provider credentials.
+The first-run bootstrap may import up to 90 days of history from the browser profiles selected by the user. Imported events between 31 and 90 days old are temporary: they may be used to generate the first profile but must be deleted permanently after that profile succeeds. If initial profiling does not complete, the application must identify the temporary bootstrap state clearly and must not silently convert it into ongoing retention.
+
+The editable generated profile and preserved user corrections remain available beyond the event window until the user deletes them. Dashboard history must be backed by the local activity store and cannot expose purged detailed events. Remote LLM requests must use an ephemeral minimized digest created for the request rather than a persistent remote copy of the raw event store. The user's single-action delete must remove all remaining raw events, temporary bootstrap data, dashboard history, profiles, corrections, recommendations, settings, and stored provider credentials.
+
+### 5.5 Local storage technology
+
+SQLite is the alpha's embedded local database. It stores activity events, browser-profile source metadata, profile versions, user corrections, recommendations, settings that are not secrets, and retention state. Schema changes must use versioned migrations.
+
+Hosted Supabase is excluded because raw behavioral data and profiles are required to remain local. Running the full Supabase stack locally is also excluded because it would add a container runtime and multiple services to a lightweight background application. Supabase may be reconsidered later for explicitly opt-in account, sync, or collaboration features, but it must not become a prerequisite for the local alpha.
 
 ---
 
@@ -323,6 +345,7 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | NFR-10 | Degraded operation | The Mac app must remain usable when the extension is unavailable and clearly distinguish imported history from accurately timed live-tab activity. |
 | NFR-11 | Credential security | Provider credentials must be retrieved from macOS Keychain only when needed and must be redacted from logs, error reports, UI diagnostics, and exported data. |
 | NFR-12 | OS compatibility | macOS 26 is the required and fully tested target. Any older Apple Silicon support is best-effort and must not introduce alternate product behavior or delay the required target. |
+| NFR-13 | Technology footprint | Normal application use must not require Docker, a local Postgres server, a Supabase stack, Python, Node.js, or other separately installed runtimes. Required runtimes must be packaged into the application or compiled into the native bundle. |
 
 ---
 
@@ -340,6 +363,7 @@ Because chat turns, relevant profile context, and minimized activity digests are
 
 - Operating-system APIs for foreground-window and app-usage information.
 - An Apple Silicon Mac running macOS 26 and an `arm64`-capable macOS development toolchain.
+- Tauri 2, Rust, React, TypeScript, Vite, and embedded SQLite.
 - Read access to the local browser history store.
 - Chrome extension APIs for active-tab metadata and a secure local pairing/communication mechanism.
 - A third-party language model API (e.g. Claude or GPT) for profiling and chat.
@@ -359,6 +383,8 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | Manual extension installation or native-app pairing creates alpha setup friction. | Medium | Provide exact technical setup instructions, verify pairing in the app, and maintain a history-import degraded mode when live-tab capture is unavailable. |
 | Apple Silicon-only support reduces the available tester pool. | Low for alpha | Recruit alpha testers with Apple Silicon Macs and revisit Intel or other platforms only after the core hypothesis is validated. |
 | Supporting older macOS releases expands compatibility work and delays the alpha. | Medium | Treat macOS 26 as the only release gate; lower the deployment target only when the implementation and dependencies already work without separate code paths or material extra testing. |
+| A mixed Rust/TypeScript stack creates maintenance overhead for a primarily web-stack developer. | Medium | Keep native commands narrow, document the frontend/native boundary, use React and TypeScript for product UI, and introduce Swift only for APIs that demonstrably require it. |
+| Temporary 90-day cold-start data persists after its intended use. | High | Track bootstrap state explicitly, purge days 31–90 immediately after successful first-profile generation, expose incomplete cleanup in diagnostics, and include bootstrap data in single-action deletion. |
 | User-supplied API keys are mishandled or exposed. | High | Store keys only in macOS Keychain, redact credentials from all diagnostics, keep keys out of the extension and database, and send requests directly to the selected provider. |
 | Provider errors, quotas, or user billing interrupt profiling and chat. | Medium | Validate keys in settings, surface actionable provider errors, preserve local collection during outages, and retry profiling only after the user resolves the provider issue. |
 | Next-step recommendations feel judgmental, distracting, or incorrect. | Medium | Keep them inside the app, distinguish recommendations from observed facts, make them dismissible, and collect relevance feedback. |
