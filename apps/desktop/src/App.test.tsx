@@ -24,6 +24,7 @@ function stubApi() {
     ...settings,
   }));
   vi.spyOn(api, "setBrowserProfiles").mockResolvedValue(undefined);
+  vi.spyOn(api, "reimportChromeHistory").mockResolvedValue(clone(mockProfile));
   vi.spyOn(api, "dismissRecommendation").mockResolvedValue(undefined);
   vi.spyOn(api, "refreshProfile").mockResolvedValue(clone(mockProfile));
 }
@@ -78,15 +79,26 @@ describe("onboarding", () => {
 describe("dashboard", () => {
   beforeEach(stubApi);
 
-  it("renders tracked and focused time from dashboard data", async () => {
+  it("renders tracked time separately from sustained foreground sessions", async () => {
     await renderRoute("#/dashboard");
 
     const trackedMetric = (await screen.findByText("Tracked time")).closest("article");
-    const focusedMetric = screen.getByText("Focused time").closest("article");
+    const focusedMetric = screen.getByText("Sustained focus").closest("article");
 
     expect(trackedMetric).toHaveTextContent("6h 06m");
+    expect(trackedMetric).toHaveTextContent("Live foreground activity · idle excluded");
     expect(focusedMetric).toHaveTextContent("4h 39m");
-    expect(focusedMetric).toHaveTextContent("76% of tracked time");
+    expect(focusedMetric).toHaveTextContent("76.2% of tracked · sessions 5m+");
+  });
+
+  it("lists the active topic names", async () => {
+    await renderRoute("#/dashboard");
+
+    const topics = (await screen.findByText("Active topics")).closest("article");
+    expect(topics).toHaveTextContent("Software development");
+    expect(topics).toHaveTextContent("Planning and notes");
+    expect(topics).toHaveTextContent("Web research");
+    expect(topics).toHaveTextContent("Inferred from app, title, and domain signals");
   });
 
   it("formats foreground application percentages to one decimal place", async () => {
@@ -97,6 +109,10 @@ describe("dashboard", () => {
         { name: "Google Chrome", seconds: 60, percentage: 41.666666666666664, color: "#adff2f" },
         { name: "Other", seconds: 0, percentage: 0, color: "#78828f" },
       ],
+      siteUsage: [
+        { name: "example.com", seconds: 60, percentage: 66.66666666666667, color: "#58c7ff" },
+        { name: "Other", seconds: 30, percentage: 33.333333333333336, color: "#78828f" },
+      ],
     });
 
     await renderRoute("#/dashboard");
@@ -104,6 +120,8 @@ describe("dashboard", () => {
     expect(await screen.findByText("58.3%")).toBeInTheDocument();
     expect(screen.getByText("41.7%")).toBeInTheDocument();
     expect(screen.getByText("0.0%")).toBeInTheDocument();
+    expect(screen.getByText("66.7%")).toBeInTheDocument();
+    expect(screen.getByText("33.3%")).toBeInTheDocument();
   });
 
   it("labels observed activity separately from cautious inferences", async () => {
@@ -204,6 +222,20 @@ describe("settings privacy disclosures", () => {
     expect(await screen.findByText("Foreground app, window title, and permitted browser metadata.")).toBeInTheDocument();
   });
 
+  it("re-imports Chrome history and refreshes the profile as one operation", async () => {
+    const reimport = vi.mocked(api.reimportChromeHistory);
+    const refresh = vi.mocked(api.refreshProfile);
+    await renderRoute("#/settings");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Re-import Chrome history" }));
+
+    await waitFor(() => expect(reimport).toHaveBeenCalledOnce());
+    expect(refresh).not.toHaveBeenCalled();
+    expect(
+      await screen.findByText("Chrome durations imported and your profile was refreshed."),
+    ).toBeInTheDocument();
+  });
+
   it("discloses the full scope of permanent deletion", async () => {
     await renderRoute("#/settings");
 
@@ -255,5 +287,39 @@ describe("assistant chat", () => {
 
     expect(screen.getByRole("button", { name: /Send/ })).toBeDisabled();
     expect(chat).not.toHaveBeenCalled();
+  });
+
+  it("renders assistant Markdown as structured content", async () => {
+    const response: ChatMessage = {
+      id: "markdown-response",
+      role: "assistant",
+      content: [
+        "Here are the **next steps**:",
+        "",
+        "## Immediate",
+        "",
+        "- Create a short TODO list",
+        "- Update the README",
+        "",
+        "1. Run the app",
+        "2. Check the tests",
+      ].join("\n"),
+      createdAt: "2026-07-27T17:05:00.000Z",
+    };
+    vi.spyOn(api, "chat").mockResolvedValue(response);
+    await renderRoute("#/assistant");
+
+    fireEvent.change(screen.getByPlaceholderText("What should I focus on next?"), {
+      target: { value: "What should I work on?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send/ }));
+
+    expect(await screen.findByRole("heading", { name: "Immediate" })).toBeInTheDocument();
+    expect(screen.getByText("next steps").tagName).toBe("STRONG");
+
+    const lists = screen.getAllByRole("list");
+    expect(lists).toHaveLength(2);
+    expect(within(lists[0]).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(lists[1]).getAllByRole("listitem")).toHaveLength(2);
   });
 });

@@ -26,9 +26,10 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import "./App.css";
+import { MarkdownMessage } from "./components/MarkdownMessage";
 import { useResource } from "./hooks/useResource";
 import { api, isDesktopRuntime } from "./lib/api";
-import { domainFromUrl, formatDuration, formatTime } from "./lib/format";
+import { domainFromUrl, formatDuration, formatPercentage, formatTime } from "./lib/format";
 import type {
   ActivityEvent,
   ChatMessage,
@@ -359,13 +360,13 @@ function DashboardPage() {
 }
 
 function DashboardContent({ data, onDismiss }: { data: DashboardData; onDismiss: (id: string, feedback?: string) => Promise<unknown> }) {
-  const focusPercent = data.trackedSeconds ? Math.round((data.focusedSeconds / data.trackedSeconds) * 100) : 0;
+  const focusPercent = data.trackedSeconds ? (data.focusedSeconds / data.trackedSeconds) * 100 : 0;
   return (
     <>
       <section className="metric-strip">
-        <Metric label="Tracked time" value={formatDuration(data.trackedSeconds)} detail="Foreground activity" icon={<Clock3 />} />
-        <Metric label="Focused time" value={formatDuration(data.focusedSeconds)} detail={`${focusPercent}% of tracked time`} icon={<Eye />} />
-        <Metric label="Active topics" value={String(data.insights.length)} detail="Grounded in visible activity" icon={<Brain />} />
+        <Metric label="Tracked time" value={formatDuration(data.trackedSeconds)} detail="Live foreground activity · idle excluded" icon={<Clock3 />} />
+        <Metric label="Sustained focus" value={formatDuration(data.focusedSeconds)} detail={`${formatPercentage(focusPercent)} of tracked · sessions 5m+`} icon={<Eye />} />
+        <ActiveTopicsMetric topics={data.activeTopics} />
       </section>
 
       <div className="dashboard-grid">
@@ -429,6 +430,25 @@ function Metric({ label, value, detail, icon }: { label: string; value: string; 
   );
 }
 
+function ActiveTopicsMetric({ topics }: { topics: DashboardData["activeTopics"] }) {
+  return (
+    <article className="metric-card topic-metric">
+      <div className="metric-icon"><Brain /></div>
+      <div>
+        <span>Active topics</span>
+        {topics.length ? (
+          <ul className="topic-list">
+            {topics.map((topic) => <li key={topic.name}>{topic.name}</li>)}
+          </ul>
+        ) : (
+          <strong className="topic-empty">None yet</strong>
+        )}
+        <small>Inferred from app, title, and domain signals</small>
+      </div>
+    </article>
+  );
+}
+
 function PanelHeader({ title, subtitle, link }: { title: string; subtitle: string; link?: string }) {
   return (
     <div className="panel-header">
@@ -448,7 +468,7 @@ function UsageBars({ items }: { items: UsageSlice[] }) {
             <small>{item.detail}</small>
           </div>
           <div className="usage-track"><span style={{ width: `${item.percentage}%`, backgroundColor: item.color }} /></div>
-          <strong>{item.percentage.toFixed(1)}%</strong>
+          <strong>{formatPercentage(item.percentage)}</strong>
           <time>{formatDuration(item.seconds)}</time>
         </div>
       ))}
@@ -475,7 +495,7 @@ function DonutSummary({ items }: { items: UsageSlice[] }) {
       </div>
       <div className="legend">
         {items.map((item) => (
-          <div key={item.name}><i style={{ background: item.color }} /><span>{item.name}</span><strong>{item.percentage}%</strong></div>
+          <div key={item.name}><i style={{ background: item.color }} /><span>{item.name}</span><strong>{formatPercentage(item.percentage)}</strong></div>
         ))}
       </div>
     </div>
@@ -686,7 +706,14 @@ function AssistantPage() {
           {messages.map((message) => (
             <article className={`message ${message.role}`} key={message.id}>
               <div className="message-avatar">{message.role === "assistant" ? <Bot size={18} /> : <CircleUserRound size={18} />}</div>
-              <div><p>{message.content}</p><time>{formatTime(message.createdAt)}</time></div>
+              <div className="message-body">
+                {message.role === "assistant" ? (
+                  <MarkdownMessage>{message.content}</MarkdownMessage>
+                ) : (
+                  <div className="message-content user-content">{message.content}</div>
+                )}
+                <time>{formatTime(message.createdAt)}</time>
+              </div>
             </article>
           ))}
           {sending && <article className="message assistant"><div className="message-avatar"><Bot size={18} /></div><div className="typing"><i /><i /><i /></div></article>}
@@ -708,10 +735,28 @@ function SettingsPage() {
   const [extensionId, setExtensionId] = useState("");
   const [providerMessage, setProviderMessage] = useState("");
   const [pairingMessage, setPairingMessage] = useState("");
+  const [historyImportMessage, setHistoryImportMessage] = useState("");
+  const [historyImportError, setHistoryImportError] = useState(false);
+  const [historyImporting, setHistoryImporting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const patch = async (settings: Partial<SettingsData>) => {
     resource.setData(await api.saveSettings(settings));
+  };
+
+  const reimportHistory = async () => {
+    setHistoryImporting(true);
+    setHistoryImportError(false);
+    setHistoryImportMessage("Re-importing the last 30 days of Chrome history…");
+    try {
+      await api.reimportChromeHistory();
+      setHistoryImportMessage("Chrome durations imported and your profile was refreshed.");
+    } catch (cause) {
+      setHistoryImportError(true);
+      setHistoryImportMessage(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setHistoryImporting(false);
+    }
   };
 
   return (
@@ -757,25 +802,44 @@ function SettingsPage() {
               <SettingsHeading icon={<BarChart3 />} title="Browser profiles" detail="Chrome is required. Safari and Firefox remain best-effort." />
               <ResourceState {...browsers}>
                 {(profiles) => (
-                  <div className="browser-list">
-                    {profiles.map((profile) => (
-                      <label key={profile.id}>
-                        <input
-                          type="checkbox"
-                          checked={settings.selectedBrowserProfileIds.includes(profile.id)}
-                          onChange={(event) => {
-                            const profileIds = event.target.checked
-                              ? [...settings.selectedBrowserProfileIds, profile.id]
-                              : settings.selectedBrowserProfileIds.filter((id) => id !== profile.id);
-                            void api.setBrowserProfiles(profileIds).then(() => patch({ selectedBrowserProfileIds: profileIds }));
-                          }}
-                        />
-                        <div className="browser-icon">{profile.browser.slice(0, 1).toUpperCase()}</div>
-                        <div><strong>{profile.name}</strong><p>{profile.browser} · {profile.path}</p><code className="profile-id">ID: {profile.id}</code></div>
-                        <span className={`support-badge ${profile.support}`}>{profile.support}</span>
-                      </label>
-                    ))}
-                  </div>
+                  <>
+                    <div className="browser-list">
+                      {profiles.map((profile) => (
+                        <label key={profile.id}>
+                          <input
+                            type="checkbox"
+                            checked={settings.selectedBrowserProfileIds.includes(profile.id)}
+                            onChange={(event) => {
+                              const profileIds = event.target.checked
+                                ? [...settings.selectedBrowserProfileIds, profile.id]
+                                : settings.selectedBrowserProfileIds.filter((id) => id !== profile.id);
+                              void api.setBrowserProfiles(profileIds).then(() => patch({ selectedBrowserProfileIds: profileIds }));
+                            }}
+                          />
+                          <div className="browser-icon">{profile.browser.slice(0, 1).toUpperCase()}</div>
+                          <div><strong>{profile.name}</strong><p>{profile.browser} · {profile.path}</p><code className="profile-id">ID: {profile.id}</code></div>
+                          <span className={`support-badge ${profile.support}`}>{profile.support}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="inline-actions">
+                      <button
+                        className="ghost-button"
+                        disabled={historyImporting || settings.selectedBrowserProfileIds.length === 0}
+                        onClick={() => void reimportHistory()}
+                      >
+                        {historyImporting ? <LoaderCircle size={15} className="spin" /> : <Clock3 size={15} />}
+                        {historyImporting ? "Re-importing…" : "Re-import Chrome history"}
+                      </button>
+                    </div>
+                    <p className="status-detail">Reads the last 30 days from selected local Chrome profiles for browsing context and rebuilds your profile. Foreground app time comes from live local collection because Chrome history durations are not reliable screen-time data.</p>
+                    {historyImportMessage && (
+                      <p className={historyImportError ? "error-message" : "success-message"}>
+                        {!historyImportError && <Check size={14} />}
+                        {historyImportMessage}
+                      </p>
+                    )}
+                  </>
                 )}
               </ResourceState>
             </section>

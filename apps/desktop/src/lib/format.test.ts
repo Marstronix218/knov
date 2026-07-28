@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { domainFromUrl, formatDuration, formatTime } from "./format";
+import { domainFromUrl, formatDuration, formatPercentage, formatTime } from "./format";
 
 describe("formatDuration", () => {
   it("formats durations under one hour as whole minutes", () => {
@@ -8,6 +8,14 @@ describe("formatDuration", () => {
 
   it("formats durations over one hour with zero-padded minutes", () => {
     expect(formatDuration(3_900)).toBe("1h 05m");
+  });
+});
+
+describe("formatPercentage", () => {
+  it("rounds percentages to exactly one decimal place", () => {
+    expect(formatPercentage(58.333333333333336)).toBe("58.3%");
+    expect(formatPercentage(41.666666666666664)).toBe("41.7%");
+    expect(formatPercentage(0)).toBe("0.0%");
   });
 });
 

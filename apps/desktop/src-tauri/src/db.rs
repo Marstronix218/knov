@@ -179,7 +179,10 @@ impl Database {
              VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
              ON CONFLICT(fingerprint) DO UPDATE SET
                ended_at=excluded.ended_at,
-               duration_seconds=MAX(activity_events.duration_seconds,excluded.duration_seconds),
+               duration_seconds=CASE
+                 WHEN excluded.source='chrome_history' THEN excluded.duration_seconds
+                 ELSE MAX(activity_events.duration_seconds,excluded.duration_seconds)
+               END,
                page_title=COALESCE(excluded.page_title,activity_events.page_title),
                search_query=COALESCE(excluded.search_query,activity_events.search_query)",
             params![
@@ -236,14 +239,25 @@ impl Database {
         let conn = self.conn();
         let total: i64 = conn.query_row(
             "SELECT COALESCE(SUM(duration_seconds),0) FROM activity_events
-             WHERE occurred_at BETWEEN ?1 AND ?2",
+             WHERE occurred_at BETWEEN ?1 AND ?2
+               AND source IN ('app_focus','chrome_extension')",
             params![request.start_at, request.end_at],
             |r| r.get(0),
         )?;
-        let aggregate = |expression: &str| -> AppResult<Vec<UsageItem>> {
+        let focused: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(duration_seconds),0) FROM activity_events
+             WHERE occurred_at BETWEEN ?1 AND ?2
+               AND source IN ('app_focus','chrome_extension')
+               AND duration_seconds>=300",
+            params![request.start_at, request.end_at],
+            |r| r.get(0),
+        )?;
+        let aggregate = |expression: &str, source_filter: &str| -> AppResult<Vec<UsageItem>> {
             let denominator_sql = format!(
                 "SELECT COALESCE(SUM(duration_seconds),0) FROM activity_events
-                 WHERE occurred_at BETWEEN ?1 AND ?2 AND {expression} IS NOT NULL"
+                 WHERE occurred_at BETWEEN ?1 AND ?2
+                   AND {source_filter}
+                   AND {expression} IS NOT NULL"
             );
             let denominator: i64 = conn.query_row(
                 &denominator_sql,
@@ -252,7 +266,9 @@ impl Database {
             )?;
             let sql = format!(
                 "SELECT {expression},SUM(duration_seconds) AS seconds FROM activity_events
-                 WHERE occurred_at BETWEEN ?1 AND ?2 AND {expression} IS NOT NULL
+                 WHERE occurred_at BETWEEN ?1 AND ?2
+                   AND {source_filter}
+                   AND {expression} IS NOT NULL
                  GROUP BY {expression} ORDER BY seconds DESC LIMIT 25"
             );
             let mut statement = conn.prepare(&sql)?;
@@ -270,7 +286,10 @@ impl Database {
             })?;
             Ok(rows.collect::<Result<Vec<_>, _>>()?)
         };
-        let applications = aggregate("app_name")?;
+        let applications = aggregate(
+            "app_name",
+            "source IN ('app_focus','chrome_extension')",
+        )?;
         let websites = aggregate(
             "CASE WHEN url LIKE 'http%' THEN
                replace(substr(url,instr(url,'//')+2,
@@ -278,10 +297,12 @@ impl Database {
                    THEN length(url)
                    ELSE instr(substr(url,instr(url,'//')+2),'/')-1 END),'www.','')
              END",
+            "source IN ('chrome_history','chrome_extension')",
         )?;
         drop(conn);
         Ok(Dashboard {
             total_seconds: total,
+            focused_seconds: focused,
             applications,
             websites,
             recommendations: self.recommendations(false)?,
@@ -472,6 +493,96 @@ impl Database {
             })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(serde_json::json!({ "activitySummary": entries }))
+    }
+
+    pub fn chat_activity_summary(
+        &self,
+        start_at: i64,
+        end_at: i64,
+    ) -> AppResult<serde_json::Value> {
+        let conn = self.conn();
+        let tracked_seconds: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(duration_seconds),0) FROM activity_events
+             WHERE occurred_at BETWEEN ?1 AND ?2
+               AND source IN ('app_focus','chrome_extension')",
+            params![start_at, end_at],
+            |row| row.get(0),
+        )?;
+        let sustained_seconds: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(duration_seconds),0) FROM activity_events
+             WHERE occurred_at BETWEEN ?1 AND ?2
+               AND source IN ('app_focus','chrome_extension')
+               AND duration_seconds>=300",
+            params![start_at, end_at],
+            |row| row.get(0),
+        )?;
+
+        let mut app_statement = conn.prepare(
+            "SELECT app_name,SUM(duration_seconds),COUNT(*) FROM activity_events
+             WHERE occurred_at BETWEEN ?1 AND ?2
+               AND source IN ('app_focus','chrome_extension')
+             GROUP BY app_name ORDER BY SUM(duration_seconds) DESC LIMIT 15",
+        )?;
+        let applications = app_statement
+            .query_map(params![start_at, end_at], |row| {
+                Ok(serde_json::json!({
+                    "name":row.get::<_,String>(0)?,
+                    "seconds":row.get::<_,i64>(1)?,
+                    "sessions":row.get::<_,i64>(2)?
+                }))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let domain_expression =
+            "replace(substr(url,instr(url,'//')+2,
+               CASE WHEN instr(substr(url,instr(url,'//')+2),'/')=0
+                 THEN length(url)
+                 ELSE instr(substr(url,instr(url,'//')+2),'/')-1 END),'www.','')";
+        let mut live_site_statement = conn.prepare(&format!(
+            "SELECT {domain_expression},SUM(duration_seconds),COUNT(*) FROM activity_events
+             WHERE occurred_at BETWEEN ?1 AND ?2
+               AND source='chrome_extension' AND url LIKE 'http%'
+             GROUP BY {domain_expression} ORDER BY SUM(duration_seconds) DESC LIMIT 15"
+        ))?;
+        let live_sites = live_site_statement
+            .query_map(params![start_at, end_at], |row| {
+                Ok(serde_json::json!({
+                    "domain":row.get::<_,String>(0)?,
+                    "seconds":row.get::<_,i64>(1)?,
+                    "sessions":row.get::<_,i64>(2)?
+                }))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let live_browser_seconds = live_sites
+            .iter()
+            .filter_map(|site| site.get("seconds").and_then(serde_json::Value::as_i64))
+            .sum::<i64>();
+
+        let mut history_site_statement = conn.prepare(&format!(
+            "SELECT {domain_expression},COUNT(*) FROM activity_events
+             WHERE occurred_at BETWEEN ?1 AND ?2
+               AND source='chrome_history' AND url LIKE 'http%'
+             GROUP BY {domain_expression} ORDER BY COUNT(*) DESC LIMIT 15"
+        ))?;
+        let historical_sites = history_site_statement
+            .query_map(params![start_at, end_at], |row| {
+                Ok(serde_json::json!({
+                    "domain":row.get::<_,String>(0)?,
+                    "visits":row.get::<_,i64>(1)?
+                }))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(serde_json::json!({
+            "startAt":start_at,
+            "endAt":end_at,
+            "trackedSeconds":tracked_seconds,
+            "sustainedSeconds":sustained_seconds,
+            "liveBrowserSeconds":live_browser_seconds,
+            "applicationTime":applications,
+            "liveWebsiteTime":live_sites,
+            "historicalWebsiteVisits":historical_sites
+        }))
     }
 
     pub fn delete_all_local_data(&self) -> AppResult<()> {
@@ -666,6 +777,100 @@ mod tests {
         assert!(!db.settings().unwrap().collection_enabled);
         assert!(db.insert_event(&event(100, false), "same").unwrap());
         assert!(!db.insert_event(&event(100, false), "same").unwrap());
+    }
+
+    #[test]
+    fn reimport_can_correct_an_overstated_chrome_history_duration() {
+        let db = Database::in_memory().unwrap();
+        let mut imported = event(100, false);
+        imported.source = ActivitySource::ChromeHistory;
+        imported.duration_seconds = 50_000;
+        db.insert_event(&imported, "history-correction").unwrap();
+
+        imported.duration_seconds = 120;
+        db.insert_event(&imported, "history-correction").unwrap();
+
+        let corrected = db
+            .history(&HistoryRequest {
+                start_at: 0,
+                end_at: 1_000,
+                search: None,
+                source: Some(ActivitySource::ChromeHistory),
+                limit: None,
+                offset: None,
+            })
+            .unwrap();
+        assert_eq!(corrected[0].duration_seconds, 120);
+    }
+
+    #[test]
+    fn dashboard_separates_imported_duration_from_live_foreground_focus() {
+        let db = Database::in_memory().unwrap();
+        let mut collector = event(100, false);
+        collector.duration_seconds = 600;
+        db.insert_event(&collector, "collector").unwrap();
+
+        let mut imported = event(200, false);
+        imported.duration_seconds = 900;
+        imported.source = ActivitySource::ChromeHistory;
+        db.insert_event(&imported, "history").unwrap();
+
+        let mut chrome = event(300, false);
+        chrome.duration_seconds = 300;
+        chrome.source = ActivitySource::ChromeExtension;
+        db.insert_event(&chrome, "extension").unwrap();
+
+        db.insert_event(&event(400, false), "short-collector")
+            .unwrap();
+
+        let dashboard = db
+            .dashboard(&DashboardRequest {
+                start_at: 0,
+                end_at: 1_000,
+            })
+            .unwrap();
+
+        assert_eq!(dashboard.total_seconds, 960);
+        assert_eq!(dashboard.focused_seconds, 900);
+        assert_eq!(
+            dashboard
+                .applications
+                .iter()
+                .map(|item| item.seconds)
+                .sum::<i64>(),
+            960
+        );
+    }
+
+    #[test]
+    fn chat_summary_separates_live_youtube_time_from_historical_visits() {
+        let db = Database::in_memory().unwrap();
+        let mut live_youtube = event(100, false);
+        live_youtube.app_name = "Google Chrome".into();
+        live_youtube.url = Some("https://www.youtube.com/watch?v=live".into());
+        live_youtube.duration_seconds = 600;
+        live_youtube.source = ActivitySource::ChromeExtension;
+        db.insert_event(&live_youtube, "live-youtube").unwrap();
+
+        let mut historical_youtube = event(200, false);
+        historical_youtube.app_name = "Google Chrome".into();
+        historical_youtube.url = Some("https://www.youtube.com/watch?v=history".into());
+        historical_youtube.duration_seconds = 50_000;
+        historical_youtube.source = ActivitySource::ChromeHistory;
+        db.insert_event(&historical_youtube, "historical-youtube")
+            .unwrap();
+
+        let summary = db.chat_activity_summary(0, 1_000).unwrap();
+
+        assert_eq!(summary["trackedSeconds"], 600);
+        assert_eq!(summary["liveBrowserSeconds"], 600);
+        assert_eq!(summary["liveWebsiteTime"][0]["domain"], "youtube.com");
+        assert_eq!(summary["liveWebsiteTime"][0]["seconds"], 600);
+        assert_eq!(
+            summary["historicalWebsiteVisits"][0]["domain"],
+            "youtube.com"
+        );
+        assert_eq!(summary["historicalWebsiteVisits"][0]["visits"], 1);
     }
 
     #[test]

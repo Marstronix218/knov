@@ -9,7 +9,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, RwLock,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use chrono::{Local, TimeZone, Utc};
@@ -38,6 +38,7 @@ pub struct AppState {
     pub refresh_lock: Arc<AtomicBool>,
 }
 
+#[derive(Debug)]
 struct RefreshPermit(Arc<AtomicBool>);
 
 impl Drop for RefreshPermit {
@@ -50,6 +51,23 @@ fn acquire_refresh(lock: &Arc<AtomicBool>) -> AppResult<RefreshPermit> {
     lock.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
         .map(|_| RefreshPermit(lock.clone()))
         .map_err(|_| AppError::InvalidInput("A profile refresh is already running.".into()))
+}
+
+fn wait_for_refresh(lock: &Arc<AtomicBool>, timeout: Duration) -> AppResult<RefreshPermit> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match acquire_refresh(lock) {
+            Ok(permit) => return Ok(permit),
+            Err(_) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            Err(_) => {
+                return Err(AppError::InvalidInput(
+                    "Another profile refresh is still running. Try again in a moment.".into(),
+                ));
+            }
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -108,7 +126,7 @@ pub fn get_dashboard(range: String, state: State<'_, AppState>) -> AppResult<Val
         insights.push(json!({
             "id":"top-application",
             "title":"Most active application",
-            "description":format!("{} accounted for {:.0}% of recorded foreground time.",top.key,top.percentage),
+            "description":format!("{} accounted for {:.1}% of recorded foreground time.",top.key,top.percentage),
             "metric":format_duration(top.seconds),
             "evidence":"Observed foreground-session duration in the selected range."
         }));
@@ -144,7 +162,8 @@ pub fn get_dashboard(range: String, state: State<'_, AppState>) -> AppResult<Val
     }
     let mut topics = topics.into_iter().collect::<Vec<_>>();
     topics.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
-    for (topic, count) in topics.into_iter().take(3) {
+    topics.truncate(5);
+    for (topic, count) in topics.iter().take(3) {
         insights.push(json!({
             "id":format!("topic-{}",topic.replace(' ',"-")),
             "title":format!("Likely topic: {topic}"),
@@ -156,7 +175,11 @@ pub fn get_dashboard(range: String, state: State<'_, AppState>) -> AppResult<Val
     Ok(json!({
         "range":range,
         "trackedSeconds":dashboard.total_seconds,
-        "focusedSeconds":dashboard.total_seconds,
+        "focusedSeconds":dashboard.focused_seconds,
+        "activeTopics":topics.into_iter().map(|(name,count)| json!({
+            "name":name,
+            "count":count
+        })).collect::<Vec<_>>(),
         "appUsage":usage(dashboard.applications),
         "siteUsage":usage(dashboard.websites),
         "recentActivity":recent.into_iter().map(activity_to_ui).collect::<Vec<_>>(),
@@ -177,7 +200,7 @@ fn inferred_topic(event: &crate::models::ActivityEvent) -> Option<&'static str> 
     .to_ascii_lowercase();
     [
         (
-            "software development",
+            "Software development",
             [
                 "github",
                 "visual studio code",
@@ -189,19 +212,19 @@ fn inferred_topic(event: &crate::models::ActivityEvent) -> Option<&'static str> 
             .as_slice(),
         ),
         (
-            "video research",
+            "Video research",
             ["youtube.com", "vimeo.com", "video"].as_slice(),
         ),
         (
-            "planning and notes",
+            "Planning and notes",
             ["notion", "obsidian", "notes", "document"].as_slice(),
         ),
         (
-            "communication",
+            "Communication",
             ["slack", "discord", "mail", "messages"].as_slice(),
         ),
         (
-            "web research",
+            "Web research",
             ["wikipedia", "docs.", "search", "research"].as_slice(),
         ),
     ]
@@ -320,7 +343,7 @@ pub async fn start_bootstrap(state: State<'_, AppState>) -> AppResult<Value> {
         "bootstrap_status",
         &json!({"phase":"importing","importedEvents":0,"progress":20,"message":"Importing selected Chrome history…"}),
     )?;
-    let imported = import_selected_chrome_history(&state.db)?;
+    let imported = import_selected_chrome_history(&state.db, 90)?;
     state.db.set_setting(
         "bootstrap_status",
         &json!({"phase":"profiling","importedEvents":imported,"progress":70,"message":"Generating the first profile…"}),
@@ -342,6 +365,26 @@ pub async fn start_bootstrap(state: State<'_, AppState>) -> AppResult<Value> {
             Err(error)
         }
     }
+}
+
+#[tauri::command]
+pub async fn reimport_chrome_history(state: State<'_, AppState>) -> AppResult<Value> {
+    let refresh_lock = state.refresh_lock.clone();
+    let _permit = tauri::async_runtime::spawn_blocking(move || {
+        wait_for_refresh(&refresh_lock, Duration::from_secs(120))
+    })
+    .await
+    .map_err(|error| {
+        AppError::InvalidInput(format!("Could not wait for the active profile refresh: {error}"))
+    })??;
+
+    import_selected_chrome_history(&state.db, 30)?;
+    let provider = selected_provider(&state.db)?;
+    state
+        .providers
+        .refresh_profile(&state.db, &provider, "manual")
+        .await?;
+    profile_to_ui(&state.db)
 }
 
 #[tauri::command]
@@ -517,12 +560,20 @@ pub async fn chat(messages: Vec<UiChatMessage>, state: State<'_, AppState>) -> A
         })
         .collect::<Vec<_>>();
     let provider = selected_provider(&state.db)?;
+    let now = Utc::now().timestamp();
+    let (today_start, _) = range_bounds("today")?;
+    let activity_summary = json!({
+        "today":state.db.chat_activity_summary(today_start, now)?,
+        "7d":state.db.chat_activity_summary(now - 7 * 86_400, now)?,
+        "30d":state.db.chat_activity_summary(now - 30 * 86_400, now)?
+    });
     let answer = state
         .providers
         .chat(
             &provider,
             &state.db.profile()?,
             &state.db.corrections()?,
+            &activity_summary,
             &history,
             &last.content,
         )
@@ -816,5 +867,36 @@ mod tests {
 
         drop(permit);
         assert!(acquire_refresh(&lock).is_ok());
+    }
+
+    #[test]
+    fn user_refresh_waits_for_an_active_refresh_to_finish() {
+        let lock = Arc::new(AtomicBool::new(false));
+        let permit = acquire_refresh(&lock).expect("background refresh should acquire the lock");
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(20));
+            drop(permit);
+        });
+
+        let next = wait_for_refresh(&lock, Duration::from_secs(1))
+            .expect("user refresh should acquire the released lock");
+        release.join().expect("release thread should finish");
+        drop(next);
+
+        assert!(acquire_refresh(&lock).is_ok());
+    }
+
+    #[test]
+    fn user_refresh_times_out_before_import_when_refresh_stays_busy() {
+        let lock = Arc::new(AtomicBool::new(false));
+        let _permit = acquire_refresh(&lock).expect("background refresh should acquire the lock");
+
+        let error = wait_for_refresh(&lock, Duration::from_millis(1))
+            .expect_err("the wait should time out while the lock remains held");
+
+        assert_eq!(
+            error.to_string(),
+            "invalid input: Another profile refresh is still running. Try again in a moment."
+        );
     }
 }

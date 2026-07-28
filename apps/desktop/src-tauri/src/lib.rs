@@ -87,6 +87,7 @@ pub fn run() {
             commands::request_accessibility_permission,
             commands::set_browser_profiles,
             commands::start_bootstrap,
+            commands::reimport_chrome_history,
             commands::refresh_profile,
             commands::save_profile_correction,
             commands::remove_profile_correction,

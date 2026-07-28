@@ -49,6 +49,8 @@ export const api = {
   setBrowserProfiles: (profileIds: string[]) =>
     call<void>("set_browser_profiles", { profileIds }, undefined),
   startBootstrap: () => call<BootstrapStatus>("start_bootstrap", undefined, undefined),
+  reimportChromeHistory: () =>
+    call<ProfileData>("reimport_chrome_history", undefined, mockProfile),
   refreshProfile: () => call<ProfileData>("refresh_profile", undefined, mockProfile),
   saveCorrection: (label: string, description?: string, id?: string) =>
     call<ProfileData>("save_profile_correction", { id, label, description }, mockProfile),

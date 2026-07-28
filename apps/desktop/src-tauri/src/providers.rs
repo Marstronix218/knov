@@ -110,15 +110,23 @@ impl ProviderClient {
         provider: &str,
         profile: &ProfileDocument,
         corrections: &[UserCorrection],
+        activity_summary: &Value,
         conversation: &[ChatMessage],
         message: &str,
     ) -> AppResult<String> {
         let system = format!(
             "You are Knoveyla, a supportive personal context assistant. Never reveal raw activity logs. \
-             Treat USER TRUTH as authoritative. Avoid medical/mental-health diagnosis and productivity scoring.\n\
-             PROFILE:\n{}\nUSER TRUTH:\n{}",
+             Treat USER TRUTH as authoritative. Avoid medical/mental-health diagnosis and productivity scoring. \
+             You have access to the minimized LOCAL ACTIVITY SUMMARY below. Use it when relevant and never claim \
+             you lack activity access when it contains the requested app or domain. For an unspecified timeframe, \
+             use 30d and state that choice. State the denominator for percentages. applicationTime and \
+             liveWebsiteTime contain observed foreground durations. historicalWebsiteVisits contains visit counts \
+             only; never turn those counts into time. Sustained time means foreground sessions lasting at least \
+             five minutes and does not prove concentration or productivity.\n\
+             PROFILE:\n{}\nUSER TRUTH:\n{}\nLOCAL ACTIVITY SUMMARY:\n{}",
             serde_json::to_string(profile)?,
-            serde_json::to_string(corrections)?
+            serde_json::to_string(corrections)?,
+            serde_json::to_string(activity_summary)?
         );
         let mut turns = conversation.to_vec();
         turns.push(ChatMessage {

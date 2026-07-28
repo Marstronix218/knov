@@ -115,6 +115,7 @@ pub struct UsageItem {
 #[serde(rename_all = "camelCase")]
 pub struct Dashboard {
     pub total_seconds: i64,
+    pub focused_seconds: i64,
     pub applications: Vec<UsageItem>,
     pub websites: Vec<UsageItem>,
     pub recommendations: Vec<Recommendation>,

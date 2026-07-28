@@ -46,12 +46,18 @@ export interface DashboardData {
   range: RangeKey;
   trackedSeconds: number;
   focusedSeconds: number;
+  activeTopics: ActiveTopic[];
   appUsage: UsageSlice[];
   siteUsage: UsageSlice[];
   recentActivity: ActivityEvent[];
   insights: TopicInsight[];
   recommendations: Recommendation[];
   generatedAt?: string;
+}
+
+export interface ActiveTopic {
+  name: string;
+  count: number;
 }
 
 export interface ProfileItem {

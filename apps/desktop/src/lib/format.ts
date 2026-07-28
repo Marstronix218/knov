@@ -5,6 +5,10 @@ export function formatDuration(totalSeconds: number): string {
   return `${hours}h ${minutes.toString().padStart(2, "0")}m`;
 }
 
+export function formatPercentage(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
 export function formatTime(value: string): string {
   return new Intl.DateTimeFormat(undefined, {
     hour: "numeric",

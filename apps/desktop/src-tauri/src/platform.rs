@@ -23,6 +23,8 @@ use crate::{
     models::{ActivityEvent, ActivitySource, ChromeProfile, CollectionStatus},
 };
 
+const MAX_HISTORICAL_VISIT_SECONDS: i64 = 12 * 60 * 60;
+
 #[derive(Default)]
 pub struct RuntimeStatus {
     pub accessibility_available: bool,
@@ -90,8 +92,8 @@ pub fn discover_chrome_profiles(db: &Database) -> AppResult<Vec<ChromeProfile>> 
     Ok(result)
 }
 
-pub fn import_selected_chrome_history(db: &Database) -> AppResult<usize> {
-    let cutoff = Utc::now().timestamp() - 90 * 86_400;
+pub fn import_selected_chrome_history(db: &Database, lookback_days: i64) -> AppResult<usize> {
+    let cutoff = Utc::now().timestamp() - lookback_days.max(0) * 86_400;
     let mut imported = 0;
     for (profile_id, profile_path) in db.selected_profile_paths()? {
         imported += import_chrome_history(db, &profile_id, &profile_path.join("History"), cutoff)?;
@@ -119,29 +121,52 @@ fn import_chrome_history(
     let result = (|| -> AppResult<usize> {
         let connection = Connection::open(&temporary)?;
         let chrome_cutoff = (cutoff + 11_644_473_600) * 1_000_000;
-        let mut statement = connection.prepare(
-            "SELECT u.url,u.title,v.visit_time
-             FROM visits v JOIN urls u ON u.id=v.url
-             WHERE v.visit_time>=?1 ORDER BY v.visit_time",
+        let has_visit_duration = connection.query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM pragma_table_info('visits') WHERE name='visit_duration'
+             )",
+            [],
+            |row| row.get::<_, bool>(0),
         )?;
+        let visit_duration = if has_visit_duration {
+            "v.visit_duration"
+        } else {
+            "0"
+        };
+        let mut statement = connection.prepare(&format!(
+            "SELECT u.url,u.title,v.visit_time,{visit_duration}
+             FROM visits v JOIN urls u ON u.id=v.url
+             WHERE v.visit_time>=?1 ORDER BY v.visit_time"
+        ))?;
         let rows = statement.query_map([chrome_cutoff], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
             ))
         })?;
         let now = Utc::now().timestamp();
         let mut count = 0;
         for row in rows {
-            let (url, title, chrome_time) = row?;
+            let (url, title, chrome_time, chrome_duration) = row?;
             let occurred_at = chrome_time / 1_000_000 - 11_644_473_600;
+            let reported_duration = chrome_duration.max(0) / 1_000_000;
+            let duration_seconds =
+                if reported_duration <= MAX_HISTORICAL_VISIT_SECONDS
+                    && reported_duration <= now.saturating_sub(occurred_at)
+                {
+                    reported_duration
+                } else {
+                    0
+                };
             let search_query = extract_search_query(&url);
             let event = ActivityEvent {
                 id: None,
                 occurred_at,
-                ended_at: None,
-                duration_seconds: 0,
+                ended_at: (duration_seconds > 0)
+                    .then(|| occurred_at.saturating_add(duration_seconds)),
+                duration_seconds,
                 app_name: "Google Chrome".into(),
                 window_title: None,
                 url: Some(url.clone()),
@@ -693,6 +718,82 @@ fn nonempty(value: String) -> Option<String> {
 mod tests {
     use super::*;
     use crate::db::Database;
+    use crate::models::HistoryRequest;
+
+    const CHROME_EPOCH_OFFSET_SECONDS: i64 = 11_644_473_600;
+
+    fn create_chrome_history(
+        include_duration: bool,
+        duration_microseconds: i64,
+    ) -> tempfile::TempDir {
+        let directory = tempfile::tempdir().unwrap();
+        let history_path = directory.path().join("History");
+        let connection = Connection::open(history_path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE urls(
+                    id INTEGER PRIMARY KEY,
+                    url TEXT NOT NULL,
+                    title TEXT NOT NULL
+                 );",
+            )
+            .unwrap();
+        if include_duration {
+            connection
+                .execute_batch(
+                    "CREATE TABLE visits(
+                        url INTEGER NOT NULL,
+                        visit_time INTEGER NOT NULL,
+                        visit_duration INTEGER DEFAULT 0 NOT NULL
+                     );",
+                )
+                .unwrap();
+        } else {
+            connection
+                .execute_batch(
+                    "CREATE TABLE visits(
+                        url INTEGER NOT NULL,
+                        visit_time INTEGER NOT NULL
+                     );",
+                )
+                .unwrap();
+        }
+        connection
+            .execute(
+                "INSERT INTO urls(id,url,title) VALUES(1,?1,?2)",
+                ["https://example.com/work", "Example"],
+            )
+            .unwrap();
+        let visit_time = (1_700_000_000 + CHROME_EPOCH_OFFSET_SECONDS) * 1_000_000;
+        if include_duration {
+            connection
+                .execute(
+                    "INSERT INTO visits(url,visit_time,visit_duration) VALUES(1,?1,?2)",
+                    rusqlite::params![visit_time, duration_microseconds],
+                )
+                .unwrap();
+        } else {
+            connection
+                .execute(
+                    "INSERT INTO visits(url,visit_time) VALUES(1,?1)",
+                    [visit_time],
+                )
+                .unwrap();
+        }
+        directory
+    }
+
+    fn imported_history(db: &Database) -> Vec<ActivityEvent> {
+        db.history(&HistoryRequest {
+            start_at: 0,
+            end_at: i64::MAX,
+            search: None,
+            source: Some(ActivitySource::ChromeHistory),
+            limit: None,
+            offset: None,
+        })
+        .unwrap()
+    }
 
     #[test]
     fn extracts_only_known_search_parameters() {
@@ -723,6 +824,49 @@ mod tests {
         assert_eq!(first, fingerprint(&event));
         event.window_title = Some("Different document".into());
         assert_ne!(first, fingerprint(&event));
+    }
+
+    #[test]
+    fn imports_chrome_visit_duration_as_seconds() {
+        let history = create_chrome_history(true, 125_900_000);
+        let db = Database::in_memory().unwrap();
+
+        let imported =
+            import_chrome_history(&db, "Default", &history.path().join("History"), 0).unwrap();
+
+        assert_eq!(imported, 1);
+        let events = imported_history(&db);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].duration_seconds, 125);
+        assert_eq!(events[0].ended_at, Some(events[0].occurred_at + 125));
+    }
+
+    #[test]
+    fn discards_implausibly_long_chrome_visit_durations() {
+        let history = create_chrome_history(true, (MAX_HISTORICAL_VISIT_SECONDS + 1) * 1_000_000);
+        let db = Database::in_memory().unwrap();
+
+        import_chrome_history(&db, "Default", &history.path().join("History"), 0).unwrap();
+
+        let events = imported_history(&db);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].duration_seconds, 0);
+        assert_eq!(events[0].ended_at, None);
+    }
+
+    #[test]
+    fn imports_legacy_chrome_history_without_duration_as_zero() {
+        let history = create_chrome_history(false, 0);
+        let db = Database::in_memory().unwrap();
+
+        let imported =
+            import_chrome_history(&db, "Default", &history.path().join("History"), 0).unwrap();
+
+        assert_eq!(imported, 1);
+        let events = imported_history(&db);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].duration_seconds, 0);
+        assert_eq!(events[0].ended_at, None);
     }
 
     #[test]

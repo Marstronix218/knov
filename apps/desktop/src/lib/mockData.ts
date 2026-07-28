@@ -59,6 +59,11 @@ export const mockDashboard: DashboardData = {
   range: "today",
   trackedSeconds: 21_960,
   focusedSeconds: 16_740,
+  activeTopics: [
+    { name: "Software development", count: 18 },
+    { name: "Planning and notes", count: 8 },
+    { name: "Web research", count: 7 },
+  ],
   appUsage: [
     { name: "Chrome", seconds: 7_900, percentage: 36, color: "#adff2f", detail: "42 pages" },
     { name: "VS Code", seconds: 6_140, percentage: 28, color: "#58c7ff", detail: "3 projects" },
