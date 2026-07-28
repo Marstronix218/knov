@@ -8,18 +8,103 @@ paired Knoveyla app on the same computer.
 
 ![Knoveyla Chrome companion settings for Native Messaging pairing](../../docs/screenshots/chrome-companion-settings.jpg)
 
-## Build and load
+## Prerequisites
+
+The companion is useful only with the native Knoveyla desktop app running on the
+same Mac. Complete desktop onboarding first, approve the Chrome profile you want
+to pair, and leave the app open while configuring the extension.
+
+## Build, load, and pair
 
 ```sh
 npm install
-npm run build
+npm run build --workspace @knoveyla/chrome-extension
 ```
 
-Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and
-select `apps/extension/dist`. The settings page opens automatically. In the
-Knoveyla Mac app, create or reveal a local pairing token, then paste it into the
-extension settings together with the approved Chrome profile ID shown in
-Knoveyla Settings. The Mac app registers the Native Messaging host.
+Run those commands from the repository root. Build the Native Messaging helper
+used by the development app as well:
+
+```sh
+cargo build \
+  --manifest-path apps/desktop/src-tauri/Cargo.toml \
+  --bin knoveyla-native-host
+```
+
+Then:
+
+1. Open `chrome://extensions`.
+2. Enable **Developer mode**, choose **Load unpacked**, and select
+   `apps/extension/dist`.
+3. Copy the 32-character ID shown on the Knoveyla extension card.
+4. In the desktop app, open **Settings → Chrome companion pairing**, paste the
+   extension ID, and choose **Register native host**.
+5. Restart Chrome.
+6. In desktop **Settings**, copy the **Pairing token** and the ID shown under
+   the approved entry in **Browser profiles**.
+7. Open the extension's **Details → Extension options** page. Select **Native
+   Messaging (recommended)**, paste the token into **Pairing token**, paste the
+   desktop profile ID into **Approved Chrome profile ID**, and choose **Save and
+   verify**.
+8. Confirm the result says **Connected. Settings saved.**
+
+The desktop app must remain running for connection tests and live event
+delivery. Repeat the load and pairing steps inside each Chrome profile you want
+Knoveyla to observe; registration can be reused when Chrome shows the same
+extension ID. The alpha Native Messaging manifest authorizes one extension ID
+at a time, so registering a different ID replaces the previous allowed origin.
+Do not share the pairing token in screenshots, logs, issues, or source control.
+
+## Use the extension
+
+Select the Knoveyla toolbar icon to open the popup. It shows:
+
+- whether collection is on or paused;
+- whether the desktop app is connected;
+- the title and domain of the page currently being timed; and
+- how many completed events are waiting for delivery.
+
+Choose **Pause collection** before browsing something you do not want recorded,
+then **Resume collection** when you are ready. Collection also stops when Chrome
+loses focus, the active page changes to an excluded or unsupported URL, or the
+desktop app pauses collection.
+
+Choose **Settings** in the popup to reopen extension options. Under **Excluded
+websites**, enter one domain per line and choose **Save and verify**. A rule such
+as `example.com` also excludes its subdomains. When the active page begins
+matching a saved exclusion, timing stops immediately and the event is not
+queued. Desktop exclusions and extension exclusions are configured separately.
+
+## Confirm it is working
+
+1. Keep the desktop app running with collection active.
+2. Open a normal HTTP or HTTPS page in Chrome and keep Chrome focused.
+3. Open the extension popup and confirm it shows **Collection is on**, a
+   connected status, and the current page.
+4. Switch tabs or applications to complete the timed event.
+5. In the desktop app, open **Activity** and look for a row whose source is
+   `chrome`.
+
+Incognito pages are not collected. Chrome internal pages, extension pages,
+invalid URLs, and non-HTTP(S) URLs are also ignored.
+
+## Troubleshooting
+
+- **Native host not found or disconnected:** rebuild the native helper if
+  necessary, register the current extension ID again in desktop Settings, and
+  restart Chrome.
+- **Authentication or pairing error:** copy the current desktop pairing token
+  again and verify that the approved Chrome profile ID matches the profile in
+  which the extension is loaded.
+- **Connected but no page is shown:** focus a normal HTTP(S) tab, confirm
+  collection is on in both apps, and check the extension exclusion list.
+- **The extension ID changed:** re-register the new 32-character ID in the
+  desktop app. Chrome may assign a different ID when an unpacked extension is
+  installed again.
+- **The desktop app is unavailable:** live timing cannot be delivered, but
+  Knoveyla can still use imported Chrome history after the desktop app starts.
+
+For manual host registration and the local HTTP development fallback, see
+[Chrome extension setup](../../docs/alpha-setup.md#chrome-extension-setup).
 
 ## Native Messaging contract
 
