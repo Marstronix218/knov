@@ -2,7 +2,7 @@
 
 **A behavioral context layer for personal AI**
 
-Version 0.8 — Draft · Technical-user alpha scope
+Version 0.9 — Draft · Technical-user alpha scope
 Architecture: native Apple Silicon macOS collector + Chrome extension + chat interface
 
 ---
@@ -64,6 +64,7 @@ The following table sets the boundary of the MVP. Items marked out of scope are 
 | Apple Silicon application targeting macOS 26 | Intel Macs, Windows, and Linux |
 | Local browser history ingestion | Screen recording or audio capture |
 | Chrome extension for active-tab URL, title, and duration | Browser page-body or DOM capture |
+| Best-effort Safari and Firefox support when low-cost | Safari/Firefox work that delays required Chrome support |
 | Local activity database | Mobile (iOS / Android) clients |
 | Periodic profile generation via LLM | Social media in-app content (no API access) |
 | Chat interface using the profile | Email, Spotify, and other OAuth sources |
@@ -163,7 +164,7 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | FR-6 | Respect an exclusion list of apps and domains the user does not want recorded. | Must |
 | FR-7 | Capture extracted search-query terms from browser history where present in the URL. | Should |
 | FR-8 | Detect available Chrome profiles and ingest data only from the one or more profiles the user authorized. | Must |
-| FR-9 | Support more than one browser. | Could |
+| FR-9 | Support Safari and Firefox on a best-effort basis only when doing so introduces no separate substantial implementation path and no delay to required Chrome support. | Should |
 
 ### 4.2 Profiler
 
@@ -262,6 +263,15 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | FR-60 | Implement the Chrome extension in TypeScript using the current Chrome extension manifest format. | Must |
 | FR-61 | Do not use Next.js server-side rendering, hosted Supabase, or a local Supabase service stack in the alpha. | Must |
 
+### 4.11 Browser support boundary
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-62 | Treat Google Chrome as the only required and release-blocking browser for profile selection, 90-day cold-start history import, and accurate live-tab timing. | Must |
+| FR-63 | Import up to 90 days of Safari or Firefox history when local access, schema handling, and testing can reuse the existing browser-ingestion pipeline without material schedule impact. | Should |
+| FR-64 | Add live-tab timing for Safari or Firefox only when it does not require a substantial separate extension, distribution, permission, or maintenance effort; otherwise provide history import only or omit support. | Could |
+| FR-65 | Clearly label each browser's support level and distinguish imported history from accurately timed live-tab activity in setup and diagnostics. | Must |
+
 ---
 
 ## 5. Data requirements
@@ -346,6 +356,7 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | NFR-11 | Credential security | Provider credentials must be retrieved from macOS Keychain only when needed and must be redacted from logs, error reports, UI diagnostics, and exported data. |
 | NFR-12 | OS compatibility | macOS 26 is the required and fully tested target. Any older Apple Silicon support is best-effort and must not introduce alternate product behavior or delay the required target. |
 | NFR-13 | Technology footprint | Normal application use must not require Docker, a local Postgres server, a Supabase stack, Python, Node.js, or other separately installed runtimes. Required runtimes must be packaged into the application or compiled into the native bundle. |
+| NFR-14 | Browser compatibility | Chrome is the release gate. Safari and Firefox compatibility is best-effort and must not delay or weaken Chrome collection, privacy controls, or verification. |
 
 ---
 
@@ -366,6 +377,7 @@ Because chat turns, relevant profile context, and minimized activity digests are
 - Tauri 2, Rust, React, TypeScript, Vite, and embedded SQLite.
 - Read access to the local browser history store.
 - Chrome extension APIs for active-tab metadata and a secure local pairing/communication mechanism.
+- Optional local Safari and Firefox history access when their schemas and permissions can be supported without material additional work.
 - A third-party language model API (e.g. Claude or GPT) for profiling and chat.
 - A user-supplied API key for a supported provider and macOS Keychain for secure credential storage.
 - Local access to the history databases for the Chrome profile or profiles selected by the user.
@@ -385,6 +397,7 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | Supporting older macOS releases expands compatibility work and delays the alpha. | Medium | Treat macOS 26 as the only release gate; lower the deployment target only when the implementation and dependencies already work without separate code paths or material extra testing. |
 | A mixed Rust/TypeScript stack creates maintenance overhead for a primarily web-stack developer. | Medium | Keep native commands narrow, document the frontend/native boundary, use React and TypeScript for product UI, and introduce Swift only for APIs that demonstrably require it. |
 | Temporary 90-day cold-start data persists after its intended use. | High | Track bootstrap state explicitly, purge days 31–90 immediately after successful first-profile generation, expose incomplete cleanup in diagnostics, and include bootstrap data in single-action deletion. |
+| Safari or Firefox support fragments browser ingestion and delays the alpha. | Medium | Keep Chrome as the only release gate; reuse the ingestion pipeline where practical and omit separate live-tracking implementations when they require meaningful additional work. |
 | User-supplied API keys are mishandled or exposed. | High | Store keys only in macOS Keychain, redact credentials from all diagnostics, keep keys out of the extension and database, and send requests directly to the selected provider. |
 | Provider errors, quotas, or user billing interrupt profiling and chat. | Medium | Validate keys in settings, surface actionable provider errors, preserve local collection during outages, and retry profiling only after the user resolves the provider issue. |
 | Next-step recommendations feel judgmental, distracting, or incorrect. | Medium | Keep them inside the app, distinguish recommendations from observed facts, make them dismissible, and collect relevance feedback. |
@@ -411,6 +424,7 @@ Because the MVP exists to test the central hypothesis, success is defined in ter
 - Technical alpha users can follow the setup documentation, pair the extension, select Chrome profiles, enter their own provider key in the app, and reach a populated dashboard without undocumented intervention.
 - The alpha runs natively on Apple Silicon macOS 26 test Macs without requiring Rosetta.
 - Older Apple Silicon macOS releases are supported only when they pass the existing implementation without delaying macOS 26 delivery.
+- Chrome history import and live-tab timing work as required; any Safari or Firefox support is reported accurately as best-effort and does not delay the Chrome-complete alpha.
 - Users do not uninstall over privacy discomfort after seeing what is collected.
 
 ### 9.3 Explicit anti-goal
