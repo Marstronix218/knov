@@ -2,7 +2,7 @@
 
 **A behavioral context layer for personal AI**
 
-Version 0.9 — Draft · Technical-user alpha scope
+Version 0.10 — Draft · Technical-user alpha scope
 Architecture: native Apple Silicon macOS collector + Chrome extension + chat interface
 
 ---
@@ -171,8 +171,8 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | ID | Requirement | Priority |
 |---|---|---|
 | FR-10 | Map raw app and URL activity into interest and topic categories. | Must |
-| FR-11 | Generate a structured, human-readable profile (interests, skills, active projects, patterns). | Must |
-| FR-12 | Regenerate the profile on a schedule by sending a minimized, locally prepared activity digest to a remote language model. | Must |
+| FR-11 | Generate a structured, human-readable profile (interests, skills, active projects, patterns) immediately after the initial browser-history bootstrap completes. | Must |
+| FR-12 | Regenerate the profile automatically once per local calendar day through a nightly scheduled run, using a minimized, locally prepared activity digest sent to the selected remote language model. | Must |
 | FR-13 | Filter, redact, deduplicate, and aggregate recent activity locally before remote profile generation; never send the complete raw activity database. | Must |
 | FR-14 | Express inferences with appropriate uncertainty; avoid stating weak guesses as fact. | Must |
 | FR-15 | Store the profile in a format the user can read and edit directly. | Must |
@@ -272,6 +272,15 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | FR-64 | Add live-tab timing for Safari or Firefox only when it does not require a substantial separate extension, distribution, permission, or maintenance effort; otherwise provide history import only or omit support. | Could |
 | FR-65 | Clearly label each browser's support level and distinguish imported history from accurately timed live-tab activity in setup and diagnostics. | Must |
 
+### 4.12 Profile and recommendation refresh
+
+| ID | Requirement | Priority |
+|---|---|---|
+| FR-66 | Generate the first profile and first set of next-step recommendations immediately after the initial browser-history bootstrap is ready. | Must |
+| FR-67 | Refresh the profile and recommendations together in one automatic nightly run, no more than once per local calendar day. | Must |
+| FR-68 | If the Mac is asleep, powered off, or the application cannot complete the nightly run, perform the missed refresh on the next available application start or collector wake without creating duplicate daily runs. | Must |
+| FR-69 | Provide a visible manual “Refresh now” control that regenerates the profile and recommendations and shows progress, success, or an actionable provider error. | Must |
+
 ---
 
 ## 5. Data requirements
@@ -357,6 +366,7 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | NFR-12 | OS compatibility | macOS 26 is the required and fully tested target. Any older Apple Silicon support is best-effort and must not introduce alternate product behavior or delay the required target. |
 | NFR-13 | Technology footprint | Normal application use must not require Docker, a local Postgres server, a Supabase stack, Python, Node.js, or other separately installed runtimes. Required runtimes must be packaged into the application or compiled into the native bundle. |
 | NFR-14 | Browser compatibility | Chrome is the release gate. Safari and Firefox compatibility is best-effort and must not delay or weaken Chrome collection, privacy controls, or verification. |
+| NFR-15 | Scheduling | Nightly and catch-up refreshes must be idempotent: interruptions, sleep/wake cycles, and application restarts must not produce duplicate profiles or duplicate recommendation sets for the same run. |
 
 ---
 
@@ -398,6 +408,7 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | A mixed Rust/TypeScript stack creates maintenance overhead for a primarily web-stack developer. | Medium | Keep native commands narrow, document the frontend/native boundary, use React and TypeScript for product UI, and introduce Swift only for APIs that demonstrably require it. |
 | Temporary 90-day cold-start data persists after its intended use. | High | Track bootstrap state explicitly, purge days 31–90 immediately after successful first-profile generation, expose incomplete cleanup in diagnostics, and include bootstrap data in single-action deletion. |
 | Safari or Firefox support fragments browser ingestion and delays the alpha. | Medium | Keep Chrome as the only release gate; reuse the ingestion pipeline where practical and omit separate live-tracking implementations when they require meaningful additional work. |
+| Scheduled profiling is missed during sleep or produces duplicate runs after wake. | Medium | Track the last successful refresh and an idempotent run identifier, perform one catch-up refresh when needed, and update the profile and recommendations atomically. |
 | User-supplied API keys are mishandled or exposed. | High | Store keys only in macOS Keychain, redact credentials from all diagnostics, keep keys out of the extension and database, and send requests directly to the selected provider. |
 | Provider errors, quotas, or user billing interrupt profiling and chat. | Medium | Validate keys in settings, surface actionable provider errors, preserve local collection during outages, and retry profiling only after the user resolves the provider issue. |
 | Next-step recommendations feel judgmental, distracting, or incorrect. | Medium | Keep them inside the app, distinguish recommendations from observed facts, make them dismissible, and collect relevance feedback. |
