@@ -32,7 +32,7 @@ function stubApi() {
 async function renderRoute(hash: string) {
   window.location.hash = hash;
   render(<App />);
-  await screen.findByText("Knoveyla");
+  await screen.findByText("Knov");
 }
 
 describe("application navigation", () => {
@@ -72,7 +72,7 @@ describe("onboarding", () => {
     fireEvent.click(screen.getByRole("button", { name: /Build my first profile/ }));
 
     expect(await screen.findByRole("heading", { name: "Good afternoon." })).toBeInTheDocument();
-    expect(localStorage.getItem("knoveyla.setup-complete")).toBe("true");
+    expect(localStorage.getItem("knov.setup-complete")).toBe("true");
   });
 });
 
@@ -170,7 +170,7 @@ describe("profile corrections", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add correction" }));
     const dialog = screen.getByRole("dialog", { name: "Add authoritative correction" });
-    fireEvent.change(within(dialog).getByLabelText("What should Knoveyla know?"), {
+    fireEvent.change(within(dialog).getByLabelText("What should Knov know?"), {
       target: { value: "Project Atlas is complete" },
     });
     fireEvent.change(within(dialog).getByLabelText("Optional context"), {
@@ -198,12 +198,12 @@ describe("profile corrections", () => {
     };
     const removeCorrection = vi.spyOn(api, "removeCorrection").mockResolvedValue(updatedProfile);
     await renderRoute("#/profile");
-    await screen.findByText("Knoveyla is local-first");
+    await screen.findByText("Knov is local-first");
 
     fireEvent.click(screen.getByRole("button", { name: "Remove correction" }));
 
     await waitFor(() => expect(removeCorrection).toHaveBeenCalledWith("truth-local"));
-    await waitFor(() => expect(screen.queryByText("Knoveyla is local-first")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Knov is local-first")).not.toBeInTheDocument());
   });
 });
 

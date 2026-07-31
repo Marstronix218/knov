@@ -2,7 +2,7 @@
 //!
 //! Chrome frames each JSON message with a four-byte native-endian length. This small
 //! process contains no data policy or database access: it forwards the authenticated
-//! envelope to the already-running Knoveyla core, which remains the sole SQLite writer.
+//! envelope to the already-running Knov core, which remains the sole SQLite writer.
 
 use std::{
     io::{Read, Write},
@@ -55,7 +55,7 @@ fn main() {
             .unwrap_or_else(|| {
                 serde_json::json!({
                     "protocolVersion":1,"requestId":request_id,"ok":false,
-                    "errorCode":"unavailable","message":"The Knoveyla app is not running."
+                    "errorCode":"unavailable","message":"The Knov app is not running."
                 })
             });
         write_response(response);
@@ -65,7 +65,7 @@ fn main() {
 fn native_socket_path() -> Option<std::path::PathBuf> {
     dirs::data_dir().map(|directory| {
         directory
-            .join("com.knoveyla.desktop")
+            .join("com.knov.desktop")
             .join("native-messaging.sock")
     })
 }

@@ -50,7 +50,7 @@ async function authenticatedFetch(
       headers: {
         Authorization: `Bearer ${config.pairingToken}`,
         "Content-Type": "application/json",
-        "X-Knoveyla-Protocol": String(PROTOCOL_VERSION),
+        "X-Knov-Protocol": String(PROTOCOL_VERSION),
         ...(init?.headers ?? {})
       }
     });
@@ -69,7 +69,7 @@ async function authenticatedFetch(
     return response;
   } catch (error) {
     if (error instanceof TransportError) throw error;
-    throw new TransportError("The local Knoveyla app could not be reached.", "connection");
+    throw new TransportError("The local Knov app could not be reached.", "connection");
   } finally {
     clearTimeout(timeout);
   }
@@ -83,7 +83,7 @@ function sendNativeRequest(request: NativeRequest): Promise<NativeResponse> {
       settled = true;
       reject(
         new TransportError(
-          "The Knoveyla Native Messaging host did not respond.",
+          "The Knov Native Messaging host did not respond.",
           "connection"
         )
       );
@@ -99,7 +99,7 @@ function sendNativeRequest(request: NativeRequest): Promise<NativeResponse> {
         if (chrome.runtime.lastError) {
           reject(
             new TransportError(
-              "The Knoveyla Mac app or Native Messaging host is unavailable.",
+              "The Knov Mac app or Native Messaging host is unavailable.",
               "connection"
             )
           );
@@ -190,7 +190,7 @@ export async function testConnection(
     const response = await sendRequest(config, "status");
     await saveConnection({
       state: "connected",
-      message: "Connected to the local Knoveyla app",
+      message: "Connected to the local Knov app",
       lastConnectedAt: new Date().toISOString()
     });
     return response?.collectionEnabled;
@@ -229,7 +229,7 @@ export async function sendEvents(
     }
     await saveConnection({
       state: "connected",
-      message: "Connected to the local Knoveyla app",
+      message: "Connected to the local Knov app",
       lastConnectedAt: new Date().toISOString()
     });
   } catch (error) {

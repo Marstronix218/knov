@@ -151,7 +151,7 @@ pub fn get_dashboard(range: String, state: State<'_, AppState>) -> AppResult<Val
             "title":"Active web resources",
             "description":"Distinct web pages were active in recorded browser sessions.",
             "metric":format!("{distinct_pages} pages"),
-            "evidence":"Observed distinct URLs only; Knoveyla does not claim they were read, watched, or completed."
+            "evidence":"Observed distinct URLs only; Knov does not claim they were read, watched, or completed."
         }));
     }
     let mut topics = BTreeMap::<&str, usize>::new();
@@ -589,7 +589,7 @@ pub async fn chat(messages: Vec<UiChatMessage>, state: State<'_, AppState>) -> A
 #[tauri::command]
 pub fn get_pairing_info(state: State<'_, AppState>) -> AppResult<Value> {
     Ok(json!({
-        "nativeHost":"com.knoveyla.companion",
+        "nativeHost":"com.knov.companion",
         "pairingToken":ensure_pairing_token(&state.db)?,
         "localhostEndpoint":"http://127.0.0.1:48321",
         "protocolVersion":1
@@ -612,8 +612,8 @@ pub fn install_native_host(extension_id: String) -> AppResult<String> {
         .parent()
         .ok_or_else(|| AppError::InvalidInput("Application bundle path is unavailable.".into()))?;
     let candidates = [
-        directory.join("knoveyla-native-host"),
-        directory.join("../Resources/knoveyla-native-host"),
+        directory.join("knov-native-host"),
+        directory.join("../Resources/knov-native-host"),
     ];
     let host = candidates
         .into_iter()
@@ -628,10 +628,10 @@ pub fn install_native_host(extension_id: String) -> AppResult<String> {
         .ok_or_else(|| AppError::InvalidInput("Home directory is unavailable.".into()))?
         .join("Library/Application Support/Google/Chrome/NativeMessagingHosts");
     std::fs::create_dir_all(&manifest_dir)?;
-    let manifest_path = manifest_dir.join("com.knoveyla.companion.json");
+    let manifest_path = manifest_dir.join("com.knov.companion.json");
     let manifest = json!({
-        "name":"com.knoveyla.companion",
-        "description":"Knoveyla local activity bridge",
+        "name":"com.knov.companion",
+        "description":"Knov local activity bridge",
         "path":host.canonicalize()?.to_string_lossy(),
         "type":"stdio",
         "allowed_origins":[format!("chrome-extension://{extension_id}/")]
@@ -649,7 +649,7 @@ pub fn delete_all_data(state: State<'_, AppState>) -> AppResult<()> {
     ensure_pairing_token(&state.db)?;
     if let Some(home) = dirs::home_dir() {
         let manifest = home.join(
-            "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.knoveyla.companion.json",
+            "Library/Application Support/Google/Chrome/NativeMessagingHosts/com.knov.companion.json",
         );
         if manifest.exists() {
             std::fs::remove_file(manifest)?;

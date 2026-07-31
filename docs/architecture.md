@@ -2,10 +2,10 @@
 
 ## Scope
 
-Knoveyla is a single-user, local-first macOS application. React renders the
+Knov is a single-user, local-first macOS application. React renders the
 interface, Rust owns native and security-sensitive operations, SQLite stores
 app-owned data, and a Chrome extension supplies accurate active-tab timing.
-There is no Knoveyla-hosted backend in the alpha.
+There is no Knov-hosted backend in the alpha.
 
 ## Components
 
@@ -15,7 +15,7 @@ There is no Knoveyla-hosted backend in the alpha.
 | Tauri/Rust core | `apps/desktop/src-tauri/src` | IPC commands, collection, Chrome import, retention, SQLite, Keychain, scheduling, and provider calls |
 | SQLite store | Tauri application-data directory | Activity, settings, profiles, corrections, recommendations, and extension pairing state |
 | Chrome extension | `apps/extension` | Active-tab URL/title timing, exclusions, pause, and local transport |
-| Native Messaging helper | `apps/desktop/src-tauri/src/bin/knoveyla-native-host.rs` | Chrome stdio framing and forwarding to the running Rust core |
+| Native Messaging helper | `apps/desktop/src-tauri/src/bin/knov-native-host.rs` | Chrome stdio framing and forwarding to the running Rust core |
 | OpenAI or Anthropic | external | Profile generation, recommendations, and assistant responses |
 
 No Swift helper is currently used.
@@ -73,7 +73,7 @@ Chrome profile ID, which the ingestion core enforces.
 ## Local extension transports
 
 Native Messaging is the intended transport. Chrome starts
-`com.knoveyla.companion`, which forwards framed messages over a mode-0600 Unix
+`com.knov.companion`, which forwards framed messages over a mode-0600 Unix
 domain socket in the app-data directory. The Rust core validates protocol
 version, pairing token, and extension ID before accepting events.
 
@@ -91,12 +91,12 @@ The Rust core is the only SQLite writer. On macOS, Tauri resolves the database
 under its application-data directory, normally:
 
 ```text
-~/Library/Application Support/com.knoveyla.desktop/knoveyla.sqlite3
+~/Library/Application Support/com.knov.desktop/knov.sqlite3
 ```
 
 SQLite runs in WAL mode. The schema uses `PRAGMA user_version` migrations.
 Provider keys are not stored in SQLite; Keychain entries use service
-`com.knoveyla.desktop.llm` and provider account names `openai` or `anthropic`.
+`com.knov.desktop.llm` and provider account names `openai` or `anthropic`.
 
 Main stored records:
 
@@ -107,7 +107,7 @@ Main stored records:
 - pairing token, first authenticated extension ID, and last-seen timestamp
 
 Chat messages are held in frontend memory for the current session and are not
-persisted by Knoveyla.
+persisted by Knov.
 
 ## Profiling and scheduling
 

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Knoveyla Companion",
-  "description": "Sends active-tab URL, title, and focus duration only to your paired local Knoveyla app.",
+  "name": "Knov Companion",
+  "description": "Sends active-tab URL, title, and focus duration only to your paired local Knov app.",
   "version": "0.1.0",
   "minimum_chrome_version": "120",
   "icons": {
@@ -22,7 +22,7 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Knoveyla Companion",
+    "default_title": "Knov Companion",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",

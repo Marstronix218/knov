@@ -19,22 +19,22 @@ export const mockActivity: ActivityEvent[] = [
     browserProfile: "Work",
     startedAt: minutesAgo(12),
     durationSeconds: 1_440,
-    topic: "Knoveyla implementation",
+    topic: "Knov implementation",
     source: "chrome",
   },
   {
     id: "event-2",
     appName: "Visual Studio Code",
-    windowTitle: "knoveyla — App.tsx",
+    windowTitle: "knov — App.tsx",
     startedAt: minutesAgo(42),
     durationSeconds: 1_680,
-    topic: "Knoveyla implementation",
+    topic: "Knov implementation",
     source: "collector",
   },
   {
     id: "event-3",
     appName: "Notion",
-    pageTitle: "Knoveyla launch notes",
+    pageTitle: "Knov launch notes",
     url: "https://notion.so/example",
     browserProfile: "Work",
     startedAt: minutesAgo(78),
@@ -108,7 +108,7 @@ export const mockDashboard: DashboardData = {
       kind: "continuity",
       title: "Continue the native collector",
       body: "Your recent work moved from product requirements into Tauri security research. The next coherent step is validating the macOS permission bridge.",
-      evidence: "Tauri documentation, Xcode, and the Knoveyla repository were your strongest recent cluster.",
+      evidence: "Tauri documentation, Xcode, and the Knov repository were your strongest recent cluster.",
       createdAt: minutesAgo(5),
     },
     {
@@ -124,15 +124,15 @@ export const mockDashboard: DashboardData = {
 
 export const mockProfile: ProfileData = {
   summary:
-    "You are building Knoveyla, a local-first behavioral context layer for personal AI. Your recent work is concentrated on macOS desktop architecture, privacy boundaries, and turning a detailed product specification into an alpha.",
+    "You are building Knov, a local-first behavioral context layer for personal AI. Your recent work is concentrated on macOS desktop architecture, privacy boundaries, and turning a detailed product specification into an alpha.",
   sections: [
     {
       id: "projects",
       title: "Active projects",
       items: [
         {
-          id: "project-knoveyla",
-          label: "Knoveyla",
+          id: "project-knov",
+          label: "Knov",
           description: "Apple Silicon macOS alpha using Tauri, React, Rust, SQLite, and a Chrome extension.",
           confidence: 0.99,
           provenance: "inferred",
@@ -154,7 +154,7 @@ export const mockProfile: ProfileData = {
       items: [
         {
           id: "truth-local",
-          label: "Knoveyla is local-first",
+          label: "Knov is local-first",
           description: "Raw behavioral history must stay on this Mac.",
           provenance: "user",
         },

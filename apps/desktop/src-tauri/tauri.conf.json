@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Knoveyla",
+  "productName": "Knov",
   "mainBinaryName": "appsdesktop",
   "version": "0.1.0",
-  "identifier": "com.knoveyla.desktop",
+  "identifier": "com.knov.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
   "app": {
     "windows": [
       {
-        "title": "Knoveyla",
+        "title": "Knov",
         "width": 1180,
         "height": 780,
         "minWidth": 920,

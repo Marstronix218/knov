@@ -51,7 +51,7 @@ const navigation = [
 
 function App() {
   const [setupComplete, setSetupComplete] = useState(
-    () => localStorage.getItem("knoveyla.setup-complete") === "true",
+    () => localStorage.getItem("knov.setup-complete") === "true",
   );
   const route = useHashRoute();
 
@@ -59,7 +59,7 @@ function App() {
     return (
       <SetupWizard
         onComplete={() => {
-          localStorage.setItem("knoveyla.setup-complete", "true");
+          localStorage.setItem("knov.setup-complete", "true");
           setSetupComplete(true);
         }}
       />
@@ -139,7 +139,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
   return (
     <div className="setup-shell">
       <section className="setup-panel">
-        <div className="setup-brand"><LogoMark /><strong>Knoveyla</strong></div>
+        <div className="setup-brand"><LogoMark /><strong>Knov</strong></div>
         <div className="setup-progress">
           {steps.map((label, index) => (
             <div className={index <= step ? "active" : ""} key={label}>
@@ -154,7 +154,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
             <div className="setup-icon"><ShieldCheck size={30} /></div>
             <div className="eyebrow">Your context stays yours</div>
             <h1>An assistant that learns from how you actually work.</h1>
-            <p>Knoveyla observes foreground apps, permitted window titles, and selected browser activity. Raw history stays on this Mac. Only a minimized profile digest and active chat turns go to your chosen AI provider.</p>
+            <p>Knov observes foreground apps, permitted window titles, and selected browser activity. Raw history stays on this Mac. Only a minimized profile digest and active chat turns go to your chosen AI provider.</p>
             <div className="consent-grid">
               <article><LockKeyhole size={18} /><strong>Local raw data</strong><span>SQLite on this Mac, detailed history retained for 30 days.</span></article>
               <article><Eye size={18} /><strong>Visible collection</strong><span>Pause, exclude, inspect, edit, or delete at any time.</span></article>
@@ -168,7 +168,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
             <div className="setup-icon"><Eye size={30} /></div>
             <div className="eyebrow">macOS permission</div>
             <h1>Allow window titles—only if you want richer context.</h1>
-            <p>Accessibility permission lets Knoveyla read the title of the focused window. It does not grant access to keystrokes, document bodies, screenshots, or the clipboard. Without it, app-duration tracking still works.</p>
+            <p>Accessibility permission lets Knov read the title of the focused window. It does not grant access to keystrokes, document bodies, screenshots, or the clipboard. Without it, app-duration tracking still works.</p>
             <button className="primary-button setup-action" onClick={() => void api.requestAccessibility()}>Open macOS permission prompt</button>
             <span className="setup-skip">You can grant or revoke this later in System Settings.</span>
           </div>
@@ -178,7 +178,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
           <div className="setup-content">
             <div className="eyebrow">Cold-start context</div>
             <h1>Select browser profiles.</h1>
-            <p>Knoveyla can temporarily inspect up to 90 days of selected history to build the first profile. Days 31–90 are deleted after that first profile succeeds.</p>
+            <p>Knov can temporarily inspect up to 90 days of selected history to build the first profile. Days 31–90 are deleted after that first profile succeeds.</p>
             <ResourceState {...browsers}>
               {(profiles) => (
                 <div className="setup-browser-grid">
@@ -240,7 +240,7 @@ function Sidebar({ route }: { route: string }) {
       <div className="brand-lockup">
         <LogoMark />
         <div>
-          <div className="brand-name">Knoveyla</div>
+          <div className="brand-name">Knov</div>
           <div className="brand-caption">Personal context</div>
         </div>
       </div>
@@ -277,7 +277,7 @@ function Sidebar({ route }: { route: string }) {
 }
 
 function LogoMark() {
-  return <img className="brand-mark" src="/knoveyla-icon.svg" alt="" aria-hidden="true" />;
+  return <img className="brand-mark" src="/knov-icon.svg" alt="" aria-hidden="true" />;
 }
 
 function PageHeader({
@@ -530,7 +530,7 @@ function ActivityPage() {
       <PageHeader
         eyebrow="Observed activity"
         title="Your local timeline"
-        description="Exactly what Knoveyla recorded—no hidden content, no reconstructed stories."
+        description="Exactly what Knov recorded—no hidden content, no reconstructed stories."
         actions={<RangePicker value={range} onChange={setRange} />}
       />
       <div className="toolbar">
@@ -593,8 +593,8 @@ function ProfilePage() {
     <div className="page">
       <PageHeader
         eyebrow="Your profile"
-        title="What Knoveyla understands"
-        description="Inferences remain editable. Anything you tell Knoveyla directly becomes authoritative until you remove it."
+        title="What Knov understands"
+        description="Inferences remain editable. Anything you tell Knov directly becomes authoritative until you remove it."
         actions={<button className="primary-button" onClick={() => { setEditingId(undefined); setLabel(""); setDescription(""); setShowForm(true); }}><Plus size={16} /> Add correction</button>}
       />
       <ResourceState {...resource}>
@@ -646,7 +646,7 @@ function ProfilePage() {
       {showForm && (
         <Modal title={editingId ? "Edit authoritative correction" : "Add authoritative correction"} onClose={() => setShowForm(false)}>
           <form className="stack-form" onSubmit={(event) => void submit(event)}>
-            <label>What should Knoveyla know?<input required value={label} onChange={(event) => setLabel(event.target.value)} placeholder="I am no longer working on Project X" /></label>
+            <label>What should Knov know?<input required value={label} onChange={(event) => setLabel(event.target.value)} placeholder="I am no longer working on Project X" /></label>
             <label>Optional context<textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="This will always override automatic inference." /></label>
             <div className="modal-actions"><button type="button" className="ghost-button" onClick={() => setShowForm(false)}>Cancel</button><button className="primary-button">Save as truth</button></div>
           </form>
@@ -868,7 +868,7 @@ function SettingsPage() {
             </section>
 
             <section className="panel settings-card full-width danger-card">
-              <SettingsHeading icon={<Trash2 />} title="Delete Knoveyla data" detail="Permanently removes activity, profiles, corrections, recommendations, settings, and provider credentials." />
+              <SettingsHeading icon={<Trash2 />} title="Delete Knov data" detail="Permanently removes activity, profiles, corrections, recommendations, settings, and provider credentials." />
               <button className="danger-button" onClick={() => setConfirmDelete(true)}>Delete everything</button>
             </section>
           </div>
@@ -876,9 +876,9 @@ function SettingsPage() {
       </ResourceState>
       {confirmDelete && (
         <Modal title="Delete everything?" onClose={() => setConfirmDelete(false)}>
-          <p className="modal-copy">This cannot be undone from within Knoveyla. All app-owned local data and the Keychain credential will be removed.</p>
+          <p className="modal-copy">This cannot be undone from within Knov. All app-owned local data and the Keychain credential will be removed.</p>
           <div className="modal-actions"><button className="ghost-button" onClick={() => setConfirmDelete(false)}>Cancel</button><button className="danger-button" onClick={() => api.deleteAllData().then(() => {
-            localStorage.removeItem("knoveyla.setup-complete");
+            localStorage.removeItem("knov.setup-complete");
             window.location.hash = "";
             window.location.reload();
           })}>Delete permanently</button></div>

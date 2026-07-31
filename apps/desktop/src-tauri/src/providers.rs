@@ -10,7 +10,7 @@ use crate::{
     models::{ChatMessage, ProfileDocument, Recommendation, RefreshResult, UserCorrection},
 };
 
-const KEYCHAIN_SERVICE: &str = "com.knoveyla.desktop.llm";
+const KEYCHAIN_SERVICE: &str = "com.knov.desktop.llm";
 
 #[derive(Clone)]
 pub struct ProviderClient {
@@ -21,7 +21,7 @@ impl Default for ProviderClient {
     fn default() -> Self {
         Self {
             http: Client::builder()
-                .user_agent("Knoveyla/0.1")
+                .user_agent("Knov/0.1")
                 .build()
                 .expect("provider HTTP client"),
         }
@@ -115,7 +115,7 @@ impl ProviderClient {
         message: &str,
     ) -> AppResult<String> {
         let system = format!(
-            "You are Knoveyla, a supportive personal context assistant. Never reveal raw activity logs. \
+            "You are Knov, a supportive personal context assistant. Never reveal raw activity logs. \
              Treat USER TRUTH as authoritative. Avoid medical/mental-health diagnosis and productivity scoring. \
              You have access to the minimized LOCAL ACTIVITY SUMMARY below. Use it when relevant and never claim \
              you lack activity access when it contains the requested app or domain. For an unspecified timeframe, \
@@ -387,7 +387,7 @@ fn invalid_profile_format() -> AppError {
 fn profile_response_format() -> Value {
     json!({
         "type":"json_schema",
-        "name":"knoveyla_profile_refresh",
+        "name":"knov_profile_refresh",
         "strict":true,
         "schema":{
             "type":"object",

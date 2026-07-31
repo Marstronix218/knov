@@ -32,17 +32,17 @@ These commands cover:
 Desktop frontend:
 
 ```sh
-npm run typecheck --workspace @knoveyla/desktop
-npm test --workspace @knoveyla/desktop
-npm run build --workspace @knoveyla/desktop
+npm run typecheck --workspace @knov/desktop
+npm test --workspace @knov/desktop
+npm run build --workspace @knov/desktop
 ```
 
 Chrome extension:
 
 ```sh
-npm run typecheck --workspace @knoveyla/chrome-extension
-npm test --workspace @knoveyla/chrome-extension
-npm run build --workspace @knoveyla/chrome-extension
+npm run typecheck --workspace @knov/chrome-extension
+npm test --workspace @knov/chrome-extension
+npm run build --workspace @knov/chrome-extension
 ```
 
 Rust core:
@@ -103,9 +103,9 @@ Chrome profile, or live provider accounts. Before an alpha handoff:
 With the app stopped, the macOS database is normally:
 
 ```sh
-KNOVEYLA_DB="$HOME/Library/Application Support/com.knoveyla.desktop/knoveyla.sqlite3"
-sqlite3 "$KNOVEYLA_DB" '.tables'
-sqlite3 "$KNOVEYLA_DB" \
+KNOV_DB="$HOME/Library/Application Support/com.knov.desktop/knov.sqlite3"
+sqlite3 "$KNOV_DB" '.tables'
+sqlite3 "$KNOV_DB" \
   'SELECT source, COUNT(*) FROM activity_events GROUP BY source;'
 ```
 

@@ -47,7 +47,7 @@ export async function loadConnection(): Promise<StoredConnection> {
   return (
     (result[CONNECTION_KEY] as StoredConnection | undefined) ?? {
       state: "unpaired",
-      message: "Pair with the Knoveyla Mac app"
+      message: "Pair with the Knov Mac app"
     }
   );
 }

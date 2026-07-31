@@ -21,7 +21,7 @@ import {
 import { sendEvents, testConnection } from "./background/transport";
 import type { BrowserActivityEvent } from "./shared/types";
 
-const HEARTBEAT_ALARM = "knoveyla-heartbeat";
+const HEARTBEAT_ALARM = "knov-heartbeat";
 const HEARTBEAT_MINUTES = 0.5;
 const MAX_EPHEMERAL_EVENTS = 100;
 let transitionChain = Promise.resolve();
@@ -136,7 +136,7 @@ async function performFlush(): Promise<void> {
   if (!config.pairingToken) {
     await saveConnection({
       state: "unpaired",
-      message: "Pair with the Knoveyla Mac app"
+      message: "Pair with the Knov Mac app"
     });
     await updateAction();
     return;
@@ -200,8 +200,8 @@ async function updateAction(): Promise<void> {
     chrome.action.setBadgeBackgroundColor({ color }),
     chrome.action.setTitle({
       title: status.collectionEnabled
-        ? `Knoveyla: ${status.connectionMessage}`
-        : "Knoveyla: collection paused"
+        ? `Knov: ${status.connectionMessage}`
+        : "Knov: collection paused"
     })
   ]);
 }

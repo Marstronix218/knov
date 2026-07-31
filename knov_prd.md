@@ -1,4 +1,4 @@
-# Knoveyla — Software Requirements Document
+# Knov — Software Requirements Document
 
 **A behavioral context layer for personal AI**
 
@@ -26,7 +26,7 @@ Architecture: native Apple Silicon macOS collector + Chrome extension + chat int
 
 ### 1.1 Purpose
 
-This document specifies the requirements for Knoveyla, a personal AI system that builds an understanding of a user from their real device behavior — the applications they use and the web pages they visit — and exposes that understanding through a chat interface. The goal is an assistant that already knows the user from how they actually work and live, rather than one that must be told who they are.
+This document specifies the requirements for Knov, a personal AI system that builds an understanding of a user from their real device behavior — the applications they use and the web pages they visit — and exposes that understanding through a chat interface. The goal is an assistant that already knows the user from how they actually work and live, rather than one that must be told who they are.
 
 This document is intended as a build specification. It defines what the MVP must do, the boundaries of that scope, and the constraints — particularly around privacy — that any implementation must respect. It is written to be handed to an engineer or small team as the basis for technical design and implementation planning.
 
@@ -44,7 +44,7 @@ If an AI assistant is given an accurate, continuously updated picture of a user'
 
 ### 1.4 Solution summary
 
-Knoveyla consists of five parts working together on the user's machine:
+Knov consists of five parts working together on the user's machine:
 
 - **Collector.** A native background agent that records which application is in the foreground, the active window title, and the user's browser history, with timestamps and durations.
 - **Chrome extension.** A narrowly permissioned companion that records the active tab's URL, title, and focus duration and sends those events only to the local Mac application.
@@ -72,7 +72,7 @@ The following table sets the boundary of the MVP. Items marked out of scope are 
 | In-app work-continuity and behavioral recommendations | Autonomous actions taken on the user's behalf |
 | Activity insights and topical/media summaries | Medical, mental-health, or productivity diagnosis |
 | Selection of one or more Chrome profiles during onboarding | Automatic ingestion from Chrome profiles the user did not select |
-| Bring-your-own OpenAI or Anthropic API key | Knoveyla-hosted LLM proxy, billing, or user accounts |
+| Bring-your-own OpenAI or Anthropic API key | Knov-hosted LLM proxy, billing, or user accounts |
 | User view + edit + delete of profile | Interruptive background notifications or coaching |
 | Single device, single user | Multi-device sync; cloud accounts |
 
@@ -99,7 +99,7 @@ This user is reachable, feels the problem acutely, and can evaluate the result. 
 5. **Activity review.** The user opens a dashboard to see time allocation and usage percentages by application or site and to browse a chronological history of what they were working on or viewing.
 6. **Next-step and behavioral guidance.** The user receives optional, non-interruptive recommendations in the app based on recent activity and the current profile, such as a relevant task to resume, a logical next action, a change in focus, or a break after sustained activity.
 7. **Activity insights.** The user sees understandable summaries such as time spent by topic, repeated research themes, focused-session length, and how many video pages or resources were active within a category.
-8. **Chrome profile consent.** During onboarding, the user sees the Chrome profiles available on the device and explicitly selects one or more profiles whose history Knoveyla may ingest.
+8. **Chrome profile consent.** During onboarding, the user sees the Chrome profiles available on the device and explicitly selects one or more profiles whose history Knov may ingest.
 9. **Technical alpha setup.** A technical user installs a development-stage Mac build, loads or installs the companion Chrome extension, grants permissions, selects Chrome profiles, and connects their own LLM provider key.
 10. **Provider configuration.** The user selects OpenAI or Anthropic, enters an API key in the app, verifies the connection, and has the credential stored in macOS Keychain rather than in the activity database or a required `.env` file.
 
@@ -131,7 +131,7 @@ The application uses Tauri 2: React and TypeScript bundled with Vite for the int
 
 The technical-user alpha may use a development-stage Mac build and an unpacked Chrome extension installed through browser developer mode. Chrome Web Store publication, polished installers, Apple notarization, and consumer-grade installation are deferred until the behavioral-context hypothesis is validated. Setup documentation must nevertheless be explicit, reproducible, and honest about every permission.
 
-Knoveyla uses a bring-your-own-key model for the alpha. Users select OpenAI or Anthropic and enter their API key in the application settings. The packaged application stores the credential in macOS Keychain and uses it only for direct requests to the selected provider. A `.env` file may be supported for contributors running the source code, but it must not be required for normal alpha use.
+Knov uses a bring-your-own-key model for the alpha. Users select OpenAI or Anthropic and enter their API key in the application settings. The packaged application stores the credential in macOS Keychain and uses it only for direct requests to the selected provider. A `.env` file may be supported for contributors running the source code, but it must not be required for normal alpha use.
 
 ### 3.4 Data flow
 
@@ -234,7 +234,7 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | FR-44 | Let the user select a supported remote LLM provider, initially OpenAI or Anthropic. | Must |
 | FR-45 | Let the user enter, replace, validate, and remove their provider API key from the application settings. | Must |
 | FR-46 | Store provider API keys in macOS Keychain; never store them in the activity database, logs, analytics, Chrome extension, source control, or plaintext application configuration. | Must |
-| FR-47 | Send profiling and chat requests directly from the Mac application to the selected provider; do not route them through a Knoveyla-hosted proxy in the alpha. | Must |
+| FR-47 | Send profiling and chat requests directly from the Mac application to the selected provider; do not route them through a Knov-hosted proxy in the alpha. | Must |
 | FR-48 | Support `.env`-based credentials only as an optional development convenience for contributors running from source, never as the required alpha-user setup. | Should |
 | FR-49 | Show actionable errors for missing, invalid, revoked, rate-limited, or out-of-credit provider keys without exposing the credential. | Must |
 
@@ -251,7 +251,7 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 |---|---|---|
 | FR-52 | Retain detailed raw activity events and detailed dashboard history in a rolling 30-day local window. | Must |
 | FR-53 | Automatically and permanently purge detailed events older than 30 days from the local store. | Must |
-| FR-54 | Retain the editable generated profile and preserved user corrections until the user deletes them or invokes single-action deletion of all Knoveyla data. | Must |
+| FR-54 | Retain the editable generated profile and preserved user corrections until the user deletes them or invokes single-action deletion of all Knov data. | Must |
 | FR-55 | Treat imported browser events between 31 and 90 days old as temporary cold-start data, use them for the first profile, and permanently delete them after successful initial profile generation. | Must |
 
 ### 4.10 Implementation stack

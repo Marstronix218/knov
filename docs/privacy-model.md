@@ -1,6 +1,6 @@
 # Privacy model
 
-Knoveyla is local-first, not fully local. Raw activity is stored on the Mac, but
+Knov is local-first, not fully local. Raw activity is stored on the Mac, but
 profile generation, recommendations, connection tests, and chat use the
 user-selected OpenAI or Anthropic API.
 
@@ -18,7 +18,7 @@ The Chrome extension can record the focused tab's URL, title, start/end time,
 duration, and extension ID. It ignores incognito tabs, non-HTTP(S) URLs, and
 locally excluded domains.
 
-Knoveyla does not intentionally collect page bodies, DOM content, form input,
+Knov does not intentionally collect page bodies, DOM content, form input,
 keystrokes, clipboard contents, screenshots, audio, or camera data. The Chrome
 extension has no content scripts.
 
@@ -28,7 +28,7 @@ sensitive information. Treat the local database as sensitive.
 ## What remains local
 
 The following remains in app-owned local storage unless the user exports or
-copies it outside Knoveyla:
+copies it outside Knov:
 
 - detailed activity events and dashboard history
 - complete imported URLs, titles, and extracted search queries
@@ -55,23 +55,23 @@ home-directory paths, and long token-like identifiers before truncation. It is
 not a general sensitive-data detector, so a title may still disclose private
 information.
 
-Knoveyla does not send the complete activity-events table or complete URLs as
+Knov does not send the complete activity-events table or complete URLs as
 part of the profile digest. Chat requests do not attach raw activity events.
 Requests go from the Rust core directly to the selected provider; there is no
-Knoveyla proxy or analytics service. OpenAI requests set `store: false`.
+Knov proxy or analytics service. OpenAI requests set `store: false`.
 Provider-side processing and retention remain governed by the selected
 provider's API terms and account settings.
 
 ## Credentials
 
 The settings and onboarding interfaces pass a newly entered key to a Rust
-command, which saves it to Keychain service `com.knoveyla.desktop.llm`. Commands
+command, which saves it to Keychain service `com.knov.desktop.llm`. Commands
 never return the key to the frontend.
 
 For source development only, `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in the
 native process environment takes precedence over Keychain after a provider has
 been configured. Environment variables do not configure first-run provider
-selection, and Knoveyla does not load `.env` files automatically. Environment
+selection, and Knov does not load `.env` files automatically. Environment
 variables may be visible to other processes with sufficient local privileges
 and should not be used for a distributed alpha build.
 
@@ -107,7 +107,7 @@ testing the extension.
 - resets settings to defaults
 - removes both provider credentials from Keychain or reports failure
 - creates a new pairing token
-- removes Knoveyla's per-user Chrome Native Messaging manifest
+- removes Knov's per-user Chrome Native Messaging manifest
 
 It does not promise forensic or cryptographic erasure. SQLite/WAL pages, APFS
 snapshots, backups, SSD behavior, crash remnants, and provider-held request data

@@ -70,7 +70,7 @@ only for local development. Native Messaging remains the intended transport.
 
 The extension requests `tabs`, `storage`, `alarms`, and `nativeMessaging`, plus
 loopback host permissions for development. The `tabs` permission can expose tab
-metadata to extension code even though Knoveyla intentionally queries only the
+metadata to extension code even though Knov intentionally queries only the
 active tab.
 
 ### Provider egress

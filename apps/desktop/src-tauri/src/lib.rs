@@ -28,7 +28,7 @@ pub fn run() {
         )
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
-            let db = Arc::new(Database::open(data_dir.join("knoveyla.sqlite3"))?);
+            let db = Arc::new(Database::open(data_dir.join("knov.sqlite3"))?);
             let launch_result = if db.settings()?.launch_at_login {
                 app.autolaunch().enable()
             } else {
@@ -57,7 +57,7 @@ pub fn run() {
                 refresh_lock: state.refresh_lock.clone(),
             }));
 
-            let show = MenuItem::with_id(app, "show", "Show Knoveyla", true, None::<&str>)?;
+            let show = MenuItem::with_id(app, "show", "Show Knov", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
             TrayIconBuilder::new()

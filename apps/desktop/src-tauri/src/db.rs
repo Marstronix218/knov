@@ -761,7 +761,7 @@ mod tests {
             ended_at: Some(at + 60),
             duration_seconds: 60,
             app_name: "Code".into(),
-            window_title: Some("Knoveyla".into()),
+            window_title: Some("Knov".into()),
             url: None,
             page_title: None,
             search_query: None,

@@ -1,36 +1,36 @@
-# Knoveyla Chrome Companion
+# Knov Chrome Companion
 
 Manifest V3 extension for accurate active-tab timing. It observes only Chrome's
 tab metadata APIs and sends URL, title, focus timestamps, and duration to the
-paired Knoveyla app on the same computer.
+paired Knov app on the same computer.
 
 ## Screenshot
 
-![Knoveyla Chrome companion settings for Native Messaging pairing](../../docs/screenshots/chrome-companion-settings.jpg)
+![Knov Chrome companion settings for Native Messaging pairing](../../docs/screenshots/chrome-companion-settings.jpg)
 
 ## Prerequisites
 
-The companion is useful only with the native Knoveyla desktop app running on the
+The companion is useful only with the native Knov desktop app running on the
 same Mac. Complete desktop onboarding first, approve the Chrome profile you want
 to pair, and leave the app open while configuring the extension. If you have not
-downloaded and installed Knoveyla yet, follow
+downloaded and installed Knov yet, follow
 [Install the app](../../README.md#install-the-app) first.
 
 ## Build, load, and pair
 
-If you installed Knoveyla from a bundle but do not have the repository locally,
+If you installed Knov from a bundle but do not have the repository locally,
 download it before building the unpacked extension:
 
 ```sh
-git clone https://github.com/Marstronix218/knoveyla.git
-cd knoveyla
+git clone https://github.com/Marstronix218/knov.git
+cd knov
 ```
 
-From the `knoveyla` repository root:
+From the `knov` repository root:
 
 ```sh
 npm install
-npm run build --workspace @knoveyla/chrome-extension
+npm run build --workspace @knov/chrome-extension
 ```
 
 When using `npm run dev:desktop`, build the Native Messaging helper as well:
@@ -38,7 +38,7 @@ When using `npm run dev:desktop`, build the Native Messaging helper as well:
 ```sh
 cargo build \
   --manifest-path apps/desktop/src-tauri/Cargo.toml \
-  --bin knoveyla-native-host
+  --bin knov-native-host
 ```
 
 Then:
@@ -46,7 +46,7 @@ Then:
 1. Open `chrome://extensions`.
 2. Enable **Developer mode**, choose **Load unpacked**, and select
    `apps/extension/dist`.
-3. Copy the 32-character ID shown on the Knoveyla extension card.
+3. Copy the 32-character ID shown on the Knov extension card.
 4. In the desktop app, open **Settings → Chrome companion pairing**, paste the
    extension ID, and choose **Register native host**.
 5. Restart Chrome.
@@ -60,14 +60,14 @@ Then:
 
 The desktop app must remain running for connection tests and live event
 delivery. Repeat the load and pairing steps inside each Chrome profile you want
-Knoveyla to observe; registration can be reused when Chrome shows the same
+Knov to observe; registration can be reused when Chrome shows the same
 extension ID. The alpha Native Messaging manifest authorizes one extension ID
 at a time, so registering a different ID replaces the previous allowed origin.
 Do not share the pairing token in screenshots, logs, issues, or source control.
 
 ## Use the extension
 
-Select the Knoveyla toolbar icon to open the popup. It shows:
+Select the Knov toolbar icon to open the popup. It shows:
 
 - whether collection is on or paused;
 - whether the desktop app is connected;
@@ -112,7 +112,7 @@ invalid URLs, and non-HTTP(S) URLs are also ignored.
   desktop app. Chrome may assign a different ID when an unpacked extension is
   installed again.
 - **The desktop app is unavailable:** live timing cannot be delivered, but
-  Knoveyla can still use imported Chrome history after the desktop app starts.
+  Knov can still use imported Chrome history after the desktop app starts.
 
 For manual host registration and the local HTTP development fallback, see
 [Chrome extension setup](../../docs/alpha-setup.md#chrome-extension-setup).
@@ -120,7 +120,7 @@ For manual host registration and the local HTTP development fallback, see
 ## Native Messaging contract
 
 Production communication uses Chrome Native Messaging host
-`com.knoveyla.companion`. Its host manifest must list the unpacked extension's
+`com.knov.companion`. Its host manifest must list the unpacked extension's
 origin under `allowed_origins`. Chrome provides the four-byte length framing; the
 JSON request body is:
 
@@ -167,7 +167,7 @@ The `events` payload is:
       "kind": "browser_focus",
       "source": "chrome_extension",
       "browser": "chrome",
-      "browserProfileId": "<approved Chrome profile ID from Knoveyla Settings>",
+      "browserProfileId": "<approved Chrome profile ID from Knov Settings>",
       "url": "https://example.com/page",
       "title": "Example",
       "startedAt": "2026-01-01T10:00:00.000Z",
@@ -189,7 +189,7 @@ approximately every 30 seconds.
 
 Settings can explicitly select local HTTP for development. Only
 `http://127.0.0.1`, `http://localhost`, or `http://[::1]` are accepted. Requests
-use `Authorization: Bearer <pairing-token>`, `X-Knoveyla-Protocol: 1`, and the
+use `Authorization: Bearer <pairing-token>`, `X-Knov-Protocol: 1`, and the
 same status/events shapes at `GET /v1/extension/status` and
 `POST /v1/extension/events`. HTTP is not the production default.
 

@@ -71,7 +71,7 @@ export const api = {
       "get_pairing_info",
       undefined,
       {
-        nativeHost: "com.knoveyla.companion",
+        nativeHost: "com.knov.companion",
         pairingToken: "preview-only",
         localhostEndpoint: "http://127.0.0.1:48321",
         protocolVersion: 1,

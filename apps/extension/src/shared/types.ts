@@ -1,5 +1,5 @@
 export const PROTOCOL_VERSION = 1 as const;
-export const NATIVE_HOST_NAME = "com.knoveyla.companion";
+export const NATIVE_HOST_NAME = "com.knov.companion";
 
 export type TransportMode = "native" | "localhost";
 
