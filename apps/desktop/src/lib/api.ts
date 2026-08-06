@@ -30,6 +30,17 @@ async function call<T>(command: string, args?: Record<string, unknown>, fallback
 }
 
 export const api = {
+  activityIcon: (appName: string, url?: string) => {
+    let previewIcon: string | undefined;
+    if (url) {
+      try {
+        previewIcon = new URL("/favicon.ico", url).toString();
+      } catch {
+        previewIcon = undefined;
+      }
+    }
+    return call<string | null>("get_activity_icon", { appName, url }, previewIcon ?? null);
+  },
   dashboard: (range: RangeKey) =>
     call<DashboardData>("get_dashboard", { range }, { ...mockDashboard, range }),
   activity: (range: RangeKey, query = "") =>

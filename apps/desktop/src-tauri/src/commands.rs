@@ -4,14 +4,19 @@
 //! Secrets are accepted only by `save_provider_key`; no command ever returns a key.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
+    fs,
+    io::Read,
+    path::{Path, PathBuf},
+    process::Command,
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, RwLock,
+        Arc, Mutex, OnceLock, RwLock,
     },
     time::{Duration, Instant},
 };
 
+use base64::{engine::general_purpose::STANDARD, Engine};
 use chrono::{Local, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -255,6 +260,237 @@ pub fn get_activity_history(
         .collect())
 }
 
+static ACTIVITY_ICON_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
+
+#[tauri::command]
+pub async fn get_activity_icon(app_name: String, url: Option<String>) -> AppResult<Option<String>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let key = url
+            .as_deref()
+            .and_then(|value| url::Url::parse(value).ok())
+            .map(|value| value.origin().ascii_serialization())
+            .unwrap_or_else(|| format!("app:{app_name}"));
+        let cache = ACTIVITY_ICON_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+        if let Some(icon) = cache
+            .lock()
+            .expect("activity icon cache poisoned")
+            .get(&key)
+        {
+            return icon.clone();
+        }
+
+        let icon = url
+            .as_deref()
+            .and_then(fetch_website_icon)
+            .or_else(|| native_application_icon(&app_name));
+        cache
+            .lock()
+            .expect("activity icon cache poisoned")
+            .insert(key, icon.clone());
+        icon
+    })
+    .await
+    .map_err(|error| AppError::InvalidInput(format!("Could not resolve activity icon: {error}")))
+}
+
+fn fetch_website_icon(page_url: &str) -> Option<String> {
+    let page_url = url::Url::parse(page_url).ok()?;
+    if !matches!(page_url.scheme(), "http" | "https") {
+        return None;
+    }
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(4))
+        .redirect(reqwest::redirect::Policy::limited(3))
+        .build()
+        .ok()?;
+    let mut favicon_url = page_url.clone();
+    favicon_url.set_path("/favicon.ico");
+    favicon_url.set_query(None);
+    favicon_url.set_fragment(None);
+    if let Some(icon) = fetch_image(&client, favicon_url) {
+        return Some(icon);
+    }
+
+    let response = client
+        .get(page_url.clone())
+        .header(reqwest::header::USER_AGENT, "Knov/0.1 favicon")
+        .send()
+        .ok()?
+        .error_for_status()
+        .ok()?;
+    let mut html = Vec::new();
+    response.take(2_097_153).read_to_end(&mut html).ok()?;
+    if html.len() > 2_097_152 {
+        return None;
+    }
+    let html = String::from_utf8_lossy(&html);
+    let href = declared_icon_href(&html)?;
+    let declared_url = page_url.join(&href).ok()?;
+    if !matches!(declared_url.scheme(), "http" | "https") {
+        return None;
+    }
+    fetch_image(&client, declared_url)
+}
+
+fn fetch_image(client: &reqwest::blocking::Client, url: url::Url) -> Option<String> {
+    let response = client
+        .get(url)
+        .header(reqwest::header::USER_AGENT, "Knov/0.1 favicon")
+        .send()
+        .ok()?
+        .error_for_status()
+        .ok()?;
+    let header_mime = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(';').next())
+        .filter(|value| value.starts_with("image/"))
+        .map(str::to_owned);
+    let mut bytes = Vec::new();
+    response.take(1_048_577).read_to_end(&mut bytes).ok()?;
+    if bytes.is_empty() || bytes.len() > 1_048_576 {
+        return None;
+    }
+    let mime = header_mime.or_else(|| detect_image_mime(&bytes).map(str::to_owned))?;
+    Some(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
+}
+
+fn declared_icon_href(html: &str) -> Option<String> {
+    let lower = html.to_ascii_lowercase();
+    let mut offset = 0;
+    while let Some(start) = lower[offset..].find("<link") {
+        let start = offset + start;
+        let end = start + lower[start..].find('>')? + 1;
+        let tag = &html[start..end];
+        let rel = html_attribute(tag, "rel").unwrap_or_default();
+        if rel
+            .split_ascii_whitespace()
+            .any(|value| value.eq_ignore_ascii_case("icon"))
+        {
+            if let Some(href) = html_attribute(tag, "href") {
+                return Some(href);
+            }
+        }
+        offset = end;
+    }
+    None
+}
+
+fn html_attribute(tag: &str, name: &str) -> Option<String> {
+    let lower = tag.to_ascii_lowercase();
+    let mut offset = 0;
+    while let Some(found) = lower[offset..].find(name) {
+        let start = offset + found;
+        let before = lower.as_bytes().get(start.wrapping_sub(1)).copied();
+        let after = lower.as_bytes().get(start + name.len()).copied();
+        if before.is_some_and(|value| value.is_ascii_alphanumeric() || value == b'-')
+            || after.is_some_and(|value| value.is_ascii_alphanumeric() || value == b'-')
+        {
+            offset = start + name.len();
+            continue;
+        }
+        let remainder = &tag[start + name.len()..];
+        let remainder = remainder.trim_start();
+        let remainder = remainder.strip_prefix('=')?.trim_start();
+        let quote = remainder.as_bytes().first().copied()?;
+        if quote == b'\'' || quote == b'"' {
+            let value = &remainder[1..];
+            let end = value.find(quote as char)?;
+            return Some(value[..end].to_owned());
+        }
+        let end = remainder
+            .find(|value: char| value.is_ascii_whitespace() || value == '>')
+            .unwrap_or(remainder.len());
+        return Some(remainder[..end].to_owned());
+    }
+    None
+}
+
+fn detect_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.starts_with(b"\xff\xd8\xff") {
+        Some("image/jpeg")
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else if bytes.starts_with(b"\x00\x00\x01\x00") {
+        Some("image/x-icon")
+    } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
+        Some("image/webp")
+    } else if bytes.starts_with(b"<svg") || bytes.starts_with(b"<?xml") {
+        Some("image/svg+xml")
+    } else {
+        None
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn native_application_icon(app_name: &str) -> Option<String> {
+    let searchable_name = match app_name {
+        "Code" => "Visual Studio Code",
+        name => name,
+    };
+    let escaped_name = searchable_name.replace('\\', "\\\\").replace('\'', "\\'");
+    let query = format!(
+        "kMDItemContentType == 'com.apple.application-bundle' && (kMDItemDisplayName == '{escaped_name}'cd || kMDItemFSName == '{escaped_name}.app'cd)"
+    );
+    let output = Command::new("/usr/bin/mdfind").arg(query).output().ok()?;
+    let app_path = String::from_utf8(output.stdout)
+        .ok()?
+        .lines()
+        .next()?
+        .trim()
+        .to_owned();
+    let resources = Path::new(&app_path).join("Contents/Resources");
+    let plist = Path::new(&app_path).join("Contents/Info.plist");
+    let icon_name = Command::new("/usr/bin/plutil")
+        .args(["-extract", "CFBundleIconFile", "raw", "-o", "-"])
+        .arg(&plist)
+        .output()
+        .ok()
+        .filter(|result| result.status.success())
+        .and_then(|result| String::from_utf8(result.stdout).ok())
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "AppIcon".into());
+    let icon_name = if Path::new(&icon_name).extension().is_some() {
+        icon_name
+    } else {
+        format!("{icon_name}.icns")
+    };
+    let source = resources.join(icon_name);
+    if !source.is_file() {
+        return None;
+    }
+
+    let digest = format!("{:x}", Sha256::digest(app_path.as_bytes()));
+    let cache_dir = std::env::temp_dir().join("knov-app-icons");
+    fs::create_dir_all(&cache_dir).ok()?;
+    let png = cache_dir.join(format!("{digest}.png"));
+    if !png.is_file() && !convert_icon_to_png(&source, &png) {
+        return None;
+    }
+    let bytes = fs::read(png).ok()?;
+    Some(format!("data:image/png;base64,{}", STANDARD.encode(bytes)))
+}
+
+#[cfg(target_os = "macos")]
+fn convert_icon_to_png(source: &Path, destination: &PathBuf) -> bool {
+    Command::new("/usr/bin/sips")
+        .args(["-s", "format", "png"])
+        .arg(source)
+        .arg("--out")
+        .arg(destination)
+        .output()
+        .is_ok_and(|result| result.status.success())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn native_application_icon(_app_name: &str) -> Option<String> {
+    None
+}
+
 #[tauri::command]
 pub fn get_profile(state: State<'_, AppState>) -> AppResult<Value> {
     profile_to_ui(&state.db)
@@ -375,7 +611,9 @@ pub async fn reimport_chrome_history(state: State<'_, AppState>) -> AppResult<Va
     })
     .await
     .map_err(|error| {
-        AppError::InvalidInput(format!("Could not wait for the active profile refresh: {error}"))
+        AppError::InvalidInput(format!(
+            "Could not wait for the active profile refresh: {error}"
+        ))
     })??;
 
     import_selected_chrome_history(&state.db, 30)?;
@@ -898,5 +1136,24 @@ mod tests {
             error.to_string(),
             "invalid input: Another profile refresh is still running. Try again in a moment."
         );
+    }
+
+    #[test]
+    fn activity_icon_detection_accepts_common_favicon_formats() {
+        assert_eq!(
+            detect_image_mime(b"\x89PNG\r\n\x1a\nrest"),
+            Some("image/png")
+        );
+        assert_eq!(
+            detect_image_mime(b"\x00\x00\x01\x00rest"),
+            Some("image/x-icon")
+        );
+        assert_eq!(detect_image_mime(b"not an image"), None);
+    }
+
+    #[test]
+    fn activity_icon_parser_finds_declared_shortcut_icons() {
+        let html = r#"<html><head><link rel="shortcut icon" href="/favicon.svg" type="image/svg+xml"></head></html>"#;
+        assert_eq!(declared_icon_href(html).as_deref(), Some("/favicon.svg"));
     }
 }

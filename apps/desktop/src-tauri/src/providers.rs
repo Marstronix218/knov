@@ -1,6 +1,7 @@
 use chrono::Utc;
 use keyring::Entry;
 use reqwest::{Client, StatusCode};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -177,9 +178,7 @@ impl ProviderClient {
         let profile_value = parsed.get("profile").cloned().ok_or_else(|| {
             AppError::Provider("The provider response did not include a profile.".into())
         })?;
-        let mut profile: ProfileDocument = serde_json::from_value(profile_value).map_err(|_| {
-            AppError::Provider("The provider returned an invalid profile format.".into())
-        })?;
+        let mut profile = decode_profile(profile_value)?;
         if unsafe_guidance(&profile.summary) || sensitive_inference(&profile.summary) {
             profile.summary =
                 "Profile available; sensitive or judgmental provider output was suppressed locally."
@@ -384,6 +383,34 @@ fn invalid_profile_format() -> AppError {
     AppError::Provider("The provider returned an invalid profile format.".into())
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GeneratedProfile {
+    #[serde(default)]
+    summary: Option<String>,
+    #[serde(default)]
+    interests: Option<Vec<String>>,
+    #[serde(default)]
+    skills: Option<Vec<String>>,
+    #[serde(default, alias = "active_projects")]
+    active_projects: Option<Vec<String>>,
+    #[serde(default)]
+    patterns: Option<Vec<String>>,
+}
+
+fn decode_profile(value: Value) -> AppResult<ProfileDocument> {
+    let generated: GeneratedProfile =
+        serde_json::from_value(value).map_err(|_| invalid_profile_format())?;
+    Ok(ProfileDocument {
+        summary: generated.summary.unwrap_or_default(),
+        interests: generated.interests.unwrap_or_default(),
+        skills: generated.skills.unwrap_or_default(),
+        active_projects: generated.active_projects.unwrap_or_default(),
+        patterns: generated.patterns.unwrap_or_default(),
+        updated_at: 0,
+    })
+}
+
 fn profile_response_format() -> Value {
     json!({
         "type":"json_schema",
@@ -501,6 +528,37 @@ mod tests {
             parse_json_response("I could not generate a profile."),
             Err(AppError::Provider(_))
         ));
+    }
+
+    #[test]
+    fn decodes_profile_with_nullable_optional_collections() {
+        let profile = decode_profile(json!({
+            "summary": "Focused",
+            "interests": null,
+            "skills": ["Rust"],
+            "activeProjects": null,
+            "patterns": []
+        }))
+        .expect("nullable provider fields should use safe empty defaults");
+
+        assert_eq!(profile.summary, "Focused");
+        assert!(profile.interests.is_empty());
+        assert_eq!(profile.skills, ["Rust"]);
+        assert!(profile.active_projects.is_empty());
+    }
+
+    #[test]
+    fn decodes_snake_case_active_projects_from_prompt_only_providers() {
+        let profile = decode_profile(json!({
+            "summary": "Focused",
+            "interests": [],
+            "skills": [],
+            "active_projects": ["Knov"],
+            "patterns": []
+        }))
+        .expect("snake_case provider output should be accepted");
+
+        assert_eq!(profile.active_projects, ["Knov"]);
     }
 
     #[test]

@@ -24,7 +24,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useState } from "react";
 import "./App.css";
 import { MarkdownMessage } from "./components/MarkdownMessage";
 import { useResource } from "./hooks/useResource";
@@ -554,7 +554,7 @@ function ActivityList({ events, compact = false }: { events: ActivityEvent[]; co
         <article className="activity-row" key={event.id}>
           <time>{formatTime(event.startedAt)}</time>
           <div className="timeline-marker" />
-          <div className="app-token">{event.appName.slice(0, 1)}</div>
+          <ActivityLogo event={event} />
           <div className="activity-copy">
             <div><strong>{event.pageTitle || event.windowTitle || event.appName}</strong><span>{event.appName}</span></div>
             <p>{domainFromUrl(event.url) || event.topic || "Application focus"}</p>
@@ -563,6 +563,45 @@ function ActivityList({ events, compact = false }: { events: ActivityEvent[]; co
           <strong className="duration">{formatDuration(event.durationSeconds)}</strong>
         </article>
       ))}
+    </div>
+  );
+}
+
+const activityIconCache = new Map<string, Promise<string | null>>();
+
+function ActivityLogo({ event }: { event: ActivityEvent }) {
+  let cacheKey = `app:${event.appName}`;
+  if (event.url) {
+    try {
+      cacheKey = new URL(event.url).origin;
+    } catch {
+      // An invalid captured URL should still allow the native app icon fallback.
+    }
+  }
+  const [icon, setIcon] = useState<string | null>();
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    let request = activityIconCache.get(cacheKey);
+    if (!request) {
+      request = api.activityIcon(event.appName, event.url).catch(() => null);
+      activityIconCache.set(cacheKey, request);
+    }
+    void request.then((resolved) => {
+      if (active) setIcon(resolved);
+    });
+    return () => {
+      active = false;
+    };
+  }, [cacheKey, event.appName, event.url]);
+
+  const fallback = event.appName.slice(0, 1).toUpperCase();
+  return (
+    <div className="app-token">
+      {icon && !failed
+        ? <img src={icon} alt="" aria-hidden="true" onError={() => setFailed(true)} />
+        : fallback}
     </div>
   );
 }
@@ -719,7 +758,18 @@ function AssistantPage() {
           {sending && <article className="message assistant"><div className="message-avatar"><Bot size={18} /></div><div className="typing"><i /><i /><i /></div></article>}
         </div>
         <form className="chat-composer" onSubmit={(event) => void submit(event)}>
-          <textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="What should I focus on next?" rows={2} />
+          <textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
+            placeholder="What should I focus on next?"
+            rows={2}
+          />
           <button className="primary-button" disabled={!draft.trim() || sending}>Send <ChevronRight size={16} /></button>
         </form>
       </section>

@@ -135,6 +135,7 @@ a { color: inherit; text-decoration: none; }
 .timeline-marker::after { position: absolute; content: ""; width: 1px; height: 68px; top: 8px; left: 2px; background: var(--line); }
 .activity-row:last-child .timeline-marker::after { display: none; }
 .app-token { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 8px; background: #1c2121; font-weight: 800; color: var(--accent); }
+.app-token img { width: 20px; height: 20px; object-fit: contain; border-radius: 4px; }
 .activity-copy { min-width: 0; }
 .activity-copy > div { display: flex; gap: 7px; align-items: center; min-width: 0; }
 .activity-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }

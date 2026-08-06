@@ -79,6 +79,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_dashboard,
             commands::get_activity_history,
+            commands::get_activity_icon,
             commands::get_profile,
             commands::get_settings,
             commands::get_browser_profiles,

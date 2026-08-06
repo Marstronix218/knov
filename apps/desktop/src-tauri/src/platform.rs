@@ -110,8 +110,7 @@ fn import_chrome_history(
     if !source.exists() {
         return Ok(0);
     }
-    let temporary =
-        std::env::temp_dir().join(format!("knov-history-{}.sqlite", Uuid::new_v4()));
+    let temporary = std::env::temp_dir().join(format!("knov-history-{}.sqlite", Uuid::new_v4()));
     fs::copy(source, &temporary)?;
     #[cfg(unix)]
     {
@@ -152,14 +151,13 @@ fn import_chrome_history(
             let (url, title, chrome_time, chrome_duration) = row?;
             let occurred_at = chrome_time / 1_000_000 - 11_644_473_600;
             let reported_duration = chrome_duration.max(0) / 1_000_000;
-            let duration_seconds =
-                if reported_duration <= MAX_HISTORICAL_VISIT_SECONDS
-                    && reported_duration <= now.saturating_sub(occurred_at)
-                {
-                    reported_duration
-                } else {
-                    0
-                };
+            let duration_seconds = if reported_duration <= MAX_HISTORICAL_VISIT_SECONDS
+                && reported_duration <= now.saturating_sub(occurred_at)
+            {
+                reported_duration
+            } else {
+                0
+            };
             let search_query = extract_search_query(&url);
             let event = ActivityEvent {
                 id: None,

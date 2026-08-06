@@ -132,6 +132,15 @@ describe("dashboard", () => {
     expect(screen.getByRole("heading", { name: "Recommendations" })).toBeInTheDocument();
   });
 
+  it("shows website favicons instead of letter placeholders", async () => {
+    await renderRoute("#/dashboard");
+
+    await waitFor(() => {
+      const favicon = document.querySelector<HTMLImageElement>(".activity-row .app-token img");
+      expect(favicon?.src).toBe("https://v2.tauri.app/favicon.ico");
+    });
+  });
+
   it("requests new dashboard data when the range changes", async () => {
     const dashboardSpy = vi.mocked(api.dashboard);
     await renderRoute("#/dashboard");
@@ -275,6 +284,37 @@ describe("assistant chat", () => {
       { role: "user", content: "What should I work on?" },
     ]);
     expect(await screen.findByText(response.content)).toBeInTheDocument();
+  });
+
+  it("sends a message when Enter is pressed", async () => {
+    const response: ChatMessage = {
+      id: "assistant-response",
+      role: "assistant",
+      content: "Sent from the keyboard.",
+      createdAt: "2026-07-27T17:05:00.000Z",
+    };
+    const chat = vi.spyOn(api, "chat").mockResolvedValue(response);
+    await renderRoute("#/assistant");
+
+    const composer = screen.getByPlaceholderText("What should I focus on next?");
+    fireEvent.change(composer, { target: { value: "Send this with Enter" } });
+    fireEvent.keyDown(composer, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => expect(chat).toHaveBeenCalledTimes(1));
+    const sentMessages = chat.mock.calls[0][0];
+    expect(sentMessages[sentMessages.length - 1]?.content).toBe("Send this with Enter");
+    expect(await screen.findByText(response.content)).toBeInTheDocument();
+  });
+
+  it("inserts a newline with Shift+Enter instead of sending", async () => {
+    const chat = vi.spyOn(api, "chat");
+    await renderRoute("#/assistant");
+
+    const composer = screen.getByPlaceholderText("What should I focus on next?");
+    fireEvent.change(composer, { target: { value: "First line" } });
+    fireEvent.keyDown(composer, { key: "Enter", code: "Enter", shiftKey: true });
+
+    expect(chat).not.toHaveBeenCalled();
   });
 
   it("does not send whitespace-only messages", async () => {

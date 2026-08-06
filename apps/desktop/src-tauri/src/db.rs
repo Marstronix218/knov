@@ -286,10 +286,7 @@ impl Database {
             })?;
             Ok(rows.collect::<Result<Vec<_>, _>>()?)
         };
-        let applications = aggregate(
-            "app_name",
-            "source IN ('app_focus','chrome_extension')",
-        )?;
+        let applications = aggregate("app_name", "source IN ('app_focus','chrome_extension')")?;
         let websites = aggregate(
             "CASE WHEN url LIKE 'http%' THEN
                replace(substr(url,instr(url,'//')+2,
@@ -533,8 +530,7 @@ impl Database {
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
-        let domain_expression =
-            "replace(substr(url,instr(url,'//')+2,
+        let domain_expression = "replace(substr(url,instr(url,'//')+2,
                CASE WHEN instr(substr(url,instr(url,'//')+2),'/')=0
                  THEN length(url)
                  ELSE instr(substr(url,instr(url,'//')+2),'/')-1 END),'www.','')";
