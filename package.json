@@ -10,10 +10,14 @@
   "scripts": {
     "dev": "npm run dev --workspace @knov/desktop",
     "dev:desktop": "npm run tauri dev --workspace @knov/desktop",
-    "build": "npm run build --workspaces --if-present",
+    "dev:with-extension": "npm run dev:with-extension --workspace @knov/desktop",
+    "build": "npm run build --workspace @knov/desktop",
     "build:desktop": "npm run bundle --workspace @knov/desktop",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "build:extension": "npm run build --workspace @knov/chrome-extension",
+    "typecheck": "npm run typecheck --workspace @knov/desktop",
+    "typecheck:extension": "npm run typecheck --workspace @knov/chrome-extension",
+    "test": "npm run test --workspace @knov/desktop",
+    "test:extension": "npm run test --workspace @knov/chrome-extension",
     "check:rust": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "test:rust": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml"
   },

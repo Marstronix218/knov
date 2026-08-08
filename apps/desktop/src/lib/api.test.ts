@@ -27,6 +27,10 @@ describe("browser preview API", () => {
     expect(settings.collectionStatus.enabled).toBe(false);
   });
 
+  it("does not synthesize remote favicon requests in browser preview", async () => {
+    await expect(api.activityIcon("Chrome", "https://private.example/account")).resolves.toBeNull();
+  });
+
   it("opens resources in a protected browser-preview tab", async () => {
     const openedWindow = { opener: window };
     const open = vi.spyOn(window, "open").mockReturnValue(openedWindow as unknown as Window);

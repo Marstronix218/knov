@@ -42,6 +42,7 @@ import type {
   MemoryRecord,
   Provider,
   RangeKey,
+  Recommendation,
   SettingsData,
   ThreadContext,
   ThreadContextEvent,
@@ -151,6 +152,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
       await api.setBrowserProfiles(selectedProfiles);
       await api.startBootstrap();
       await api.setCollectionEnabled(true);
+      void api.recordProductEvent("setup_completed").catch(() => undefined);
       onComplete();
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : String(cause));
@@ -550,17 +552,27 @@ function DashboardContent({ data }: { data: DashboardData }) {
   const storedThread = localStorage.getItem("knov.selected-thread");
   const [selectedId, setSelectedId] = useState(storedThread ?? threads[0]?.id);
   const [actionMessage, setActionMessage] = useState("");
+  const [feedbackMessage, setFeedbackMessage] = useState("");
   const selected = threads.find((thread) => thread.id === selectedId) ?? threads[0];
   const focusPercent = data.trackedSeconds ? (data.focusedSeconds / data.trackedSeconds) * 100 : 0;
 
   if (!selected) {
-    return <EmptyState title="No work threads yet" detail="Keep collection on while you work. Knov will group recent activity into reviewable threads." />;
+    return (
+      <>
+        <EmptyState title="No work threads yet" detail="Keep collection on while you work. Knov will group recent activity into reviewable threads." />
+        <RecommendationSection recommendations={data.recommendations} />
+      </>
+    );
   }
 
   const selectThread = (id: string) => {
     setSelectedId(id);
     localStorage.setItem("knov.selected-thread", id);
     setActionMessage("");
+    setFeedbackMessage("");
+  };
+  const recordThreadEvent = (eventType: string) => {
+    void api.recordProductEvent(eventType, selected.id).catch(() => undefined);
   };
   const resume = async () => {
     const target = selected.events
@@ -571,6 +583,7 @@ function DashboardContent({ data }: { data: DashboardData }) {
       try {
         await api.openResource(target);
         setActionMessage("Opened the latest available resource.");
+        recordThreadEvent("thread_resumed");
       } catch {
         setActionMessage("Could not open the latest available resource.");
       }
@@ -592,6 +605,7 @@ function DashboardContent({ data }: { data: DashboardData }) {
     try {
       await api.openApplication(appName);
       setActionMessage(`Opened ${appName}.`);
+      recordThreadEvent("thread_resumed");
     } catch {
       setActionMessage(`Could not open ${appName}.`);
     }
@@ -599,11 +613,30 @@ function DashboardContent({ data }: { data: DashboardData }) {
   const copyBrief = async () => {
     await navigator.clipboard.writeText(makeContextBrief(makeThreadContext(selected)));
     setActionMessage("Detailed context packet copied.");
+    recordThreadEvent("thread_brief_copied");
   };
-  const prepareAssistant = () => sessionStorage.setItem(
-    "knov.active-thread-context",
-    JSON.stringify(makeThreadContext(selected)),
-  );
+  const prepareAssistant = () => {
+    sessionStorage.setItem(
+      "knov.active-thread-context",
+      JSON.stringify(makeThreadContext(selected)),
+    );
+    recordThreadEvent("thread_context_opened");
+  };
+  const sendThreadFeedback = async (feedback: "helpful" | "wrong" | "not_now") => {
+    setFeedbackMessage("Saving locally…");
+    try {
+      await api.recordProductEvent(`thread_feedback_${feedback}`, selected.id);
+      setFeedbackMessage(
+        feedback === "helpful"
+          ? "Great—feedback was stored locally."
+          : feedback === "wrong"
+            ? "Stored locally. Review the thread evidence or choose another thread."
+            : "Stored locally. No reminder or notification will be sent.",
+      );
+    } catch {
+      setFeedbackMessage("Could not store that feedback. Try again when local storage is available.");
+    }
+  };
 
   return (
     <>
@@ -627,6 +660,15 @@ function DashboardContent({ data }: { data: DashboardData }) {
             <button className="ghost-button large" onClick={() => void copyBrief()}><Copy size={17} /> Copy brief</button>
           </div>
           {actionMessage && <p className="action-message" role="status">{actionMessage}</p>}
+          <div className="thread-feedback" aria-label="Thread usefulness feedback">
+            <span>Did this save you from re-explaining your work?</span>
+            <div>
+              <button className="feedback-button" onClick={() => void sendThreadFeedback("helpful")}>Yes, useful</button>
+              <button className="feedback-button" onClick={() => void sendThreadFeedback("wrong")}>Wrong thread</button>
+              <button className="feedback-button" onClick={() => void sendThreadFeedback("not_now")}>Not now</button>
+            </div>
+            {feedbackMessage && <small role="status">{feedbackMessage}</small>}
+          </div>
         </div>
         <EvidenceRail events={selected.events} previewEvent={selected.events.find((event) => event.url)} />
       </section>
@@ -641,6 +683,8 @@ function DashboardContent({ data }: { data: DashboardData }) {
         </div>
       </section>
 
+      <RecommendationSection recommendations={data.recommendations} />
+
       <details className="attention-disclosure">
         <summary><span><BarChart3 size={17} /> Attention details</span><small>Supporting evidence, not a productivity score</small></summary>
         <div className="attention-grid">
@@ -651,6 +695,52 @@ function DashboardContent({ data }: { data: DashboardData }) {
         </div>
       </details>
     </>
+  );
+}
+
+function RecommendationSection({ recommendations }: { recommendations: Recommendation[] }) {
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => new Set());
+  const [pendingId, setPendingId] = useState<string>();
+  const [message, setMessage] = useState("");
+  const visible = recommendations.filter((recommendation) => !dismissedIds.has(recommendation.id));
+
+  const dismiss = async (recommendation: Recommendation, feedback?: string) => {
+    setPendingId(recommendation.id);
+    setMessage("");
+    try {
+      await api.dismissRecommendation(recommendation.id, feedback);
+      setDismissedIds((current) => new Set(current).add(recommendation.id));
+      setMessage(feedback ? "Feedback stored locally." : "Recommendation dismissed.");
+    } catch {
+      setMessage("Could not save that change. The recommendation is still visible.");
+    } finally {
+      setPendingId(undefined);
+    }
+  };
+
+  if (visible.length === 0) return null;
+  return (
+    <section className="recommendation-section" aria-label="Recommendations">
+      <div className="section-title-row">
+        <div><div className="eyebrow">Optional guidance</div><h2>Review, don’t obey</h2></div>
+        <small>Inferences with visible evidence</small>
+      </div>
+      <div className="recommendation-grid">
+        {visible.map((recommendation) => (
+          <article className={`recommendation-card ${recommendation.kind}`} key={recommendation.id}>
+            <div className="recommendation-top">
+              <span><Sparkles size={13} />{recommendation.kind === "continuity" ? "Work continuity" : "Behavioral"}</span>
+              <button disabled={pendingId === recommendation.id} aria-label={`Dismiss ${recommendation.title}`} title="Dismiss" onClick={() => void dismiss(recommendation)}><X size={15} /></button>
+            </div>
+            <h3>{recommendation.title}</h3>
+            <p>{recommendation.body}</p>
+            <details><summary>Why Knov suggested this</summary><p>{recommendation.evidence}</p></details>
+            <button disabled={pendingId === recommendation.id} className="recommendation-feedback" onClick={() => void dismiss(recommendation, "not-relevant")}>Not relevant</button>
+          </article>
+        ))}
+      </div>
+      {message && <p className="action-message" role="status">{message}</p>}
+    </section>
   );
 }
 
@@ -709,14 +799,10 @@ function DonutSummary({ items }: { items: UsageSlice[] }) {
 
 function ActivityPreviewCard({ event }: { event: ActivityEvent }) {
   const resource = useResource(() => api.activityPreview(event.url!), [event.url]);
-  const [playing, setPlaying] = useState(false);
-  const [thumbnailFailed, setThumbnailFailed] = useState(false);
   const [openError, setOpenError] = useState("");
   const title = event.pageTitle || event.windowTitle || event.appName;
 
   useEffect(() => {
-    setPlaying(false);
-    setThumbnailFailed(false);
     setOpenError("");
   }, [event.url]);
 
@@ -751,39 +837,15 @@ function ActivityPreviewCard({ event }: { event: ActivityEvent }) {
 
   const preview = resource.data;
   const previewTitle = preview.title?.trim() || title;
-  const playerUrl = preview.embedUrl
-    ? `${preview.embedUrl}${preview.embedUrl.includes("?") ? "&" : "?"}autoplay=1`
-    : undefined;
-  const canPlay = preview.kind === "youtube" && Boolean(playerUrl);
-  const hasThumbnail = Boolean(preview.thumbnailDataUrl) && !thumbnailFailed;
 
   return (
     <section className={`activity-preview ${preview.kind}`} aria-label="Activity preview">
-      {playing && playerUrl ? (
-        <div className="preview-media">
-          <iframe
-            src={playerUrl}
-            title={previewTitle}
-            allow="autoplay; encrypted-media; picture-in-picture; web-share"
-            referrerPolicy="strict-origin-when-cross-origin"
-            sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
-            allowFullScreen
-          />
-        </div>
-      ) : canPlay ? (
-        <button className={`preview-media preview-trigger${hasThumbnail ? "" : " no-image"}`} aria-label={`Play ${previewTitle} preview`} onClick={() => setPlaying(true)}>
-          {hasThumbnail && <img src={preview.thumbnailDataUrl} alt={`${previewTitle} preview`} onError={() => setThumbnailFailed(true)} />}
-          {!hasThumbnail && <ActivityLogo event={event} />}
-          <span><Play size={18} fill="currentColor" /> Play preview</span>
-        </button>
-      ) : (
-        <div className="preview-generic"><ActivityLogo event={event} /></div>
-      )}
+      <div className="preview-generic"><ActivityLogo event={event} /></div>
       <div className="preview-copy">
         <span>{preview.kind === "youtube" ? "Recent video" : "Recent resource"}</span>
         <h3>{previewTitle}</h3>
         <small>{domainFromUrl(event.url) || event.appName} · {formatTime(event.startedAt)}</small>
-        <small>{preview.kind === "youtube" ? "YouTube loads only after you press play." : "Live sites are not embedded inside Knov."}</small>
+        <small>Link-only preview. Knov does not contact the recorded site unless you open it.</small>
         {openLink}
         {openError && <small className="preview-error" role="status">{openError}</small>}
       </div>
@@ -1067,14 +1129,7 @@ function EditorChangeSummary({ events }: { events: ActivityEvent[] }) {
 const activityIconCache = new Map<string, Promise<string | null>>();
 
 function ActivityLogo({ event }: { event: ActivityEvent }) {
-  let cacheKey = `app:${event.appName}`;
-  if (event.url) {
-    try {
-      cacheKey = new URL(event.url).origin;
-    } catch {
-      // An invalid captured URL should still allow the native app icon fallback.
-    }
-  }
+  const cacheKey = `app:${event.appName}`;
   const [icon, setIcon] = useState<string | null>();
   const [failed, setFailed] = useState(false);
 
@@ -1371,11 +1426,8 @@ function formatTokenCount(value: number): string {
 function SettingsPage() {
   const resource = useResource(() => api.settings(), []);
   const browsers = useResource(() => api.browserProfiles(), []);
-  const pairing = useResource(() => api.pairingInfo(), []);
   const [key, setKey] = useState("");
-  const [extensionId, setExtensionId] = useState("");
   const [providerMessage, setProviderMessage] = useState("");
-  const [pairingMessage, setPairingMessage] = useState("");
   const [historyImportMessage, setHistoryImportMessage] = useState("");
   const [historyImportError, setHistoryImportError] = useState(false);
   const [historyImporting, setHistoryImporting] = useState(false);
@@ -1427,7 +1479,7 @@ function SettingsPage() {
 
             <section className="panel settings-card">
               <SettingsHeading icon={<Eye />} title="Collection" detail="Foreground app, window title, selected Chrome history, and editor workspace-change metadata." />
-              <Toggle label="Collection active" detail="The Chrome companion follows the Mac state on its next status check." checked={settings.collectionStatus.enabled} onChange={(enabled) => api.setCollectionEnabled(enabled).then(resource.setData)} />
+              <Toggle label="Collection active" detail="Collect local foreground activity and backfill selected browser and editor metadata." checked={settings.collectionStatus.enabled} onChange={(enabled) => api.setCollectionEnabled(enabled).then(resource.setData)} />
               <Toggle label="Behavioral guidance" detail="Break and focus suggestions; work-continuity guidance stays on." checked={settings.behavioralGuidanceEnabled} onChange={(behavioralGuidanceEnabled) => void patch({ behavioralGuidanceEnabled })} />
               <Toggle label="Launch at login" detail="Resume local collection after you sign in." checked={settings.launchAtLogin} onChange={(launchAtLogin) => void patch({ launchAtLogin })} />
               <div className="permission-row">
@@ -1441,7 +1493,7 @@ function SettingsPage() {
             </section>
 
             <section className="panel settings-card full-width">
-              <SettingsHeading icon={<BarChart3 />} title="Browser profiles" detail="Chrome is required. Safari and Firefox remain best-effort." />
+              <SettingsHeading icon={<BarChart3 />} title="Browser profiles" detail="Select local Chrome profiles for history import and continuous backfill." />
               <ResourceState {...browsers}>
                 {(profiles) => (
                   <>
@@ -1482,21 +1534,6 @@ function SettingsPage() {
                       </p>
                     )}
                   </>
-                )}
-              </ResourceState>
-            </section>
-
-            <section className="panel settings-card">
-              <SettingsHeading icon={<Settings />} title="Chrome companion pairing" detail="Install the unpacked extension in each approved Chrome profile, then register its extension ID." />
-              <ResourceState {...pairing}>
-                {(info) => (
-                  <div className="stack-form">
-                    <label>Native host<input readOnly value={info.nativeHost} /></label>
-                    <label>Pairing token<input readOnly type="password" value={info.pairingToken} /></label>
-                    <label>Chrome extension ID<input value={extensionId} onChange={(event) => setExtensionId(event.target.value.trim())} placeholder="32 characters, a–p" /></label>
-                    <button className="primary-button" disabled={extensionId.length !== 32} onClick={() => api.installNativeHost(extensionId).then((path) => setPairingMessage(`Installed manifest: ${path}`))}>Register native host</button>
-                    {pairingMessage && <p className="success-message"><Check size={14} />{pairingMessage}</p>}
-                  </div>
                 )}
               </ResourceState>
             </section>

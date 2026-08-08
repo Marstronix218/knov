@@ -1,4 +1,4 @@
-import { normalizeLoopbackEndpoint } from "../shared/config";
+import { normalizeDomains, normalizeLoopbackEndpoint } from "../shared/config";
 import {
   NATIVE_HOST_NAME,
   PROTOCOL_VERSION,
@@ -144,7 +144,7 @@ async function sendRequest(
   config: ExtensionConfig,
   type: NativeRequest["type"],
   payload?: EventBatch
-): Promise<NativeResponse | undefined> {
+): Promise<NativeResponse> {
   if (!config.pairingToken) {
     throw new TransportError("Pairing token is missing.", "configuration");
   }
@@ -185,7 +185,7 @@ function connectionForError(error: unknown): StoredConnection {
 
 export async function testConnection(
   config: ExtensionConfig
-): Promise<boolean | undefined> {
+): Promise<NativeResponse> {
   try {
     const response = await sendRequest(config, "status");
     await saveConnection({
@@ -193,11 +193,26 @@ export async function testConnection(
       message: "Connected to the local Knov app",
       lastConnectedAt: new Date().toISOString()
     });
-    return response?.collectionEnabled;
+    return response;
   } catch (error) {
     await saveConnection(connectionForError(error));
     throw error;
   }
+}
+
+export function configWithDesktopPolicy(
+  config: ExtensionConfig,
+  response: NativeResponse
+): ExtensionConfig {
+  return {
+    ...config,
+    collectionEnabled:
+      response.collectionEnabled === false ? false : config.collectionEnabled,
+    excludedDomains:
+      response.excludedDomains === undefined
+        ? config.excludedDomains
+        : normalizeDomains(response.excludedDomains)
+  };
 }
 
 export async function sendEvents(

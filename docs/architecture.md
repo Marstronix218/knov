@@ -3,8 +3,9 @@
 ## Scope
 
 Knov is a single-user, local-first macOS application. React renders the
-interface, Rust owns native and security-sensitive operations, SQLite stores
-app-owned data, and a Chrome extension supplies accurate active-tab timing.
+interface, Rust owns native and security-sensitive operations, and SQLite stores
+app-owned data. An optional experimental Chrome extension can add accurate
+active-tab timing, but it is not part of the baseline MVP path.
 There is no Knov-hosted backend in the alpha.
 
 ## Components
@@ -14,8 +15,8 @@ There is no Knov-hosted backend in the alpha.
 | React/Vite interface | `apps/desktop/src` | Onboarding, dashboard, history, profile, assistant, and settings |
 | Tauri/Rust core | `apps/desktop/src-tauri/src` | IPC commands, collection, Chrome import, retention, SQLite, Keychain, scheduling, and provider calls |
 | SQLite store | Tauri application-data directory | Activity, settings, profiles, corrections, recommendations, local inference metrics, and extension pairing state |
-| Chrome extension | `apps/extension` | Active-tab URL/title timing, exclusions, pause, and local transport |
-| Native Messaging helper | `apps/desktop/src-tauri/src/bin/knov-native-host.rs` | Chrome stdio framing and forwarding to the running Rust core |
+| Optional Chrome extension | `apps/extension` | Experimental active-tab URL/title timing, exclusions, pause, and local transport |
+| Optional Native Messaging helper | `apps/desktop/src-tauri/src/bin/knov-native-host.rs` | Chrome stdio framing and forwarding to the running Rust core |
 | OpenAI, Anthropic, or Amazon Bedrock | external | Profile generation, recommendations, and assistant responses |
 
 No Swift helper is currently used.
@@ -31,7 +32,7 @@ macOS foreground app/window
 selected Chrome History --> temporary copy  |
 supported editor metadata ------------------|
                                             v
-Chrome tabs --> extension --> local bridge --> SQLite
+Chrome tabs --> optional extension --> local bridge --> SQLite
                                             |
                       aggregate/redact/domain-only digest
                                             |
@@ -71,13 +72,13 @@ recent safe relative paths from Git metadata in the most recently active
 workspace. Source contents, Local History snapshots, hidden files, generated
 trees, dependencies, and credential-like paths are not opened or stored.
 
-The extension observes the active HTTP(S) tab while Chrome is focused. It stores
-only the unfinished session in `chrome.storage.session`. Completed events receive
-one delivery attempt and are not persisted or retried. The extension does not
-use content scripts. Each installation is configured with an approved native
-Chrome profile ID, which the ingestion core enforces.
+The optional post-MVP extension observes the active HTTP(S) tab while Chrome is
+focused. It stores only the unfinished session in `chrome.storage.session`.
+Completed events receive one delivery attempt and are not persisted or retried.
+The extension does not use content scripts. Each installation is configured
+with an approved native Chrome profile ID, which the ingestion core enforces.
 
-## Local extension transports
+## Optional extension transports
 
 Native Messaging is the intended transport. Chrome starts
 `com.knov.companion`, which forwards framed messages over a mode-0600 Unix
@@ -88,9 +89,9 @@ A loopback HTTP transport exists for development. It accepts only loopback HTTP
 endpoints and requires a bearer pairing token. It is not the production
 transport and does not provide TLS.
 
-Source builds require loading the extension unpacked and building the helper.
-Settings exposes host registration and the pairing token. See
-[Alpha setup](alpha-setup.md).
+Evaluating this optional enhancement requires loading the extension unpacked
+and building the helper. Settings exposes host registration and the pairing
+token. See [Alpha setup](alpha-setup.md).
 
 ## Storage
 
@@ -139,7 +140,10 @@ first refresh deletes bootstrap activity older than 30 days.
 
 ## Current implementation boundaries
 
-- Chrome is implemented; Safari and Firefox are not.
+- Chrome history import is the baseline browser integration; Safari and Firefox
+  are not implemented.
+- The Chrome active-tab extension is implemented as an optional post-MVP
+  experiment and is not an onboarding or release gate.
 - Native helper registration is not a polished installer flow.
 - Extension exclusions are stored separately; the desktop collection state is
   synchronized on extension status checks.

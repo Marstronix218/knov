@@ -29,8 +29,6 @@ export interface ActivityPreview {
   kind: "youtube" | "link";
   url: string;
   title?: string;
-  thumbnailDataUrl?: string;
-  embedUrl?: string;
 }
 
 export interface TopicInsight {
@@ -102,17 +100,8 @@ export interface BrowserProfile {
 export interface CollectionStatus {
   enabled: boolean;
   accessibilityGranted: boolean;
-  browserConnected: boolean;
-  lastCapturedAt?: string;
   dataPath?: string;
   degradedReasons: string[];
-}
-
-export interface PairingInfo {
-  nativeHost: string;
-  pairingToken: string;
-  localhostEndpoint: string;
-  protocolVersion: number;
 }
 
 export interface SettingsData {

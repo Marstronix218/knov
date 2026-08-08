@@ -8,7 +8,6 @@ import type {
   ChatMessage,
   ChatRunResult,
   DashboardData,
-  PairingInfo,
   ProfileData,
   Provider,
   RangeKey,
@@ -39,12 +38,7 @@ function browserPreview(url: string): ActivityPreview {
       videoId = parsed.pathname.split("/").filter(Boolean)[0];
     }
     if (videoId && /^[A-Za-z0-9_-]{6,64}$/.test(videoId)) {
-      return {
-        kind: "youtube",
-        url,
-        thumbnailDataUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-        embedUrl: `https://www.youtube-nocookie.com/embed/${videoId}?playsinline=1&rel=0`,
-      };
+      return { kind: "youtube", url };
     }
   } catch {
     // Invalid preview URLs fall back to a metadata-only resource card.
@@ -77,17 +71,8 @@ export const api = {
   },
   activityPreview: (url: string) =>
     call<ActivityPreview>("get_activity_preview", { url }, browserPreview(url)),
-  activityIcon: (appName: string, url?: string) => {
-    let previewIcon: string | undefined;
-    if (url) {
-      try {
-        previewIcon = new URL("/favicon.ico", url).toString();
-      } catch {
-        previewIcon = undefined;
-      }
-    }
-    return call<string | null>("get_activity_icon", { appName, url }, previewIcon ?? null);
-  },
+  activityIcon: (appName: string, url?: string) =>
+    call<string | null>("get_activity_icon", { appName, url }, null),
   dashboard: (range: RangeKey) =>
     call<DashboardData>("get_dashboard", { range }, { ...mockDashboard, range }),
   activity: (range: RangeKey, query = "") =>
@@ -124,23 +109,12 @@ export const api = {
     call<void>("remove_provider_key", { provider }, undefined),
   testProvider: (provider: Provider) =>
     call<string>("test_provider", { provider }, "Connection successful."),
-  pairingInfo: () =>
-    call<PairingInfo>(
-      "get_pairing_info",
-      undefined,
-      {
-        nativeHost: "com.knov.companion",
-        pairingToken: "preview-only",
-        localhostEndpoint: "http://127.0.0.1:48321",
-        protocolVersion: 1,
-      },
-    ),
-  installNativeHost: (extensionId: string) =>
-    call<string>("install_native_host", { extensionId }, "Preview mode does not install a native host."),
   saveSettings: (settings: Partial<SettingsData>) =>
     call<SettingsData>("save_settings", { settings }, { ...mockSettings, ...settings }),
   dismissRecommendation: (id: string, feedback?: string) =>
     call<void>("dismiss_recommendation", { id, feedback }, undefined),
+  recordProductEvent: (eventType: string, threadId?: string) =>
+    call<void>("record_product_event", { eventType, threadId }, undefined),
   chat: (messages: ChatMessage[], mode: ChatMode = "optimized", threadContext?: ThreadContext) =>
     call<ChatRunResult>(
       "chat",

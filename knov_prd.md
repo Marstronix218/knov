@@ -3,7 +3,7 @@
 **A behavioral context layer for personal AI**
 
 Version 0.12 — Draft · Technical-user alpha scope
-Architecture: native Apple Silicon macOS collector + Chrome extension + chat interface
+Architecture: native Apple Silicon macOS collector + chat interface; optional experimental Chrome extension
 
 ---
 
@@ -44,10 +44,11 @@ If an AI assistant is given an accurate, continuously updated picture of a user'
 
 ### 1.4 Solution summary
 
-Knov consists of five parts working together on the user's machine:
+Knov's MVP consists of four core parts working together on the user's machine,
+plus an optional post-MVP enhancement:
 
 - **Collector.** A native background agent that records which application is in the foreground, the active window title, and the user's browser history, with timestamps and durations.
-- **Chrome extension.** A narrowly permissioned companion that records the active tab's URL, title, and focus duration and sends those events only to the local Mac application.
+- **Optional Chrome extension.** An implemented experimental companion that records the active tab's URL, title, and focus duration and sends those events only to the local Mac application. It is not required for MVP onboarding or release.
 - **Profiler.** A local process that periodically filters, redacts, and summarizes the raw activity log into a minimized digest, then uses a remote language model to generate a structured, human-readable profile of the user's interests, skills, and active projects.
 - **Assistant.** A chat interface that loads the profile as context and converses with the user as an assistant that already knows them.
 - **Activity dashboard.** A clear visual account of how the user spends their time, including usage percentages, a browsable activity history, and optional recommendations for useful next steps.
@@ -63,7 +64,7 @@ The following table sets the boundary of the MVP. Items marked out of scope are 
 | Foreground app + window title capture | Reading inside other apps' content |
 | Apple Silicon application targeting macOS 26 | Intel Macs, Windows, and Linux |
 | Local browser history ingestion | Screen recording or audio capture |
-| Chrome extension for active-tab URL, title, and duration | Browser page-body or DOM capture |
+| Baseline operation without a browser extension | Browser page-body or DOM capture |
 | Best-effort Safari and Firefox support when low-cost | Safari/Firefox work that delays required Chrome support |
 | Local activity database | Mobile (iOS / Android) clients |
 | Periodic profile generation via LLM | Social media in-app content (no API access) |
@@ -75,6 +76,7 @@ The following table sets the boundary of the MVP. Items marked out of scope are 
 | Bring-your-own OpenAI or Anthropic API key | Knov-hosted LLM proxy, billing, or user accounts |
 | User view + edit + delete of profile | Interruptive background notifications or coaching |
 | Single device, single user | Multi-device sync; cloud accounts |
+| Chrome profile selection and local history bootstrap | Optional Chrome extension for active-tab URL, title, and duration |
 
 **Note on recommendations and notifications.** Contextual next-step and behavioral recommendations are included inside the activity dashboard and assistant experience. These may suggest continuing a project, following up on research, changing focus, or taking a break after a long uninterrupted session. Background, push, or interruptive nudges remain explicitly excluded from the MVP. Guidance must be optional, non-judgmental, grounded in visible evidence, and easy to dismiss or disable.
 
@@ -84,7 +86,7 @@ The following table sets the boundary of the MVP. Items marked out of scope are 
 
 ### 2.1 Target user
 
-The primary user of the alpha is a technically capable, AI-heavy knowledge worker using an Apple Silicon Mac running macOS 26: a developer, technical freelancer, researcher, or similar individual who already uses AI assistants daily and is frustrated at having to re-establish context each time. This user runs multiple parallel projects and interests, is comfortable installing development-stage desktop software and a manually distributed browser extension, already has or can obtain an OpenAI or Anthropic API key, and is willing to grant system permissions in exchange for clear value. They are privacy-aware and will reject a product that feels like surveillance.
+The primary user of the alpha is a technically capable, AI-heavy knowledge worker using an Apple Silicon Mac running macOS 26: a developer, technical freelancer, researcher, or similar individual who already uses AI assistants daily and is frustrated at having to re-establish context each time. This user runs multiple parallel projects and interests, is comfortable installing development-stage desktop software, already has or can obtain an OpenAI or Anthropic API key, and is willing to grant system permissions in exchange for clear value. They are privacy-aware and will reject a product that feels like surveillance.
 
 ### 2.2 Why this user first
 
@@ -100,7 +102,7 @@ This user is reachable, feels the problem acutely, and can evaluate the result. 
 6. **Next-step and behavioral guidance.** The user receives optional, non-interruptive recommendations in the app based on recent activity and the current profile, such as a relevant task to resume, a logical next action, a change in focus, or a break after sustained activity.
 7. **Activity insights.** The user sees understandable summaries such as time spent by topic, repeated research themes, focused-session length, and how many video pages or resources were active within a category.
 8. **Chrome profile consent.** During onboarding, the user sees the Chrome profiles available on the device and explicitly selects one or more profiles whose history Knov may ingest.
-9. **Technical alpha setup.** A technical user installs a development-stage Mac build, loads or installs the companion Chrome extension, grants permissions, selects Chrome profiles, and connects their own LLM provider key.
+9. **Technical alpha setup.** A technical user installs a development-stage Mac build, grants permissions, selects Chrome profiles for local history import, and connects their own LLM provider key.
 10. **Provider configuration.** The user selects OpenAI or Anthropic, enters an API key in the app, verifies the connection, and has the credential stored in macOS Keychain rather than in the activity database or a required `.env` file.
 
 ---
@@ -118,7 +120,7 @@ This constraint is also strategically favorable: because the data requires a nat
 | Component | Responsibility | Runtime |
 |---|---|---|
 | Collector | Capture foreground app, window title, browser history; write to local store | Native background agent |
-| Chrome extension | Capture active-tab URL, title, and focus duration without reading page content; forward events to the local collector | Companion Chrome extension; unpacked installation permitted for alpha |
+| Optional Chrome extension | Experimentally capture active-tab URL, title, and focus duration without reading page content; forward events to the local collector | Post-MVP companion; unpacked installation permitted for development |
 | Local store | Persist raw activity events and the generated profile | Embedded SQLite database |
 | Profiler | Filter and minimize raw activity locally, send a bounded digest to a remote LLM, and store the resulting structured profile locally | Local process invoking a remote LLM |
 | Assistant | Chat UI; loads profile as context; sends turns to LLM | Web or native UI on local data |
@@ -127,19 +129,19 @@ This constraint is also strategically favorable: because the data requires a nat
 
 ### 3.3 Recommended starting shape
 
-The application uses Tauri 2: React and TypeScript bundled with Vite for the interface, a Rust core for collection and local orchestration, and embedded SQLite for persistent data. A narrowly scoped Swift helper may be added only for macOS APIs that cannot be implemented reliably through the Rust layer. The alpha is built and tested for the `arm64` architecture and macOS 26; Intel (`x86_64`) and universal binaries are not required. The deployment target may be lowered to support older Apple Silicon macOS releases only when the chosen dependencies and APIs work without a separate compatibility implementation, meaningful additional testing burden, or delay to the macOS 26 alpha. A companion TypeScript Chrome extension provides accurate active-tab metadata and communicates only with the local Mac application.
+The application uses Tauri 2: React and TypeScript bundled with Vite for the interface, a Rust core for collection and local orchestration, and embedded SQLite for persistent data. A narrowly scoped Swift helper may be added only for macOS APIs that cannot be implemented reliably through the Rust layer. The alpha is built and tested for the `arm64` architecture and macOS 26; Intel (`x86_64`) and universal binaries are not required. The deployment target may be lowered to support older Apple Silicon macOS releases only when the chosen dependencies and APIs work without a separate compatibility implementation, meaningful additional testing burden, or delay to the macOS 26 alpha. Baseline browser context comes from selected Chrome history plus foreground app/window collection. An implemented companion TypeScript Chrome extension can optionally add accurate active-tab metadata after MVP.
 
-The technical-user alpha may use a development-stage Mac build and an unpacked Chrome extension installed through browser developer mode. Chrome Web Store publication, polished installers, Apple notarization, and consumer-grade installation are deferred until the behavioral-context hypothesis is validated. Setup documentation must nevertheless be explicit, reproducible, and honest about every permission.
+The technical-user alpha may use a development-stage Mac build. Chrome Web Store publication, polished installers, Apple notarization, and consumer-grade installation are deferred until the behavioral-context hypothesis is validated. The optional experimental extension may be loaded unpacked for developer testing, but installation and pairing are not onboarding requirements or release gates. Setup documentation must nevertheless be explicit, reproducible, and honest about every permission.
 
 Knov uses a bring-your-own-key model for the alpha. Users select OpenAI or Anthropic and enter their API key in the application settings. The packaged application stores the credential in macOS Keychain and uses it only for direct requests to the selected provider. A `.env` file may be supported for contributors running the source code, but it must not be required for normal alpha use.
 
 ### 3.4 Data flow
 
-1. During setup, the technical user installs or loads the Chrome extension, grants required macOS permissions, and explicitly selects one or more detected Chrome profiles. Up to 90 days of browser history is imported only from the selected profiles into a temporary cold-start dataset.
+1. During setup, the technical user grants required macOS permissions and explicitly selects one or more detected Chrome profiles. Up to 90 days of browser history is imported only from the selected profiles into a temporary cold-start dataset.
 2. The user selects OpenAI or Anthropic, enters an API key in the Mac application, and verifies the connection. The application stores the key in macOS Keychain.
 3. The collector samples the foreground application and active window title at a fixed interval and records permitted browser-history additions, writing timestamped events to the local store.
-4. While Chrome is in use, the extension records active-tab URL, title, focus start time, and duration. It sends these metadata events only to the local Mac collector and does not read page content.
-5. The local collector deduplicates and reconciles live extension events with imported browser history.
+4. If the optional post-MVP extension is installed, it records active-tab URL, title, focus start time, and duration while Chrome is in use. It sends these metadata events only to the local Mac collector and does not read page content.
+5. When extension events exist, the local collector deduplicates and reconciles them with imported browser history.
 6. For the first profile only, the profiler uses the temporary 90-day browser dataset to improve cold-start topic and project inference.
 7. After the first profile is generated successfully, imported detailed events older than the normal 30-day window are permanently deleted. The temporary bootstrap dataset must never become an ongoing 90-day retention policy.
 8. The dashboard queries the local store to show usage percentages, time allocation, and chronological activity history.
@@ -215,17 +217,17 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | FR-35 | Let the user dismiss a recommendation and provide feedback when it is irrelevant or unwanted. | Should |
 | FR-36 | Keep recommendations inside the app for the MVP; do not send background, push, or interruptive notifications. | Must |
 
-### 4.6 Chrome extension and browser activity
+### 4.6 Optional post-MVP Chrome extension
 
 | ID | Requirement | Priority |
 |---|---|---|
-| FR-37 | Capture the active Chrome tab's URL, title, focus start time, and focus duration while Chrome is the foreground application. | Must |
-| FR-38 | Use browser tab metadata only; do not inject content scripts, inspect the DOM, read page bodies, capture form input, take screenshots, or record keystrokes. | Must |
-| FR-39 | Send extension events only to the paired local Mac application through an authenticated local communication channel. | Must |
-| FR-40 | Apply collection pause and domain exclusions to extension events immediately. | Must |
-| FR-41 | Show the extension's connection and collection state in both the extension UI and the Mac application. | Must |
-| FR-42 | Detect when the extension is missing, disconnected, or lacks permission and explain that live browser-duration accuracy is degraded while history import remains available. | Must |
-| FR-43 | Provide documented setup and verify successful pairing for an unpacked or manually distributed Chrome extension during the technical alpha. | Must |
+| FR-37 | Capture the active Chrome tab's URL, title, focus start time, and focus duration while Chrome is the foreground application. | Could |
+| FR-38 | If the extension is used, use browser tab metadata only; do not inject content scripts, inspect the DOM, read page bodies, capture form input, take screenshots, or record keystrokes. | Must |
+| FR-39 | If the extension is used, send its events only to the paired local Mac application through an authenticated local communication channel. | Must |
+| FR-40 | If the extension is used, apply collection pause and domain exclusions to its events immediately. | Must |
+| FR-41 | If the extension is used, show its connection and collection state in the extension UI; desktop diagnostics are optional developer tooling. | Could |
+| FR-42 | Treat a missing or disconnected extension as normal baseline operation; history import and desktop collection remain available. | Must |
+| FR-43 | Keep optional unpacked-extension setup documented and test it in a separate compatibility lane. | Should |
 
 ### 4.7 LLM provider credentials
 
@@ -262,14 +264,14 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 | FR-57 | Implement collection, local orchestration, security-sensitive operations, and native command handling in the Tauri Rust core. | Must |
 | FR-58 | Use a narrowly scoped Swift helper or native bridge only when required macOS APIs cannot be implemented reliably through the Rust layer; do not create a second general-purpose application backend. | Should |
 | FR-59 | Store all persistent alpha data in an embedded local SQLite database with versioned migrations. | Must |
-| FR-60 | Implement the Chrome extension in TypeScript using the current Chrome extension manifest format. | Must |
+| FR-60 | Implement any optional Chrome extension in TypeScript using the current Chrome extension manifest format. | Could |
 | FR-61 | Do not use Next.js server-side rendering, hosted Supabase, or a local Supabase service stack in the alpha. | Must |
 
 ### 4.11 Browser support boundary
 
 | ID | Requirement | Priority |
 |---|---|---|
-| FR-62 | Treat Google Chrome as the only required and release-blocking browser for profile selection, 90-day cold-start history import, and accurate live-tab timing. | Must |
+| FR-62 | Treat Google Chrome local history import as the only required and release-blocking browser integration. Accurate live-tab timing is an optional post-MVP enhancement. | Must |
 | FR-63 | Import up to 90 days of Safari or Firefox history when local access, schema handling, and testing can reuse the existing browser-ingestion pipeline without material schedule impact. | Should |
 | FR-64 | Add live-tab timing for Safari or Firefox only when it does not require a substantial separate extension, distribution, permission, or maintenance effort; otherwise provide history import only or omit support. | Could |
 | FR-65 | Clearly label each browser's support level and distinguish imported history from accurately timed live-tab activity in setup and diagnostics. | Must |
@@ -387,13 +389,13 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | NFR-5 | Usability | A technical alpha user must be able to follow documented setup, grant permissions, configure a provider key, and generate the first profile without undocumented steps. |
 | NFR-6 | Transparency | Privacy-relevant state (collecting / paused, what is stored) must be visible at a glance. |
 | NFR-7 | Portability | Architecture should not unnecessarily preclude later Intel Mac, Windows, or Linux support, but no cross-platform implementation work is required for the alpha. |
-| NFR-8 | Distribution | The technical alpha may use an Apple Silicon-only development build and an unpacked Chrome extension; universal binaries, code signing, notarization, and Chrome Web Store publication are not alpha release gates. |
-| NFR-9 | Setup | Technical-user setup must be documented and reproducible, including Mac permissions, extension installation, local pairing, Chrome-profile selection, and in-app API-key validation. |
-| NFR-10 | Degraded operation | The Mac app must remain usable when the extension is unavailable and clearly distinguish imported history from accurately timed live-tab activity. |
+| NFR-8 | Distribution | The technical alpha may use an Apple Silicon-only development build; universal binaries, code signing, notarization, Chrome extension distribution, and Chrome Web Store publication are not MVP release gates. |
+| NFR-9 | Setup | Baseline technical-user setup must be documented and reproducible, including Mac permissions, Chrome-profile selection, and in-app API-key validation. Optional extension installation and pairing must be documented separately. |
+| NFR-10 | Baseline operation | The Mac app must provide onboarding, history bootstrap, and foreground app/window collection without the extension; optional live-tab timing must be labeled separately. |
 | NFR-11 | Credential security | Provider credentials must be retrieved from macOS Keychain only when needed and must be redacted from logs, error reports, UI diagnostics, and exported data. |
 | NFR-12 | OS compatibility | macOS 26 is the required and fully tested target. Any older Apple Silicon support is best-effort and must not introduce alternate product behavior or delay the required target. |
 | NFR-13 | Technology footprint | Normal application use must not require Docker, a local Postgres server, a Supabase stack, Python, Node.js, or other separately installed runtimes. Required runtimes must be packaged into the application or compiled into the native bundle. |
-| NFR-14 | Browser compatibility | Chrome is the release gate. Safari and Firefox compatibility is best-effort and must not delay or weaken Chrome collection, privacy controls, or verification. |
+| NFR-14 | Browser compatibility | Chrome local history import is the browser release gate. Extension-based live timing and Safari or Firefox compatibility are optional and must not delay baseline collection, privacy controls, or verification. |
 | NFR-15 | Scheduling | Nightly and catch-up refreshes must be idempotent: interruptions, sleep/wake cycles, and application restarts must not produce duplicate profiles or duplicate recommendation sets for the same run. |
 
 ---
@@ -414,7 +416,7 @@ Because chat turns, relevant profile context, and minimized activity digests are
 - An Apple Silicon Mac running macOS 26 and an `arm64`-capable macOS development toolchain.
 - Tauri 2, Rust, React, TypeScript, Vite, and embedded SQLite.
 - Read access to the local browser history store.
-- Chrome extension APIs for active-tab metadata and a secure local pairing/communication mechanism.
+- Optional Chrome extension APIs for post-MVP active-tab metadata and a secure local pairing/communication mechanism.
 - Optional local Safari and Firefox history access when their schemas and permissions can be supported without material additional work.
 - A third-party language model API (e.g. Claude or GPT) for profiling and chat.
 - A user-supplied API key for a supported provider and macOS Keychain for secure credential storage.
@@ -429,13 +431,13 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | Privacy perception: product reads as surveillance. | High — non-adoption | Local-first architecture, transparent onboarding, visible control, honest framing. |
 | Remote profiling conflicts with user expectations of local-first behavior. | High | Explain the two egress paths before collection, minimize activity locally, never transmit the complete raw log, disclose provider retention, and let the user pause collection or delete local data. |
 | The wrong Chrome profile is ingested or personal profiles are mixed unintentionally. | High | Require explicit multi-profile selection during onboarding, ingest only selected profiles, label profile sources in activity history, and allow the selection to be changed later. |
-| Browser-extension permissions feel invasive or cause abandonment. | High | Request tab metadata only, prohibit page-content access, explain every captured field, provide immediate pause/exclusions, and keep all extension events local. |
-| Manual extension installation or native-app pairing creates alpha setup friction. | Medium | Provide exact technical setup instructions, verify pairing in the app, and maintain a history-import degraded mode when live-tab capture is unavailable. |
+| Browser-extension permissions feel invasive or cause abandonment. | Medium | Keep the extension optional and post-MVP; when evaluated, request tab metadata only, prohibit page-content access, explain every captured field, provide immediate pause/exclusions, and keep all extension events local. |
+| Manual extension installation or native-app pairing creates setup friction. | Low for MVP | Exclude pairing from baseline onboarding and release acceptance; retain exact setup instructions for the optional compatibility lane. |
 | Apple Silicon-only support reduces the available tester pool. | Low for alpha | Recruit alpha testers with Apple Silicon Macs and revisit Intel or other platforms only after the core hypothesis is validated. |
 | Supporting older macOS releases expands compatibility work and delays the alpha. | Medium | Treat macOS 26 as the only release gate; lower the deployment target only when the implementation and dependencies already work without separate code paths or material extra testing. |
 | A mixed Rust/TypeScript stack creates maintenance overhead for a primarily web-stack developer. | Medium | Keep native commands narrow, document the frontend/native boundary, use React and TypeScript for product UI, and introduce Swift only for APIs that demonstrably require it. |
 | Temporary 90-day cold-start data persists after its intended use. | High | Track bootstrap state explicitly, purge days 31–90 immediately after successful first-profile generation, expose incomplete cleanup in diagnostics, and include bootstrap data in single-action deletion. |
-| Safari or Firefox support fragments browser ingestion and delays the alpha. | Medium | Keep Chrome as the only release gate; reuse the ingestion pipeline where practical and omit separate live-tracking implementations when they require meaningful additional work. |
+| Safari, Firefox, or live-tab extension work fragments browser ingestion and delays the alpha. | Medium | Keep Chrome local history import as the only browser release gate; omit optional compatibility work when it requires meaningful additional effort. |
 | Scheduled profiling is missed during sleep or produces duplicate runs after wake. | Medium | Track the last successful refresh and an idempotent run identifier, perform one catch-up refresh when needed, and update the profile and recommendations atomically. |
 | Behavioral guidance feels judgmental, paternalistic, or medically suggestive. | High | Make guidance optional, show the evidence behind it, use neutral language, separate facts from inference, prohibit diagnosis and productivity scoring, and let users disable the category independently. |
 | Activity summaries overstate what the system observed, such as claiming a video was watched completely. | Medium | Report active pages, foreground duration, and counts precisely; never infer completion, comprehension, or intent without supporting evidence. |
@@ -466,10 +468,10 @@ Because the MVP exists to test the central hypothesis, success is defined in ter
 - Users recognize activity and topical summaries as accurate descriptions of the available signal.
 - Users who enable behavioral guidance find at least some suggestions supportive rather than judgmental and can disable the category independently.
 - User-authored profile corrections survive bootstrap, nightly, and manual regeneration unchanged until the user explicitly edits or removes them.
-- Technical alpha users can follow the setup documentation, pair the extension, select Chrome profiles, enter their own provider key in the app, and reach a populated dashboard without undocumented intervention.
+- Technical alpha users can follow the baseline setup documentation, select Chrome profiles, enter their own provider key in the app, and reach a populated dashboard without installing or pairing an extension.
 - The alpha runs natively on Apple Silicon macOS 26 test Macs without requiring Rosetta.
 - Older Apple Silicon macOS releases are supported only when they pass the existing implementation without delaying macOS 26 delivery.
-- Chrome history import and live-tab timing work as required; any Safari or Firefox support is reported accurately as best-effort and does not delay the Chrome-complete alpha.
+- Chrome history import and foreground app/window collection work as required; optional extension live-tab timing and any Safari or Firefox support are reported accurately without delaying the baseline alpha.
 - Users do not uninstall over privacy discomfort after seeing what is collected.
 
 ### 9.3 Explicit anti-goal
@@ -486,6 +488,7 @@ These are recorded to show direction. None are part of the MVP and none should i
 - **Proactive assistance.** Goal-aware nudges, once the interaction-design problem of avoiding notification fatigue can be addressed responsibly.
 - **Context layer for other AI tools.** Exposing the profile through a standard interface so any external AI assistant can draw on it, turning the product from an app into infrastructure.
 - **Consumer-ready distribution.** Signed and notarized Mac builds, Chrome Web Store publication, automatic updates, and onboarding designed for non-technical users.
+- **Optional live-tab precision.** Productize the implemented Chrome companion only if extension installation, permissions, maintenance, and measured signal quality justify moving it into the supported product path.
 - **Additional platforms and sync.** Adding Intel Mac support if justified, extending to Windows or Linux, and later synchronizing across a user's devices.
 
 **Deliberately excluded.** Capturing in-app content from social media platforms is not a viable direction: their APIs are closed and provide no access to what the user sees or does inside them. The roadmap must not depend on it.

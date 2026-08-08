@@ -50,10 +50,9 @@ pub fn run() {
             };
             platform::start_collector(db.clone(), runtime);
             platform::start_local_metadata_collectors(db.clone());
-            // Localhost is an intentionally documented alpha fallback; native messaging
-            // remains the production extension transport.
+            #[cfg(feature = "chrome-extension")]
             if let Err(error) = platform::start_ingestion_server(db) {
-                eprintln!("extension ingestion endpoint unavailable: {error}");
+                eprintln!("optional extension ingestion endpoint unavailable: {error}");
             }
             commands::start_scheduler(Arc::new(AppState {
                 db: state.db.clone(),
@@ -107,6 +106,7 @@ pub fn run() {
             commands::test_provider,
             commands::save_settings,
             commands::dismiss_recommendation,
+            commands::record_product_event,
             commands::chat,
             commands::get_pairing_info,
             commands::install_native_host,

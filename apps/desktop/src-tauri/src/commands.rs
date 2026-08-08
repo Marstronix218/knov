@@ -6,7 +6,6 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fs,
-    io::Read,
     path::{Path, PathBuf},
     process::Command,
     sync::{
@@ -363,50 +362,17 @@ pub fn get_activity_history(
 }
 
 static ACTIVITY_ICON_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
-static ACTIVITY_PREVIEW_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ActivityPreview {
     kind: String,
     url: String,
-    thumbnail_data_url: Option<String>,
-    embed_url: Option<String>,
 }
 
 #[tauri::command]
 pub async fn get_activity_preview(url: String) -> AppResult<ActivityPreview> {
-    let preview = activity_preview(&url)?;
-    let Some(video_id) = youtube_video_id(&preview.url) else {
-        return Ok(preview);
-    };
-
-    tauri::async_runtime::spawn_blocking(move || {
-        let cache = ACTIVITY_PREVIEW_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-        let cached = cache
-            .lock()
-            .expect("activity preview cache poisoned")
-            .get(&video_id)
-            .cloned();
-        let thumbnail_data_url = cached.or_else(|| {
-            let value = fetch_youtube_thumbnail(&video_id);
-            if let Some(data_url) = value.as_ref() {
-                cache
-                    .lock()
-                    .expect("activity preview cache poisoned")
-                    .insert(video_id, data_url.clone());
-            }
-            value
-        });
-        Ok(ActivityPreview {
-            thumbnail_data_url,
-            ..preview
-        })
-    })
-    .await
-    .map_err(|error| {
-        AppError::InvalidInput(format!("Could not resolve activity preview: {error}"))
-    })?
+    activity_preview(&url)
 }
 
 fn activity_preview(value: &str) -> AppResult<ActivityPreview> {
@@ -427,16 +393,12 @@ fn activity_preview(value: &str) -> AppResult<ActivityPreview> {
         return Ok(ActivityPreview {
             kind: "link".into(),
             url: parsed.into(),
-            thumbnail_data_url: None,
-            embed_url: None,
         });
     };
 
     Ok(ActivityPreview {
         kind: "youtube".into(),
         url: format!("https://www.youtube.com/watch?v={video_id}"),
-        thumbnail_data_url: None,
-        embed_url: Some(format!("https://www.youtube-nocookie.com/embed/{video_id}")),
     })
 }
 
@@ -571,28 +533,13 @@ fn is_valid_youtube_video_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
-fn fetch_youtube_thumbnail(video_id: &str) -> Option<String> {
-    if !is_valid_youtube_video_id(video_id) {
-        return None;
-    }
-    let client = reqwest::blocking::Client::builder()
-        .connect_timeout(Duration::from_secs(2))
-        .timeout(Duration::from_secs(4))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .ok()?;
-    let url = url::Url::parse(&format!("https://i.ytimg.com/vi/{video_id}/hqdefault.jpg")).ok()?;
-    fetch_image(&client, url)
-}
-
 #[tauri::command]
-pub async fn get_activity_icon(app_name: String, url: Option<String>) -> AppResult<Option<String>> {
+pub async fn get_activity_icon(
+    app_name: String,
+    _url: Option<String>,
+) -> AppResult<Option<String>> {
     tauri::async_runtime::spawn_blocking(move || {
-        let key = url
-            .as_deref()
-            .and_then(|value| url::Url::parse(value).ok())
-            .map(|value| value.origin().ascii_serialization())
-            .unwrap_or_else(|| format!("app:{app_name}"));
+        let key = format!("app:{app_name}");
         let cache = ACTIVITY_ICON_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
         if let Some(icon) = cache
             .lock()
@@ -602,10 +549,7 @@ pub async fn get_activity_icon(app_name: String, url: Option<String>) -> AppResu
             return icon.clone();
         }
 
-        let icon = url
-            .as_deref()
-            .and_then(fetch_website_icon)
-            .or_else(|| native_application_icon(&app_name));
+        let icon = native_application_icon(&app_name);
         cache
             .lock()
             .expect("activity icon cache poisoned")
@@ -614,138 +558,6 @@ pub async fn get_activity_icon(app_name: String, url: Option<String>) -> AppResu
     })
     .await
     .map_err(|error| AppError::InvalidInput(format!("Could not resolve activity icon: {error}")))
-}
-
-fn fetch_website_icon(page_url: &str) -> Option<String> {
-    let page_url = url::Url::parse(page_url).ok()?;
-    if !matches!(page_url.scheme(), "http" | "https") {
-        return None;
-    }
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(4))
-        .redirect(reqwest::redirect::Policy::limited(3))
-        .build()
-        .ok()?;
-    let mut favicon_url = page_url.clone();
-    favicon_url.set_path("/favicon.ico");
-    favicon_url.set_query(None);
-    favicon_url.set_fragment(None);
-    if let Some(icon) = fetch_image(&client, favicon_url) {
-        return Some(icon);
-    }
-
-    let response = client
-        .get(page_url.clone())
-        .header(reqwest::header::USER_AGENT, "Knov/0.2 favicon")
-        .send()
-        .ok()?
-        .error_for_status()
-        .ok()?;
-    let mut html = Vec::new();
-    response.take(2_097_153).read_to_end(&mut html).ok()?;
-    if html.len() > 2_097_152 {
-        return None;
-    }
-    let html = String::from_utf8_lossy(&html);
-    let href = declared_icon_href(&html)?;
-    let declared_url = page_url.join(&href).ok()?;
-    if !matches!(declared_url.scheme(), "http" | "https") {
-        return None;
-    }
-    fetch_image(&client, declared_url)
-}
-
-fn fetch_image(client: &reqwest::blocking::Client, url: url::Url) -> Option<String> {
-    let response = client
-        .get(url)
-        .header(reqwest::header::USER_AGENT, "Knov/0.2 favicon")
-        .send()
-        .ok()?
-        .error_for_status()
-        .ok()?;
-    let header_mime = response
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.split(';').next())
-        .filter(|value| value.starts_with("image/"))
-        .map(str::to_owned);
-    let mut bytes = Vec::new();
-    response.take(1_048_577).read_to_end(&mut bytes).ok()?;
-    if bytes.is_empty() || bytes.len() > 1_048_576 {
-        return None;
-    }
-    let mime = header_mime.or_else(|| detect_image_mime(&bytes).map(str::to_owned))?;
-    Some(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
-}
-
-fn declared_icon_href(html: &str) -> Option<String> {
-    let lower = html.to_ascii_lowercase();
-    let mut offset = 0;
-    while let Some(start) = lower[offset..].find("<link") {
-        let start = offset + start;
-        let end = start + lower[start..].find('>')? + 1;
-        let tag = &html[start..end];
-        let rel = html_attribute(tag, "rel").unwrap_or_default();
-        if rel
-            .split_ascii_whitespace()
-            .any(|value| value.eq_ignore_ascii_case("icon"))
-        {
-            if let Some(href) = html_attribute(tag, "href") {
-                return Some(href);
-            }
-        }
-        offset = end;
-    }
-    None
-}
-
-fn html_attribute(tag: &str, name: &str) -> Option<String> {
-    let lower = tag.to_ascii_lowercase();
-    let mut offset = 0;
-    while let Some(found) = lower[offset..].find(name) {
-        let start = offset + found;
-        let before = lower.as_bytes().get(start.wrapping_sub(1)).copied();
-        let after = lower.as_bytes().get(start + name.len()).copied();
-        if before.is_some_and(|value| value.is_ascii_alphanumeric() || value == b'-')
-            || after.is_some_and(|value| value.is_ascii_alphanumeric() || value == b'-')
-        {
-            offset = start + name.len();
-            continue;
-        }
-        let remainder = &tag[start + name.len()..];
-        let remainder = remainder.trim_start();
-        let remainder = remainder.strip_prefix('=')?.trim_start();
-        let quote = remainder.as_bytes().first().copied()?;
-        if quote == b'\'' || quote == b'"' {
-            let value = &remainder[1..];
-            let end = value.find(quote as char)?;
-            return Some(value[..end].to_owned());
-        }
-        let end = remainder
-            .find(|value: char| value.is_ascii_whitespace() || value == '>')
-            .unwrap_or(remainder.len());
-        return Some(remainder[..end].to_owned());
-    }
-    None
-}
-
-fn detect_image_mime(bytes: &[u8]) -> Option<&'static str> {
-    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        Some("image/png")
-    } else if bytes.starts_with(b"\xff\xd8\xff") {
-        Some("image/jpeg")
-    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
-        Some("image/gif")
-    } else if bytes.starts_with(b"\x00\x00\x01\x00") {
-        Some("image/x-icon")
-    } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
-        Some("image/webp")
-    } else if bytes.starts_with(b"<svg") || bytes.starts_with(b"<?xml") {
-        Some("image/svg+xml")
-    } else {
-        None
-    }
 }
 
 #[cfg(target_os = "macos")]
@@ -1107,6 +919,32 @@ pub fn dismiss_recommendation(
     state.db.dismiss_recommendation(&id, feedback.as_deref())
 }
 
+#[tauri::command]
+pub fn record_product_event(
+    event_type: String,
+    thread_id: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<()> {
+    const ALLOWED_EVENTS: &[&str] = &[
+        "setup_completed",
+        "thread_resumed",
+        "thread_context_opened",
+        "thread_brief_copied",
+        "thread_feedback_helpful",
+        "thread_feedback_wrong",
+        "thread_feedback_not_now",
+    ];
+    if !ALLOWED_EVENTS.contains(&event_type.as_str()) {
+        return Err(AppError::InvalidInput("Unsupported product event.".into()));
+    }
+    let thread_id = thread_id
+        .map(|value| value.trim().chars().take(120).collect::<String>())
+        .filter(|value| !value.is_empty());
+    state
+        .db
+        .record_product_event(&event_type, thread_id.as_deref(), Utc::now().timestamp())
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UiChatMessage {
@@ -1445,12 +1283,8 @@ fn settings_to_ui(state: &AppState) -> AppResult<Value> {
         "collectionStatus":{
             "enabled":status.enabled,
             "accessibilityGranted":status.accessibility_available,
-            "browserConnected":status.extension_connected,
-            "lastCapturedAt":status.extension_last_seen_at.map(timestamp),
             "dataPath":status.data_path,
-            "degradedReasons":status.accessibility_message.into_iter().chain(
-                (!status.extension_connected).then_some("Chrome extension is disconnected; history import remains available.".into())
-            ).collect::<Vec<String>>()
+            "degradedReasons":status.accessibility_message.into_iter().collect::<Vec<String>>()
         }
     }))
 }
@@ -2005,25 +1839,6 @@ mod tests {
     }
 
     #[test]
-    fn activity_icon_detection_accepts_common_favicon_formats() {
-        assert_eq!(
-            detect_image_mime(b"\x89PNG\r\n\x1a\nrest"),
-            Some("image/png")
-        );
-        assert_eq!(
-            detect_image_mime(b"\x00\x00\x01\x00rest"),
-            Some("image/x-icon")
-        );
-        assert_eq!(detect_image_mime(b"not an image"), None);
-    }
-
-    #[test]
-    fn activity_icon_parser_finds_declared_shortcut_icons() {
-        let html = r#"<html><head><link rel="shortcut icon" href="/favicon.svg" type="image/svg+xml"></head></html>"#;
-        assert_eq!(declared_icon_href(html).as_deref(), Some("/favicon.svg"));
-    }
-
-    #[test]
     fn activity_preview_normalizes_supported_youtube_video_urls() {
         for value in [
             "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=20",
@@ -2035,11 +1850,6 @@ mod tests {
             let preview = activity_preview(value).expect("YouTube URL should be accepted");
             assert_eq!(preview.kind, "youtube");
             assert_eq!(preview.url, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
-            assert_eq!(
-                preview.embed_url.as_deref(),
-                Some("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ")
-            );
-            assert_eq!(preview.thumbnail_data_url, None);
         }
     }
 
@@ -2052,8 +1862,6 @@ mod tests {
         ] {
             let preview = activity_preview(value).expect("ordinary web URL should be accepted");
             assert_eq!(preview.kind, "link");
-            assert_eq!(preview.thumbnail_data_url, None);
-            assert_eq!(preview.embed_url, None);
             assert!(!preview.url.contains('#'));
         }
     }

@@ -74,7 +74,12 @@ the initial provider selection by itself. The first-run wizard still requires an
 entered key. Do not commit keys. Knov does not automatically read `.env`
 files.
 
-## Chrome extension setup
+## Optional Chrome extension setup
+
+This section is an optional compatibility/developer lane for the implemented
+post-MVP active-tab experiment. Skip it for baseline MVP setup: desktop
+onboarding, Chrome history import, and foreground app/window collection do not
+depend on extension installation or pairing.
 
 ### 1. Build and load the extension
 
@@ -104,10 +109,6 @@ cargo build \
 ```
 
 ### 3. Register the helper with Chrome
-
-Preferred: open Knov **Settings → Chrome companion pairing**, paste the
-32-character extension ID, and choose **Register native host**. For a manual
-source setup, the equivalent manifest command is:
 
 Run the following from the repository root after replacing the extension ID.
 The Node command writes only Chrome's per-user Native Messaging manifest.
@@ -151,6 +152,13 @@ console.log(manifest.allowed_origins[0]);
 
 Restart Chrome after creating or changing the manifest.
 
+Start the desktop compatibility build so its optional local extension bridge is
+available:
+
+```sh
+npm run dev:with-extension
+```
+
 ### 4. Copy the pairing token
 
 Keep the Tauri app running so it creates the database and its protected
@@ -173,7 +181,8 @@ Open the extension's **Details → Extension options**, leave transport set to
 **Native Messaging**, paste the token and the approved Chrome profile ID shown
 in desktop Settings, save, and choose **Test connection**.
 The extension popup should report that it is connected. The desktop Collection
-settings also show connection diagnostics and the local database path.
+settings continue to show the local database path; extension diagnostics remain
+in the extension's own popup because this lane is outside the baseline MVP.
 
 The token is local authentication material. Do not publish it in issues, logs,
 screenshots, or source control.
@@ -190,7 +199,7 @@ http://127.0.0.1:48321
 Use the same pairing token. This binds only to loopback and uses bearer-token
 authentication, but it has no TLS and is not the intended release transport.
 
-## Current behavior to verify manually
+## Optional companion behavior to verify manually
 
 - Pause desktop collection in the app and pause extension collection in the
   extension popup. These controls are not synchronized in this build.

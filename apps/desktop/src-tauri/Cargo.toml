@@ -6,6 +6,10 @@ authors = ["Noriaki Kishida"]
 edition = "2021"
 default-run = "appsdesktop"
 
+[features]
+default = []
+chrome-extension = []
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]

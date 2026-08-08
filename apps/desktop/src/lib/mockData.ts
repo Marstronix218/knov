@@ -143,7 +143,7 @@ export const mockProfile: ProfileData = {
         {
           id: "project-knov",
           label: "Knov",
-          description: "Apple Silicon macOS alpha using Tauri, React, Rust, SQLite, and a Chrome extension.",
+          description: "Apple Silicon macOS alpha using Tauri, React, Rust, SQLite, and local browser-history import.",
           confidence: 0.99,
           provenance: "inferred",
         },
@@ -212,7 +212,6 @@ export const mockSettings: SettingsData = {
   collectionStatus: {
     enabled: true,
     accessibilityGranted: false,
-    browserConnected: false,
-    degradedReasons: ["Accessibility permission is not granted.", "Chrome extension is not connected."],
+    degradedReasons: ["Accessibility permission is not granted."],
   },
 };

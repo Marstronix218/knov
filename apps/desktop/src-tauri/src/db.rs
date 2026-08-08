@@ -96,6 +96,16 @@ ALTER TABLE inference_runs ADD COLUMN provider_preflight_input_tokens INTEGER;
 ALTER TABLE inference_runs ADD COLUMN cache_read_input_tokens INTEGER;
 ALTER TABLE inference_runs ADD COLUMN cache_write_input_tokens INTEGER;
 "#,
+    r#"
+CREATE TABLE product_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_type TEXT NOT NULL,
+  thread_id TEXT,
+  occurred_at INTEGER NOT NULL
+);
+CREATE INDEX product_events_time_idx ON product_events(occurred_at DESC);
+CREATE INDEX product_events_type_idx ON product_events(event_type, occurred_at DESC);
+"#,
 ];
 
 pub struct Database {
@@ -807,6 +817,19 @@ impl Database {
         Ok(())
     }
 
+    pub fn record_product_event(
+        &self,
+        event_type: &str,
+        thread_id: Option<&str>,
+        occurred_at: i64,
+    ) -> AppResult<()> {
+        self.conn().execute(
+            "INSERT INTO product_events(event_type,thread_id,occurred_at) VALUES(?1,?2,?3)",
+            params![event_type, thread_id, occurred_at],
+        )?;
+        Ok(())
+    }
+
     pub fn delete_all_local_data(&self) -> AppResult<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
@@ -818,6 +841,7 @@ impl Database {
             "recommendations",
             "refresh_runs",
             "inference_runs",
+            "product_events",
             "extension_state",
             "settings",
         ] {
@@ -828,6 +852,7 @@ impl Database {
         self.ensure_defaults()
     }
 
+    #[cfg(feature = "chrome-extension")]
     pub fn mark_extension_seen(&self, token: &str, at: i64) -> AppResult<bool> {
         let changed = self.conn().execute(
             "UPDATE extension_state SET last_seen_at=?2 WHERE singleton=1 AND pairing_token=?1",
@@ -836,6 +861,7 @@ impl Database {
         Ok(changed == 1)
     }
 
+    #[cfg(any(feature = "chrome-extension", test))]
     pub fn authenticate_native_extension(
         &self,
         token: &str,
@@ -1311,6 +1337,37 @@ mod tests {
                 Some(16)
             )
         );
+    }
+
+    #[test]
+    fn product_events_are_local_and_removed_by_delete_everything() {
+        let db = Database::in_memory().unwrap();
+        db.record_product_event("thread_feedback_helpful", Some("knov-implementation"), 42)
+            .unwrap();
+
+        let persisted: (String, Option<String>, i64) = db
+            .conn()
+            .query_row(
+                "SELECT event_type,thread_id,occurred_at FROM product_events",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            persisted,
+            (
+                "thread_feedback_helpful".into(),
+                Some("knov-implementation".into()),
+                42,
+            )
+        );
+
+        db.delete_all_local_data().unwrap();
+        let remaining: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM product_events", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(remaining, 0);
     }
 
     #[test]

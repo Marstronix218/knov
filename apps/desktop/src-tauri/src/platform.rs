@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     fs,
-    io::{Read, Write},
     path::{Component, Path, PathBuf},
     process::Command,
     sync::{Arc, RwLock},
@@ -9,10 +8,16 @@ use std::{
     time::{Duration, UNIX_EPOCH},
 };
 
+#[cfg(feature = "chrome-extension")]
+use std::io::Read;
+#[cfg(feature = "chrome-extension")]
+use std::io::Write;
+
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use chrono::Utc;
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
+#[cfg(feature = "chrome-extension")]
 use tiny_http::{Header, Method, Response, Server, StatusCode};
 use url::Url;
 use uuid::Uuid;
@@ -780,6 +785,7 @@ pub fn ensure_pairing_token(db: &Database) -> AppResult<String> {
     Ok(token)
 }
 
+#[cfg(feature = "chrome-extension")]
 pub fn start_ingestion_server(db: Arc<Database>) -> AppResult<()> {
     ensure_pairing_token(&db)?;
     start_native_socket(db.clone())?;
@@ -813,7 +819,7 @@ pub fn start_ingestion_server(db: Arc<Database>) -> AppResult<()> {
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(all(feature = "chrome-extension", unix))]
 fn start_native_socket(db: Arc<Database>) -> AppResult<()> {
     use std::os::unix::{fs::PermissionsExt, net::UnixListener};
 
@@ -854,11 +860,12 @@ fn start_native_socket(db: Arc<Database>) -> AppResult<()> {
     Ok(())
 }
 
-#[cfg(not(unix))]
+#[cfg(all(feature = "chrome-extension", not(unix)))]
 fn start_native_socket(_db: Arc<Database>) -> AppResult<()> {
     Ok(())
 }
 
+#[cfg(feature = "chrome-extension")]
 fn handle_ingestion_request(
     db: &Database,
     request: &mut tiny_http::Request,
@@ -898,7 +905,8 @@ fn handle_ingestion_request(
         return Ok(serde_json::json!({
             "protocolVersion":1,
             "ok":true,
-            "collectionEnabled":settings.collection_enabled
+            "collectionEnabled":settings.collection_enabled,
+            "excludedDomains":settings.excluded_domains
         })
         .to_string());
     }
@@ -924,6 +932,7 @@ fn handle_ingestion_request(
     .to_string())
 }
 
+#[cfg(any(feature = "chrome-extension", test))]
 fn ingest_extension_batch(
     db: &Database,
     settings: &crate::models::Settings,
@@ -989,6 +998,7 @@ fn ingest_extension_batch(
     Ok(accepted)
 }
 
+#[cfg(any(feature = "chrome-extension", test))]
 fn handle_native_envelope(db: &Database, envelope: NativeEnvelope) -> serde_json::Value {
     let error = |code: &str, message: &str| {
         serde_json::json!({
@@ -1016,7 +1026,8 @@ fn handle_native_envelope(db: &Database, envelope: NativeEnvelope) -> serde_json
     match envelope.kind.as_str() {
         "status" => serde_json::json!({
             "protocolVersion":1,"requestId":envelope.request_id,"ok":true,
-            "collectionEnabled":settings.collection_enabled
+            "collectionEnabled":settings.collection_enabled,
+            "excludedDomains":settings.excluded_domains
         }),
         "events" => {
             if !settings.collection_enabled {
@@ -1037,6 +1048,7 @@ fn handle_native_envelope(db: &Database, envelope: NativeEnvelope) -> serde_json
     }
 }
 
+#[cfg(any(feature = "chrome-extension", test))]
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NativeEnvelope {
@@ -1051,6 +1063,7 @@ struct NativeEnvelope {
     payload: Option<ExtensionEventBatch>,
 }
 
+#[cfg(any(feature = "chrome-extension", test))]
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExtensionEventBatch {
@@ -1063,6 +1076,7 @@ struct ExtensionEventBatch {
     events: Vec<ExtensionBrowserEvent>,
 }
 
+#[cfg(any(feature = "chrome-extension", test))]
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExtensionBrowserEvent {
@@ -1427,5 +1441,32 @@ mod tests {
             .unwrap();
         assert_eq!(stored.len(), 1);
         assert_eq!(stored[0].browser_profile_id.as_deref(), Some("Default"));
+    }
+
+    #[test]
+    fn native_status_includes_desktop_domain_exclusions() {
+        let db = Database::in_memory().unwrap();
+        db.set_pairing_token("token").unwrap();
+        let mut settings = db.settings().unwrap();
+        settings.excluded_domains = vec!["private.example".into(), "bank.example".into()];
+        db.save_settings(&settings).unwrap();
+
+        let response = handle_native_envelope(
+            &db,
+            NativeEnvelope {
+                protocol_version: 1,
+                request_id: "request".into(),
+                extension_id: "abcdefghijklmnopabcdefghijklmnop".into(),
+                pairing_token: "token".into(),
+                sent_at: "2026-01-01T00:00:30Z".into(),
+                kind: "status".into(),
+                payload: None,
+            },
+        );
+
+        assert_eq!(
+            response["excludedDomains"],
+            serde_json::json!(["private.example", "bank.example"])
+        );
     }
 }

@@ -1,5 +1,6 @@
 import {
   DEFAULT_CONFIG,
+  isExcludedUrl,
   normalizeDomains,
   normalizeLoopbackEndpoint
 } from "./shared/config";
@@ -18,7 +19,11 @@ import {
   saveConnection,
   saveSession
 } from "./background/storage";
-import { sendEvents, testConnection } from "./background/transport";
+import {
+  configWithDesktopPolicy,
+  sendEvents,
+  testConnection
+} from "./background/transport";
 import type { BrowserActivityEvent } from "./shared/types";
 
 const HEARTBEAT_ALARM = "knov-heartbeat";
@@ -143,17 +148,41 @@ async function performFlush(): Promise<void> {
   }
 
   try {
-    const collectionEnabled = await testConnection(config);
-    if (collectionEnabled === false) {
-      await saveConfig({ ...config, collectionEnabled: false });
-    } else {
-      await sendEvents(config, events);
+    const response = await testConnection(config);
+    const syncedConfig = await applyDesktopPolicy(config, response);
+    if (response.collectionEnabled !== false) {
+      await sendEvents(
+        syncedConfig,
+        events.filter(
+          (event) => !isExcludedUrl(event.url, syncedConfig.excludedDomains)
+        )
+      );
     }
   } catch {
     // Completed events are intentionally discarded on delivery failure. Keeping
     // them on disk could resend activity after the user pauses or deletes data.
   }
   await updateAction();
+}
+
+async function applyDesktopPolicy(
+  config: ExtensionConfig,
+  response: Awaited<ReturnType<typeof testConnection>>
+): Promise<ExtensionConfig> {
+  const next = configWithDesktopPolicy(config, response);
+  const changed =
+    next.collectionEnabled !== config.collectionEnabled ||
+    next.excludedDomains.length !== config.excludedDomains.length ||
+    next.excludedDomains.some(
+      (domain, index) => domain !== config.excludedDomains[index]
+    );
+  if (changed) {
+    await saveConfig(next);
+  }
+  if (response.excludedDomains !== undefined || changed) {
+    await evaluateActivity();
+  }
+  return next;
 }
 
 function attemptFlush(): Promise<void> {
@@ -246,9 +275,12 @@ async function handleMessage(message: ExtensionMessage): Promise<unknown> {
     case "set_collection_enabled":
       return setCollectionEnabled(message.enabled);
     case "save_config": {
-      const config = await updateConfig(message.config);
+      let config = await updateConfig(message.config);
       try {
-        await testConnection(config);
+        config = await applyDesktopPolicy(
+          config,
+          await testConnection(config)
+        );
       } catch {
         // The transport persisted a useful degraded state. Settings still save so
         // pairing can recover automatically when the Mac app becomes available.
@@ -257,7 +289,8 @@ async function handleMessage(message: ExtensionMessage): Promise<unknown> {
       return { config, status: await getStatus() };
     }
     case "test_connection": {
-      await testConnection(await loadConfig());
+      const config = await loadConfig();
+      await applyDesktopPolicy(config, await testConnection(config));
       await updateAction();
       return getStatus();
     }

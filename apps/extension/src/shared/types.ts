@@ -89,4 +89,5 @@ export interface NativeResponse {
   message?: string;
   acceptedEventIds?: string[];
   collectionEnabled?: boolean;
+  excludedDomains?: string[];
 }

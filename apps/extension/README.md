@@ -4,6 +4,11 @@ Manifest V3 extension for accurate active-tab timing. It observes only Chrome's
 tab metadata APIs and sends URL, title, focus timestamps, and duration to the
 paired Knov app on the same computer.
 
+This companion is an implemented, optional post-MVP experiment. The baseline
+desktop MVP does not require it for onboarding, Chrome history import, or
+foreground app/window collection. Use this guide only for extension development
+and compatibility evaluation.
+
 ## Screenshot
 
 ![Knov Chrome companion settings for Native Messaging pairing](../../docs/screenshots/chrome-companion-settings.jpg)
@@ -115,7 +120,7 @@ invalid URLs, and non-HTTP(S) URLs are also ignored.
   Knov can still use imported Chrome history after the desktop app starts.
 
 For manual host registration and the local HTTP development fallback, see
-[Chrome extension setup](../../docs/alpha-setup.md#chrome-extension-setup).
+[Chrome extension setup](../../docs/alpha-setup.md#optional-chrome-extension-setup).
 
 ## Native Messaging contract
 

@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:with-extension": "tauri dev --features chrome-extension",
     "build": "tsc --noEmit && vite build",
-    "prepare:sidecar": "cargo build --release --manifest-path src-tauri/Cargo.toml --bin knov-native-host && mkdir -p src-tauri/binaries && cp src-tauri/target/release/knov-native-host src-tauri/binaries/knov-native-host-aarch64-apple-darwin",
-    "bundle": "npm run prepare:sidecar && tauri build --config src-tauri/tauri.bundle.conf.json",
+    "prepare:extension-sidecar": "cargo build --release --manifest-path src-tauri/Cargo.toml --bin knov-native-host && mkdir -p src-tauri/binaries && cp src-tauri/target/release/knov-native-host src-tauri/binaries/knov-native-host-aarch64-apple-darwin",
+    "bundle": "tauri build",
+    "bundle:with-extension": "npm run prepare:extension-sidecar && tauri build --features chrome-extension --config src-tauri/tauri.bundle.conf.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -16,9 +16,11 @@ The desktop collector can record:
 - metadata-only save signals and recent safe Git working-tree paths from
   supported editor workspaces
 
-The Chrome extension can record the focused tab's URL, title, start/end time,
-duration, and extension ID. It ignores incognito tabs, non-HTTP(S) URLs, and
-locally excluded domains.
+The optional experimental Chrome extension can record the focused tab's URL,
+title, start/end time, duration, and extension ID. It ignores incognito tabs,
+non-HTTP(S) URLs, and locally excluded domains. The baseline MVP does not
+require the extension; selected Chrome history and foreground app/window data
+come from the desktop app.
 
 Knov does not intentionally collect page bodies, DOM content, form input,
 keystrokes, clipboard contents, screenshots, audio, or camera data. The Chrome
@@ -38,6 +40,9 @@ copies it outside Knov:
 - complete imported URLs, titles, and extracted search queries
 - generated profile versions, recommendations, and corrections
 - settings and Chrome pairing state
+- allowlisted alpha outcome events such as setup completion, thread resume/copy,
+  and useful/wrong/not-now feedback; these contain only an event type, local
+  thread identifier, and timestamp
 
 Provider keys are stored separately in macOS Keychain. The Chrome pairing token
 is stored in SQLite and in the extension's local Chrome storage; it is not a
@@ -69,6 +74,10 @@ Knov proxy or analytics service. OpenAI requests set `store: false`.
 Provider-side processing and retention remain governed by the selected
 provider's API terms and account settings.
 
+Rendering activity history does not contact recorded websites. Knov uses local
+application icons or letter placeholders, and resource previews remain
+metadata-only links until the user explicitly opens a resource.
+
 ## Credentials
 
 The settings and onboarding interfaces pass a newly entered key to a Rust
@@ -89,8 +98,8 @@ and should not be used for a distributed alpha build.
 - Temporary bootstrap data is deleted only after the first profile refresh
   succeeds. A failed or unavailable provider leaves it in place for retry.
 - Profiles and corrections remain until removed through the app's controls.
-- The extension does not persist completed activity events. An unfinished active
-  session may exist in Chrome session storage.
+- If installed, the extension does not persist completed activity events. An
+  unfinished active session may exist in Chrome session storage.
 
 Expired normal activity is purged while the app is running, including while
 collection is paused. If the app is not running, purge execution is delayed
@@ -100,8 +109,8 @@ until the next launch.
 
 Desktop collection starts disabled and remains disabled until the user resumes
 it from the app. Desktop app exclusions are enforced by the Rust collector and
-ingestion core. Extension exclusions and pause state are enforced by the
-extension.
+ingestion core. If the optional extension is installed, its exclusions and
+pause state are enforced by the extension.
 
 The extension checks the desktop collection state before delivery and on its
 regular checkpoint. Events completed during a stale-policy window are discarded,

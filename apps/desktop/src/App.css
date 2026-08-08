@@ -364,6 +364,11 @@ small { font-size: inherit; }
 .resume-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 24px; }
 .primary-button.large, .ghost-button.large { min-height: 42px; padding: 11px 15px; font-size: 14px; }
 .action-message { margin: 14px 0 0; color: var(--accent); font-size: 14px; }
+.thread-feedback { display: grid; gap: 9px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); color: #8f9b95; font-size: 12px; }
+.thread-feedback > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.thread-feedback > small { color: var(--accent); line-height: 1.45; }
+.feedback-button { padding: 6px 9px; border: 1px solid rgba(101,205,253,.16); border-radius: 999px; color: #aab6b0; background: rgba(101,205,253,.045); cursor: pointer; font: inherit; }
+.feedback-button:hover { color: #e4ede8; border-color: rgba(101,205,253,.34); background: rgba(101,205,253,.09); }
 
 .resume-orbit { position: absolute; z-index: 0; width: 430px; height: 430px; left: 46%; top: -170px; border: 1px solid rgba(183,255,60,.08); border-radius: 50%; }
 .resume-orbit::before, .resume-orbit::after { position: absolute; content: ""; inset: 54px; border: 1px solid rgba(101,205,253,.075); border-radius: 50%; }

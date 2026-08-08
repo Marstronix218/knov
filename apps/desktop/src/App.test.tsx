@@ -53,6 +53,7 @@ function stubApi() {
   vi.spyOn(api, "settings").mockResolvedValue(clone(mockSettings));
   vi.spyOn(api, "openResource").mockResolvedValue(undefined);
   vi.spyOn(api, "openApplication").mockResolvedValue(undefined);
+  vi.spyOn(api, "activityIcon").mockResolvedValue(null);
   vi.spyOn(api, "dashboard").mockResolvedValue(clone(mockDashboard));
   vi.spyOn(api, "activity").mockResolvedValue(clone(mockDashboard.recentActivity));
   vi.spyOn(api, "profile").mockResolvedValue(clone(mockProfile));
@@ -68,6 +69,7 @@ function stubApi() {
   vi.spyOn(api, "setBrowserProfiles").mockResolvedValue(undefined);
   vi.spyOn(api, "reimportChromeHistory").mockResolvedValue(clone(mockProfile));
   vi.spyOn(api, "dismissRecommendation").mockResolvedValue(undefined);
+  vi.spyOn(api, "recordProductEvent").mockResolvedValue(undefined);
   vi.spyOn(api, "refreshProfile").mockResolvedValue(clone(mockProfile));
 }
 
@@ -145,6 +147,7 @@ describe("onboarding", () => {
 
   it("completes consent without changing the hook order", async () => {
     localStorage.clear();
+    vi.mocked(api.recordProductEvent).mockRejectedValueOnce(new Error("local metrics unavailable"));
     window.location.hash = "";
     render(<App />);
 
@@ -183,9 +186,74 @@ describe("dashboard", () => {
 
     await waitFor(() => {
       expect(api.openResource).toHaveBeenCalledWith("https://v2.tauri.app/security/capabilities/");
+      expect(api.recordProductEvent).toHaveBeenCalledWith("thread_resumed", "knov-implementation");
       expect(api.openApplication).not.toHaveBeenCalled();
       expect(screen.getByRole("status")).toHaveTextContent("Opened the latest available resource.");
     });
+  });
+
+  it("records whether the resume suggestion avoided re-explaining context", async () => {
+    await renderRoute("#/dashboard");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Yes, useful" }));
+
+    await waitFor(() => {
+      expect(api.recordProductEvent).toHaveBeenCalledWith(
+        "thread_feedback_helpful",
+        "knov-implementation",
+      );
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "feedback was stored locally",
+      );
+    });
+  });
+
+  it("does not claim thread feedback was stored when local persistence fails", async () => {
+    vi.mocked(api.recordProductEvent).mockRejectedValueOnce(new Error("storage unavailable"));
+    await renderRoute("#/dashboard");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Wrong thread" }));
+
+    expect(await screen.findByText(/could not store that feedback/i)).toBeInTheDocument();
+  });
+
+  it("shows recommendation evidence and records irrelevant guidance", async () => {
+    await renderRoute("#/dashboard");
+
+    expect(await screen.findByRole("region", { name: "Recommendations" })).toBeInTheDocument();
+    expect(screen.getByText("A short reset may help")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Not relevant" })[1]);
+
+    await waitFor(() => {
+      expect(api.dismissRecommendation).toHaveBeenCalledWith(
+        "recommendation-2",
+        "not-relevant",
+      );
+    });
+    expect(screen.queryByText("A short reset may help")).not.toBeInTheDocument();
+  });
+
+  it("shows recommendations before enough activity exists to form a thread", async () => {
+    vi.mocked(api.dashboard).mockResolvedValue({
+      ...clone(mockDashboard),
+      activeTopics: [],
+      recentActivity: [],
+    });
+
+    await renderRoute("#/dashboard");
+
+    expect(await screen.findByText("No work threads yet")).toBeInTheDocument();
+    expect(screen.getByText("A short reset may help")).toBeInTheDocument();
+  });
+
+  it("keeps a recommendation visible when local dismissal fails", async () => {
+    vi.mocked(api.dismissRecommendation).mockRejectedValueOnce(new Error("storage unavailable"));
+    await renderRoute("#/dashboard");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Not relevant" })[0]);
+
+    expect(await screen.findByText(/could not save that change/i)).toBeInTheDocument();
+    expect(screen.getAllByText("Continue the native collector")).not.toHaveLength(0);
   });
 
   it("reports when the latest web resource cannot be opened", async () => {
@@ -331,13 +399,12 @@ describe("dashboard", () => {
     expect(screen.getByText("Supporting evidence, not a productivity score")).toBeInTheDocument();
   });
 
-  it("shows website favicons instead of letter placeholders", async () => {
+  it("uses local app placeholders without requesting remote favicons", async () => {
     await renderRoute("#/dashboard");
 
-    await waitFor(() => {
-      const favicon = document.querySelector<HTMLImageElement>(".activity-row .app-token img");
-      expect(favicon?.src).toBe("https://v2.tauri.app/favicon.ico");
-    });
+    await screen.findByRole("heading", { name: "Pick up where you left off." });
+    expect(document.querySelector(".activity-row .app-token img")).not.toBeInTheDocument();
+    expect(document.querySelector(".activity-row .app-token")?.textContent).toMatch(/[A-Z]/);
   });
 
   it("requests new dashboard data when the range changes", async () => {
@@ -455,8 +522,6 @@ describe("dashboard activity preview", () => {
       kind: "youtube",
       title: "Moonlight Sonata",
       url: newestUrl,
-      thumbnailDataUrl: "data:image/jpeg;base64,thumbnail",
-      embedUrl: "https://www.youtube-nocookie.com/embed/moonlight",
     });
 
     await renderRoute("#/dashboard");
@@ -465,7 +530,7 @@ describe("dashboard activity preview", () => {
     expect(activityPreview).toHaveBeenCalledTimes(1);
   });
 
-  it("renders YouTube preview metadata returned by the preview API", async () => {
+  it("keeps YouTube activity link-only without contacting the recorded site", async () => {
     const url = "https://www.youtube.com/watch?v=moonlight";
     dashboardWithPreviewEvents([
       previewEvent("youtube", "2026-08-07T17:00:00.000Z", url, "YouTube page title"),
@@ -474,41 +539,13 @@ describe("dashboard activity preview", () => {
       kind: "youtube",
       title: "Beethoven — Moonlight Sonata",
       url,
-      thumbnailDataUrl: "data:image/jpeg;base64,thumbnail",
-      embedUrl: "https://www.youtube-nocookie.com/embed/moonlight",
     });
 
     await renderRoute("#/dashboard");
 
     expect(await screen.findByRole("heading", { name: "Beethoven — Moonlight Sonata" })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Beethoven — Moonlight Sonata preview" })).toHaveAttribute(
-      "src",
-      "data:image/jpeg;base64,thumbnail",
-    );
-  });
-
-  it("replaces the YouTube thumbnail with an embedded player when activated", async () => {
-    const url = "https://www.youtube.com/watch?v=moonlight";
-    dashboardWithPreviewEvents([
-      previewEvent("youtube", "2026-08-07T17:00:00.000Z", url, "Moonlight Sonata"),
-    ]);
-    vi.spyOn(api, "activityPreview").mockResolvedValue({
-      kind: "youtube",
-      title: "Moonlight Sonata",
-      url,
-      thumbnailDataUrl: "data:image/jpeg;base64,thumbnail",
-      embedUrl: "https://www.youtube-nocookie.com/embed/moonlight",
-    });
-    await renderRoute("#/dashboard");
-    await screen.findByRole("img", { name: "Moonlight Sonata preview" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Play Moonlight Sonata preview" }));
-
-    expect(screen.getByTitle("Moonlight Sonata")).toHaveAttribute(
-      "src",
-      "https://www.youtube-nocookie.com/embed/moonlight?autoplay=1",
-    );
-    expect(screen.queryByRole("img", { name: "Moonlight Sonata preview" })).not.toBeInTheDocument();
+    expect(screen.getByText(/does not contact the recorded site unless you open it/i)).toBeInTheDocument();
+    expect(screen.queryByTitle("Beethoven — Moonlight Sonata")).not.toBeInTheDocument();
   });
 
   it("keeps generic site previews non-embedded and openable", async () => {
@@ -630,6 +667,16 @@ describe("settings privacy disclosures", () => {
     expect(
       screen.getByText(/never opens saved code snapshots or source contents/i),
     ).toBeInTheDocument();
+  });
+
+  it("keeps extension pairing out of the baseline settings flow", async () => {
+    await renderRoute("#/settings");
+
+    expect(
+      await screen.findByText("Select local Chrome profiles for history import and continuous backfill."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Chrome companion pairing")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Chrome extension is disconnected/i)).not.toBeInTheDocument();
   });
 
   it("re-imports Chrome history and refreshes the profile as one operation", async () => {

@@ -21,10 +21,10 @@ Implemented and usable from source:
 - macOS foreground app and active-window-title collection
 - explicit Chrome-profile selection and up-to-90-day history bootstrap
 - 30-day detailed-activity retention and post-bootstrap cleanup
-- Chrome Manifest V3 companion extension with active-tab timing
+- optional experimental Chrome Manifest V3 companion extension with active-tab timing
 - metadata-only Local History and recent Git-path signals from supported editors
 - semantic work threads across app, browser, document, and editor evidence
-- safe resource previews and one-click thread resumption
+- privacy-safe link-only resource previews and one-click thread resumption
 - deterministic, sanitized context packing with local context-economics metrics
 - OpenAI, Anthropic, and Amazon Bedrock BYOK credentials through macOS Keychain
 - direct provider-backed profile refresh, recommendations, and chat
@@ -35,8 +35,8 @@ Important alpha limitations:
 - macOS 26 on Apple Silicon is the tested target. Safari, Firefox, Intel Macs,
   Windows, and Linux are not implemented release targets.
 - Accessibility permission is required for window titles.
-- Source builds still require loading the extension unpacked; Settings can
-  register its Native Messaging host after the helper is built.
+- The optional companion is a post-MVP experiment and must be loaded unpacked;
+  its Native Messaging host is registered manually for compatibility testing.
 - Desktop collection state is synchronized to the extension; exclusion lists
   remain source-specific.
 - Launch at login is user-controlled in Settings.
@@ -57,7 +57,8 @@ Requirements:
 - Xcode Command Line Tools
 - Node.js 20.19+ or 22.12+ and npm
 - current stable Rust toolchain
-- Google Chrome 120+ for the companion extension
+- Google Chrome (required for selected-profile history import; Chrome 120+ for
+  the optional companion extension)
 
 ### 1. Download the source
 
@@ -156,10 +157,12 @@ OPENAI_API_KEY="your-key" npm run dev:desktop
 The first-run wizard still requires entering a key to configure the selected
 provider. Knov does not load `.env` files automatically.
 
-## Connect the Chrome companion
+## Optional: connect the experimental Chrome companion
 
-The initial history import works without the extension. Install the companion
-when you also want accurate active-tab timing as you browse.
+The MVP does not require the extension: onboarding, history bootstrap, and
+foreground app/window collection work through the desktop app alone. Install
+the implemented companion only when developing or evaluating the post-MVP
+active-tab timing enhancement.
 
 1. Build the extension from the repository root:
 
@@ -178,11 +181,12 @@ when you also want accurate active-tab timing as you browse.
 3. Open `chrome://extensions`, enable **Developer mode**, choose **Load
    unpacked**, and select `apps/extension/dist`.
 4. Copy the 32-character ID from the Knov extension card.
-5. In the desktop app, open **Settings → Chrome companion pairing**, paste the
-   extension ID, and choose **Register native host**.
-6. Restart Chrome so it sees the Native Messaging registration.
-7. Return to desktop **Settings** and copy both the masked **Pairing token** and
-   the ID shown under the approved entry in **Browser profiles**.
+5. Follow the manual Native Messaging registration in
+   [Alpha setup](docs/alpha-setup.md#3-register-the-helper-with-chrome).
+6. Start the compatibility build with `npm run dev:with-extension`, then restart
+   Chrome so it sees the Native Messaging registration.
+7. Copy the pairing token as described in Alpha setup and the approved profile
+   ID shown under desktop **Settings → Browser profiles**.
 8. Open the extension's **Details → Extension options** page. Keep
    **Native Messaging (recommended)** selected, paste the pairing token and
    approved Chrome profile ID, then choose **Save and verify**.
@@ -194,7 +198,7 @@ You do not need to register the Native Messaging host again when Chrome shows
 the same extension ID. If Chrome assigns a new ID after the extension is
 reloaded or reinstalled, register the new ID again; the alpha host manifest
 authorizes one extension ID at a time. See
-[Chrome extension setup](docs/alpha-setup.md#chrome-extension-setup) for manual
+[Chrome extension setup](docs/alpha-setup.md#optional-chrome-extension-setup) for manual
 Native Messaging registration and the development-only local HTTP fallback.
 
 ## Use Knov
@@ -317,17 +321,18 @@ extension or clear the extension's local settings; remove the extension from
 ## Verification
 
 ```sh
-npm run typecheck
-npm test
-npm run build
+npm run typecheck --workspace @knov/desktop
+npm test --workspace @knov/desktop
+npm run build --workspace @knov/desktop
 npm run check:rust
 npm run test:rust
 npm run build:desktop
 ```
 
-The Chrome extension build is written to `apps/extension/dist`. Load that
-directory as an unpacked extension only after following
-[Chrome extension setup](docs/alpha-setup.md#chrome-extension-setup).
+These are the baseline desktop MVP checks. The optional extension compatibility
+lane is documented in [Testing](docs/testing.md#optional-extension-compatibility-lane).
+Its build is written to `apps/extension/dist`; load that directory unpacked only
+after following [Chrome extension setup](docs/alpha-setup.md#optional-chrome-extension-setup).
 The desktop bundle is written to
 `apps/desktop/src-tauri/target/release/bundle/macos/Knov.app`. It is an
 unsigned technical-alpha build; code signing and notarization are not included.

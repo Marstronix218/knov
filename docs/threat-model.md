@@ -2,9 +2,10 @@
 
 ## Security objective
 
-The alpha aims to prevent accidental collection and unnecessary network egress,
-keep provider credentials out of the activity database and frontend, and accept
-browser events only from a locally paired Chrome extension.
+The alpha aims to prevent accidental collection and unnecessary network egress
+and keep provider credentials out of the activity database and frontend. If the
+optional experimental Chrome extension is installed, browser events are
+accepted only from a locally paired instance.
 
 It is not designed to protect data from malware, a compromised macOS account,
 an administrator/root user, forensic disk analysis, or a compromised AI
@@ -66,9 +67,9 @@ The localhost fallback has no TLS and expands the local attack surface. The
 bearer token prevents unauthenticated ingestion, but the mode should be used
 only for local development. Native Messaging remains the intended transport.
 
-### Extension permissions
+### Optional extension permissions
 
-The extension requests `tabs`, `storage`, `alarms`, and `nativeMessaging`, plus
+The optional extension requests `tabs`, `storage`, `alarms`, and `nativeMessaging`, plus
 loopback host permissions for development. The `tabs` permission can expose tab
 metadata to extension code even though Knov intentionally queries only the
 active tab.
@@ -90,6 +91,8 @@ pages, remove backups, or delete provider-held data.
 
 ### Alpha hardening gaps
 
+- The extension is an optional post-MVP experiment, not a baseline onboarding or
+  release gate.
 - Native helper registration still requires the extension ID in a source build.
 - Desktop and extension domain-exclusion lists are configured separately.
 - There is no code signing, notarization, update channel, or release-integrity
