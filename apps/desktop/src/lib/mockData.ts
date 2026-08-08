@@ -23,9 +23,19 @@ export const mockActivity: ActivityEvent[] = [
     source: "chrome",
   },
   {
+    id: "event-2-save",
+    appName: "Visual Studio Code",
+    windowTitle: "Knov — apps/desktop/src/App.tsx",
+    pageTitle: "apps/desktop/src/App.tsx",
+    startedAt: minutesAgo(28),
+    durationSeconds: 0,
+    topic: "Knov implementation",
+    source: "editor",
+  },
+  {
     id: "event-2",
     appName: "Visual Studio Code",
-    windowTitle: "knov — App.tsx",
+    windowTitle: "Knov — App.tsx",
     startedAt: minutesAgo(42),
     durationSeconds: 1_680,
     topic: "Knov implementation",
@@ -124,7 +134,7 @@ export const mockDashboard: DashboardData = {
 
 export const mockProfile: ProfileData = {
   summary:
-    "You are building Knov, a local-first behavioral context layer for personal AI. Your recent work is concentrated on macOS desktop architecture, privacy boundaries, and turning a detailed product specification into an alpha.",
+    "You are building Knov, a memory-efficient personal AI agent. Your recent work is concentrated on local-first architecture, selective memory retrieval, and measurable context reduction.",
   sections: [
     {
       id: "projects",

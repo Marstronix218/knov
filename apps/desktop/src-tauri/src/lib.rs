@@ -1,9 +1,13 @@
+mod analytics;
 mod commands;
+mod context;
 mod db;
 mod error;
+mod memory;
 mod models;
 mod platform;
 mod providers;
+mod threading;
 
 use std::sync::{atomic::AtomicBool, Arc, RwLock};
 
@@ -45,6 +49,7 @@ pub fn run() {
                 refresh_lock: Arc::new(AtomicBool::new(false)),
             };
             platform::start_collector(db.clone(), runtime);
+            platform::start_local_metadata_collectors(db.clone());
             // Localhost is an intentionally documented alpha fallback; native messaging
             // remains the production extension transport.
             if let Err(error) = platform::start_ingestion_server(db) {
@@ -80,6 +85,9 @@ pub fn run() {
             commands::get_dashboard,
             commands::get_activity_history,
             commands::get_activity_icon,
+            commands::get_activity_preview,
+            commands::open_resource,
+            commands::open_application,
             commands::get_profile,
             commands::get_settings,
             commands::get_browser_profiles,

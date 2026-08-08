@@ -23,6 +23,7 @@ pub enum ActivitySource {
     AppFocus,
     ChromeHistory,
     ChromeExtension,
+    EditorHistory,
 }
 
 impl ActivitySource {
@@ -31,6 +32,7 @@ impl ActivitySource {
             Self::AppFocus => "app_focus",
             Self::ChromeHistory => "chrome_history",
             Self::ChromeExtension => "chrome_extension",
+            Self::EditorHistory => "editor_history",
         }
     }
 }
@@ -42,6 +44,7 @@ impl TryFrom<&str> for ActivitySource {
             "app_focus" => Ok(Self::AppFocus),
             "chrome_history" => Ok(Self::ChromeHistory),
             "chrome_extension" => Ok(Self::ChromeExtension),
+            "editor_history" => Ok(Self::EditorHistory),
             _ => Err(format!("unknown activity source: {value}")),
         }
     }
@@ -183,6 +186,53 @@ pub struct CollectionStatus {
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadContextEvent {
+    pub observed_at: String,
+    pub app_name: String,
+    pub source: String,
+    pub title: Option<String>,
+    pub resource: Option<String>,
+    pub search_query: Option<String>,
+    pub observed_active_seconds: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadContext {
+    pub version: u8,
+    pub subject: String,
+    pub signal_count: usize,
+    pub apps: Vec<String>,
+    #[serde(default)]
+    pub modified_files: Vec<String>,
+    pub observed_from: Option<String>,
+    pub observed_through: Option<String>,
+    pub events: Vec<ThreadContextEvent>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryActivityFacts {
+    pub subject: String,
+    pub match_basis: String,
+    pub matched_events: i64,
+    pub first_seen_at: i64,
+    pub last_seen_at: i64,
+    pub observed_span_seconds: i64,
+    pub observed_active_seconds: i64,
+    pub app_focus_seconds: i64,
+    pub live_browser_seconds: i64,
+    pub historical_visits: i64,
+    pub historical_reported_seconds: i64,
+    pub editor_changes: i64,
+    #[serde(default)]
+    pub modified_files: Vec<String>,
+    pub coverage_start_at: i64,
+    pub coverage_end_at: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

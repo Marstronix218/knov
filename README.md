@@ -1,10 +1,10 @@
 # Knov
 
 Knov is a local-first personal context assistant for Apple Silicon Macs. The
-technical alpha records foreground application activity and explicitly permitted
-Chrome metadata, keeps detailed activity in a local SQLite database, and sends a
-minimized digest or an active chat conversation directly to a user-selected AI
-provider.
+technical alpha records foreground application activity, explicitly permitted
+Chrome metadata, and metadata-only editor changes. It keeps detailed activity in
+a local SQLite database and sends only a minimized digest or token-budgeted chat
+context directly to a user-selected AI provider.
 
 This repository implements the alpha described in
 [`knov_prd.md`](knov_prd.md). It is not a production-ready release.
@@ -22,7 +22,11 @@ Implemented and usable from source:
 - explicit Chrome-profile selection and up-to-90-day history bootstrap
 - 30-day detailed-activity retention and post-bootstrap cleanup
 - Chrome Manifest V3 companion extension with active-tab timing
-- OpenAI and Anthropic BYOK credentials through macOS Keychain
+- metadata-only Local History and recent Git-path signals from supported editors
+- semantic work threads across app, browser, document, and editor evidence
+- safe resource previews and one-click thread resumption
+- deterministic, sanitized context packing with local context-economics metrics
+- OpenAI, Anthropic, and Amazon Bedrock BYOK credentials through macOS Keychain
 - direct provider-backed profile refresh, recommendations, and chat
 - dashboard, activity history, profile corrections, pause, and delete controls
 
@@ -133,7 +137,7 @@ Knov opens a four-step setup wizard on its first native launch:
 3. **Browser profiles:** select at least one detected Chrome profile. Knov
    temporarily imports up to 90 days of history to build the initial profile;
    history older than 30 days is removed after that profile succeeds.
-4. **AI provider:** select OpenAI or Anthropic, paste an API key, and choose
+4. **AI provider:** select OpenAI, Anthropic, or Amazon Bedrock, paste an API key, and choose
    **Build my first profile**. The key is stored in macOS Keychain. Building the
    initial profile requires a working key and an internet connection to the
    selected provider.
@@ -142,8 +146,8 @@ When setup finishes, confirm that the sidebar says **Collection active**. Use
 **Resume** if collection is paused.
 
 For later source-development sessions, the native provider client can override
-the Keychain credential with `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` from its
-environment:
+the Keychain credential with `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or
+`AWS_BEDROCK_API_KEY` from its environment:
 
 ```sh
 OPENAI_API_KEY="your-key" npm run dev:desktop
@@ -214,8 +218,9 @@ Open **Now** to see the work thread Knov believes you are most likely to
 continue, the local evidence behind it, and a suggested next move. Choose
 **Resume thread** to reopen its latest available web resource, **Ask with
 context** to start a provider-backed conversation with an inspectable context
-brief, or **Copy brief** to use that context elsewhere. Raw activity records are
-not attached to chat requests.
+packet, or **Copy brief** to use that context elsewhere. Knov sanitizes and
+packs the selected evidence under a token budget; full URLs, local absolute
+paths, credential-like fields, and unrelated raw activity are not attached.
 
 Choose another active thread to change the focal context. Open **Attention
 details** when you want supporting app, web, timeline, and pattern analytics.
@@ -226,15 +231,16 @@ the refresh icon to rebuild the profile and recommendations.
 
 Open **Threads** to inspect the provisional work streams Knov reconstructs from
 activity. Selecting a thread shows its summary, suggested next move, and exact
-available evidence. Thread groupings are inferences rather than confirmed user
-intent.
+available evidence. Repeated subjects can join one thread across searches,
+videos, sites, documents, and supported editor metadata. Thread groupings are
+inferences rather than confirmed user intent.
 
 ### Inspect the Activity timeline
 
 Open **Activity** to inspect individual records. Each row shows the time, page
 or window title, application, source, and duration. The source labels distinguish
 desktop collection (`collector`), imported Chrome history (`history`), and live
-extension activity (`chrome`).
+extension activity (`chrome`), and metadata-only editor changes (`editor`).
 
 Change the date range or use **Filter apps, pages, or topics** to narrow the
 timeline. Detailed activity is retained locally for 30 days.
@@ -255,16 +261,18 @@ saved summary.
 
 ### Ask with context
 
-Choose **Ask with context** from Now to review the context brief that will be
-shared, enter a question, and choose **Send**. Knov sends the visible brief,
-active conversation, and relevant profile context directly to the configured
-provider; raw activity records are not attached. Chat history is not persisted.
+Choose **Ask with context** from Now to review the candidate context, enter a
+question, and choose **Send**. Knov retrieves relevant profile facts locally,
+adds query-specific activity aggregates, and deterministically packs sanitized
+selected-thread evidence under the configured token budget. The assistant shows
+the sent context, the larger local comparison baseline, token savings, provider
+usage, and locally stored run metrics. Chat history is not persisted.
 
 ### Configure Settings
 
 Use **Settings** to:
 
-- switch between OpenAI and Anthropic, save or remove the selected provider's
+- switch between OpenAI, Anthropic, and Amazon Bedrock, save or remove the selected provider's
   Keychain credential, and run **Test connection**;
 - enable or disable collection, behavioral break/focus guidance, and launch at
   login;

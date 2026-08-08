@@ -83,19 +83,23 @@ Chrome profile, or live provider accounts. Before an alpha handoff:
 5. Import history and confirm the first profile succeeds.
 6. Register and pair the extension using [Alpha setup](alpha-setup.md).
 7. Focus two ordinary HTTP(S) tabs and verify duration events reach Activity.
-8. Verify incognito, `chrome://` pages, excluded domains, and subdomains are not
+8. Save files in a supported editor and verify only safe workspace-relative
+   paths appear; hidden, generated, dependency, and credential paths must not.
+9. Verify incognito, `chrome://` pages, excluded domains, and subdomains are not
    collected.
-9. Stop the app, create an extension event, restart the app, and verify the
+10. Stop the app, create an extension event, restart the app, and verify the
    failed event is not replayed.
-10. Pause the app and verify the extension follows the native state and no new app-owned activity rows
+11. Pause the app and verify the extension follows the native state and no new app-owned activity rows
     are added.
-11. Exercise OpenAI or Anthropic validation, profile refresh, and chat with a
+12. Exercise OpenAI, Anthropic, or Amazon Bedrock validation, profile refresh, and chat with a
     non-production key.
-12. Add a profile correction, refresh, and confirm the correction remains.
-13. Dismiss a recommendation and confirm it leaves the dashboard.
-14. Invoke **Delete everything**, then verify app-owned rows are gone, default
+13. Verify selected-thread context is sanitized, token-budgeted, and its
+    context-economics record is stored only in local SQLite.
+14. Add a profile correction, refresh, and confirm the correction remains.
+15. Dismiss a recommendation and confirm it leaves the dashboard.
+16. Invoke **Delete everything**, then verify app-owned rows are gone, default
     settings return, old pairing fails, and provider keys are unavailable.
-15. Clear/remove the extension separately and remove the Native Messaging
+17. Clear/remove the extension separately and remove the Native Messaging
     manifest when the test is complete.
 
 ## Inspect local state
@@ -117,7 +121,7 @@ owned by the Rust core.
 
 - no automated real-macOS Accessibility test
 - no real Chrome Native Messaging end-to-end test
-- no provider contract test against live OpenAI or Anthropic APIs
+- no provider contract test against live OpenAI, Anthropic, or Amazon Bedrock APIs
 - no packaged-app, code-signing, notarization, update, or installer test
 - no secure-deletion claim or forensic-erasure test
 - no independent security assessment

@@ -13,10 +13,10 @@ There is no Knov-hosted backend in the alpha.
 | --- | --- | --- |
 | React/Vite interface | `apps/desktop/src` | Onboarding, dashboard, history, profile, assistant, and settings |
 | Tauri/Rust core | `apps/desktop/src-tauri/src` | IPC commands, collection, Chrome import, retention, SQLite, Keychain, scheduling, and provider calls |
-| SQLite store | Tauri application-data directory | Activity, settings, profiles, corrections, recommendations, and extension pairing state |
+| SQLite store | Tauri application-data directory | Activity, settings, profiles, corrections, recommendations, local inference metrics, and extension pairing state |
 | Chrome extension | `apps/extension` | Active-tab URL/title timing, exclusions, pause, and local transport |
 | Native Messaging helper | `apps/desktop/src-tauri/src/bin/knov-native-host.rs` | Chrome stdio framing and forwarding to the running Rust core |
-| OpenAI or Anthropic | external | Profile generation, recommendations, and assistant responses |
+| OpenAI, Anthropic, or Amazon Bedrock | external | Profile generation, recommendations, and assistant responses |
 
 No Swift helper is currently used.
 
@@ -29,13 +29,14 @@ macOS foreground app/window
       Rust collector ----------------------+
                                             |
 selected Chrome History --> temporary copy  |
+supported editor metadata ------------------|
                                             v
 Chrome tabs --> extension --> local bridge --> SQLite
                                             |
                       aggregate/redact/domain-only digest
                                             |
                                             v
-                                  OpenAI or Anthropic
+                           selected BYOK AI provider
                                             |
                                             v
                              local profile/recommendations
@@ -63,6 +64,12 @@ Chrome history import:
 
 Visits older than 30 days are flagged as temporary bootstrap data. They remain
 until the first profile succeeds, then are deleted.
+
+Supported editors contribute metadata-only Local History save signals. When
+those indexes or Accessibility window titles are unavailable, Knov can derive
+recent safe relative paths from Git metadata in the most recently active
+workspace. Source contents, Local History snapshots, hidden files, generated
+trees, dependencies, and credential-like paths are not opened or stored.
 
 The extension observes the active HTTP(S) tab while Chrome is focused. It stores
 only the unfinished session in `chrome.storage.session`. Completed events receive
@@ -96,7 +103,8 @@ under its application-data directory, normally:
 
 SQLite runs in WAL mode. The schema uses `PRAGMA user_version` migrations.
 Provider keys are not stored in SQLite; Keychain entries use service
-`com.knov.desktop.llm` and provider account names `openai` or `anthropic`.
+`com.knov.desktop.llm` and provider account names `openai`, `anthropic`, or
+`bedrock`.
 
 Main stored records:
 
@@ -105,6 +113,7 @@ Main stored records:
 - generated profile versions and recommendations
 - separately stored authoritative user corrections
 - pairing token, first authenticated extension ID, and last-seen timestamp
+- local context-economics records for completed assistant queries
 
 Chat messages are held in frontend memory for the current session and are not
 persisted by Knov.
@@ -115,6 +124,13 @@ Profile refresh produces a local aggregate containing at most 200 grouped
 activity entries. Each entry includes app name, a truncated locally redacted
 title, domain only, accumulated seconds, and occurrence count.
 The digest and authoritative corrections go directly to the selected provider.
+
+Assistant queries use a separate context path. Knov retrieves relevant profile
+facts locally, computes compact query-specific activity facts, sanitizes an
+explicitly selected thread packet, and deterministically packs the highest-value
+units under a token budget. A larger comparison prompt is measured locally but
+is never sent. Amazon Bedrock additionally performs model-specific `CountTokens`
+preflight and uses prompt-prefix caching when eligible.
 
 The scheduler checks once per minute and attempts one refresh per local calendar
 day when a provider and credential are available. This also provides catch-up

@@ -10,6 +10,7 @@ import {
   Clock3,
   Copy,
   Eye,
+  FileCode2,
   KeyRound,
   Layers3,
   LayoutDashboard,
@@ -36,10 +37,14 @@ import { domainFromUrl, formatDuration, formatPercentage, formatTime } from "./l
 import type {
   ActivityEvent,
   ChatMessage,
+  ContextEconomics,
   DashboardData,
+  MemoryRecord,
   Provider,
   RangeKey,
   SettingsData,
+  ThreadContext,
+  ThreadContextEvent,
   UsageSlice,
 } from "./types";
 
@@ -50,6 +55,21 @@ const navigation = [
   { to: "/activity", label: "Activity", icon: Activity },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
+
+const providers: Provider[] = ["openai", "anthropic", "bedrock"];
+const ACTIVITY_PAGE_SIZE = 100;
+
+function providerLabel(provider: Provider): string {
+  if (provider === "openai") return "OpenAI";
+  if (provider === "anthropic") return "Anthropic";
+  return "AWS Bedrock";
+}
+
+function providerKeyPlaceholder(provider: Provider): string {
+  if (provider === "openai") return "sk-…";
+  if (provider === "anthropic") return "sk-ant-…";
+  return "ABSK…";
+}
 
 function App() {
   const [setupComplete, setSetupComplete] = useState(
@@ -157,7 +177,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
             <div className="setup-icon"><ShieldCheck size={30} /></div>
             <div className="eyebrow">Your context stays yours</div>
             <h1>An assistant that learns from how you actually work.</h1>
-            <p>Knov observes foreground apps, permitted window titles, and selected browser activity. Raw history stays on this Mac. Only a minimized profile digest and active chat turns go to your chosen AI provider.</p>
+            <p>Knov observes foreground apps, permitted window titles, and selected browser activity. Raw history stays on this Mac. When you select a thread, a visible, sanitized detail packet is packed under a token budget for the AI provider.</p>
             <div className="consent-grid">
               <article><LockKeyhole size={18} /><strong>Local raw data</strong><span>SQLite on this Mac, detailed history retained for 30 days.</span></article>
               <article><Eye size={18} /><strong>Visible collection</strong><span>Pause, exclude, inspect, edit, or delete at any time.</span></article>
@@ -210,9 +230,9 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
             <h1>Connect an AI provider.</h1>
             <p>Your key is stored in macOS Keychain. Provider calls originate in the native core, never the browser extension or React interface.</p>
             <div className="provider-tabs">
-              {(["openai", "anthropic"] as Provider[]).map((item) => <button className={provider === item ? "selected" : ""} key={item} onClick={() => setProvider(item)}>{item === "openai" ? "OpenAI" : "Anthropic"}</button>)}
+              {providers.map((item) => <button className={provider === item ? "selected" : ""} key={item} onClick={() => setProvider(item)}>{providerLabel(item)}</button>)}
             </div>
-            <label className="secret-field">API key<input type="password" value={providerKey} onChange={(event) => setProviderKey(event.target.value)} placeholder={provider === "openai" ? "sk-…" : "sk-ant-…"} /></label>
+            <label className="secret-field">API key<input type="password" value={providerKey} onChange={(event) => setProviderKey(event.target.value)} placeholder={providerKeyPlaceholder(provider)} /></label>
             {message && <p className="error-message">{message}</p>}
           </div>
         )}
@@ -244,7 +264,7 @@ function Sidebar({ route }: { route: string }) {
         <LogoMark />
         <div>
           <div className="brand-name">Knov</div>
-          <div className="brand-caption">Personal context</div>
+          <div className="brand-caption">Remembers more. Sends less.</div>
         </div>
       </div>
 
@@ -379,9 +399,15 @@ function toThreadId(value: string): string {
 
 function deriveThreads(data: DashboardData): WorkThread[] {
   const groups = new Map<string, ActivityEvent[]>();
+  const softwareDevelopmentTopic = data.activeTopics.find(
+    (topic) => topic.name.toLocaleLowerCase() === "software development",
+  )?.name;
   data.recentActivity.forEach((event) => {
     const title = event.topic?.trim() || event.appName;
     groups.set(title, [...(groups.get(title) ?? []), event]);
+    if (event.source === "editor" && softwareDevelopmentTopic && title !== softwareDevelopmentTopic) {
+      groups.set(softwareDevelopmentTopic, [...(groups.get(softwareDevelopmentTopic) ?? []), event]);
+    }
   });
   data.activeTopics.forEach((topic) => {
     if (!groups.has(topic.name)) groups.set(topic.name, []);
@@ -413,18 +439,110 @@ function deriveThreads(data: DashboardData): WorkThread[] {
   }).sort((a, b) => (Date.parse(b.lastActiveAt ?? "") || 0) - (Date.parse(a.lastActiveAt ?? "") || 0));
 }
 
-function makeContextBrief(thread: WorkThread): string {
-  const evidence = thread.events.slice(0, 4).map((event) => {
-    const resource = event.pageTitle || event.windowTitle || event.appName;
-    return `- ${resource} (${domainFromUrl(event.url) || event.appName}, ${formatDuration(event.durationSeconds)})`;
-  });
+function contextResource(event: ActivityEvent): string | undefined {
+  if (event.url) {
+    try {
+      const url = new URL(event.url);
+      if ((url.protocol === "http:" || url.protocol === "https:") && url.hostname && !url.username && !url.password) {
+        const path = url.pathname === "/" ? "" : url.pathname;
+        return `${url.hostname.replace(/^www\./, "")}${path}`.slice(0, 240);
+      }
+    } catch {
+      // Fall through to metadata-only resources.
+    }
+  }
+  return event.source === "editor" ? editorFilePath(event)?.slice(0, 240) : undefined;
+}
+
+function reopenableWebUrl(value?: string): string | undefined {
+  if (!value) return undefined;
+  const candidate = value.trim();
+  try {
+    const parsed = new URL(candidate);
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+      || !parsed.hostname
+      || parsed.username
+      || parsed.password
+    ) {
+      return undefined;
+    }
+    return candidate;
+  } catch {
+    return undefined;
+  }
+}
+
+function makeThreadContext(thread: WorkThread): ThreadContext {
+  const events: ThreadContextEvent[] = thread.events.slice(0, 100).map((event) => ({
+    observedAt: event.startedAt,
+    appName: event.appName.slice(0, 100),
+    source: event.source,
+    title: (event.pageTitle || event.windowTitle)?.trim().slice(0, 300) || undefined,
+    resource: contextResource(event),
+    searchQuery: event.searchQuery?.trim().slice(0, 300) || undefined,
+    observedActiveSeconds: event.source === "history" || event.source === "editor"
+      ? undefined
+      : Math.max(0, event.durationSeconds),
+  }));
+  const modifiedFiles = [...new Map(
+    thread.events.flatMap((event) => {
+      const savedFile = event.source === "editor" ? editorFilePath(event) : undefined;
+      return [...(savedFile ? [savedFile] : []), ...(event.modifiedFiles ?? [])];
+    }).map((path) => [path.toLocaleLowerCase(), path]),
+  ).values()].slice(0, 16);
+  return {
+    version: 1,
+    subject: thread.title,
+    signalCount: thread.events.length,
+    apps: [...new Set(thread.events.map((event) => event.appName))].slice(0, 12),
+    modifiedFiles,
+    observedFrom: thread.events[thread.events.length - 1]?.startedAt,
+    observedThrough: thread.lastActiveAt,
+    events,
+  };
+}
+
+function makeContextBrief(context: ThreadContext): string {
   return [
-    `Context brief: ${thread.title}`,
-    thread.summary,
-    `Suggested next move: ${thread.nextMove}`,
-    evidence.length ? `Recent evidence:\n${evidence.join("\n")}` : "Recent evidence: no detailed event is available in this range.",
-    "Treat this as provisional behavioral context, not confirmed user intent.",
+    `Context packet: ${context.subject}`,
+    `${context.signalCount} locally observed signals${context.apps.length ? ` across ${context.apps.join(", ")}` : ""}.`,
+    context.observedFrom && context.observedThrough
+      ? `Observed from ${formatContextDateTime(context.observedFrom)} through ${formatContextDateTime(context.observedThrough)}.`
+      : "No detailed timing evidence is available in this range.",
+    context.modifiedFiles?.length
+      ? `Recent modified files (newest first): ${context.modifiedFiles.join(", ")}.`
+      : "No modified-file metadata is available for this thread.",
+    "Selected evidence candidates (the native core ranks these under the configured token budget):",
+    ...context.events.map((event) => [
+      `- ${formatContextDateTime(event.observedAt)} | ${event.source} | ${event.appName}`,
+      event.title,
+      event.resource && `resource=${event.resource}`,
+      event.searchQuery && `search=${event.searchQuery}`,
+      event.observedActiveSeconds !== undefined && `observed-active=${event.observedActiveSeconds}s`,
+    ].filter(Boolean).join(" | ")),
+    "The selected thread subject is used for local memory retrieval. Sanitized event details go only to the selected AI provider when you ask with context.",
+    "Browser-history duration remains excluded because it is not reliable foreground time. Treat metadata as provisional evidence, not confirmed intent or completion.",
   ].join("\n\n");
+}
+
+function loadThreadContext(): ThreadContext | undefined {
+  const serialized = sessionStorage.getItem("knov.active-thread-context");
+  if (!serialized) return undefined;
+  try {
+    const value = JSON.parse(serialized) as Partial<ThreadContext>;
+    if (value.version !== 1 || !value.subject || !Array.isArray(value.events)) return undefined;
+    return value as ThreadContext;
+  } catch {
+    return undefined;
+  }
+}
+
+function formatContextDateTime(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function DashboardContent({ data }: { data: DashboardData }) {
@@ -444,20 +562,48 @@ function DashboardContent({ data }: { data: DashboardData }) {
     localStorage.setItem("knov.selected-thread", id);
     setActionMessage("");
   };
-  const resume = () => {
-    const target = selected.events.find((event) => event.url)?.url;
+  const resume = async () => {
+    const target = selected.events
+      .map((event) => reopenableWebUrl(event.url))
+      .find((url): url is string => Boolean(url));
     if (target) {
-      window.open(target, "_blank", "noopener,noreferrer");
-      setActionMessage("Opened the latest available resource.");
-    } else {
-      setActionMessage("No reopenable web resource is available. The context brief is ready to use.");
+      setActionMessage("Opening the latest available resource…");
+      try {
+        await api.openResource(target);
+        setActionMessage("Opened the latest available resource.");
+      } catch {
+        setActionMessage("Could not open the latest available resource.");
+      }
+      return;
+    }
+
+    const appName = selected.events
+      .map((event) => event.appName.trim())
+      .find((name) => {
+        const normalized = name.toLocaleLowerCase();
+        return Boolean(name) && normalized !== "unknown" && normalized !== "knov";
+      });
+    if (!appName) {
+      setActionMessage("No reopenable resource or local application is available. The context brief is ready to use.");
+      return;
+    }
+
+    setActionMessage(`Opening ${appName}…`);
+    try {
+      await api.openApplication(appName);
+      setActionMessage(`Opened ${appName}.`);
+    } catch {
+      setActionMessage(`Could not open ${appName}.`);
     }
   };
   const copyBrief = async () => {
-    await navigator.clipboard.writeText(makeContextBrief(selected));
-    setActionMessage("Context brief copied.");
+    await navigator.clipboard.writeText(makeContextBrief(makeThreadContext(selected)));
+    setActionMessage("Detailed context packet copied.");
   };
-  const prepareAssistant = () => sessionStorage.setItem("knov.active-context-brief", makeContextBrief(selected));
+  const prepareAssistant = () => sessionStorage.setItem(
+    "knov.active-thread-context",
+    JSON.stringify(makeThreadContext(selected)),
+  );
 
   return (
     <>
@@ -476,13 +622,13 @@ function DashboardContent({ data }: { data: DashboardData }) {
           <p>{selected.summary}</p>
           <div className="next-move"><Sparkles size={17} /><span><small>Suggested next move</small><strong>{selected.nextMove}</strong></span></div>
           <div className="resume-actions">
-            <button className="primary-button large" onClick={resume}>Resume thread <ArrowUpRight size={17} /></button>
+            <button className="primary-button large" onClick={() => void resume()}>Resume thread <ArrowUpRight size={17} /></button>
             <a className="ghost-button large" href="#/assistant" onClick={prepareAssistant}><MessageSquareText size={17} /> Ask with context</a>
             <button className="ghost-button large" onClick={() => void copyBrief()}><Copy size={17} /> Copy brief</button>
           </div>
           {actionMessage && <p className="action-message" role="status">{actionMessage}</p>}
         </div>
-        <EvidenceRail events={selected.events} />
+        <EvidenceRail events={selected.events} previewEvent={selected.events.find((event) => event.url)} />
       </section>
 
       <section className="thread-section">
@@ -561,18 +707,110 @@ function DonutSummary({ items }: { items: UsageSlice[] }) {
   );
 }
 
-function EvidenceRail({ events }: { events: ActivityEvent[] }) {
+function ActivityPreviewCard({ event }: { event: ActivityEvent }) {
+  const resource = useResource(() => api.activityPreview(event.url!), [event.url]);
+  const [playing, setPlaying] = useState(false);
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
+  const [openError, setOpenError] = useState("");
+  const title = event.pageTitle || event.windowTitle || event.appName;
+
+  useEffect(() => {
+    setPlaying(false);
+    setThumbnailFailed(false);
+    setOpenError("");
+  }, [event.url]);
+
+  const openLink = (
+    <a className="preview-link" href={event.url} target="_blank" rel="noreferrer" onClick={(clickEvent) => {
+      if (!isDesktopRuntime()) return;
+      clickEvent.preventDefault();
+      setOpenError("");
+      void api.openResource(event.url!).catch(() => setOpenError("Could not open this resource."));
+    }}>
+      Open resource <ArrowUpRight size={13} />
+    </a>
+  );
+
+  if (resource.loading) {
+    return (
+      <section className="activity-preview loading" aria-label="Activity preview">
+        <div className="preview-placeholder"><LoaderCircle size={20} className="spin" /></div>
+        <div className="preview-copy"><span>Recent resource</span><h3>{title}</h3><small>Loading preview…</small></div>
+      </section>
+    );
+  }
+
+  if (resource.error || !resource.data) {
+    return (
+      <section className="activity-preview" aria-label="Activity preview">
+        <div className="preview-generic"><ActivityLogo event={event} /></div>
+        <div className="preview-copy"><span>Recent resource</span><h3>{title}</h3><small>Preview unavailable · the original resource is still available.</small>{openLink}{openError && <small className="preview-error" role="status">{openError}</small>}</div>
+      </section>
+    );
+  }
+
+  const preview = resource.data;
+  const previewTitle = preview.title?.trim() || title;
+  const playerUrl = preview.embedUrl
+    ? `${preview.embedUrl}${preview.embedUrl.includes("?") ? "&" : "?"}autoplay=1`
+    : undefined;
+  const canPlay = preview.kind === "youtube" && Boolean(playerUrl);
+  const hasThumbnail = Boolean(preview.thumbnailDataUrl) && !thumbnailFailed;
+
+  return (
+    <section className={`activity-preview ${preview.kind}`} aria-label="Activity preview">
+      {playing && playerUrl ? (
+        <div className="preview-media">
+          <iframe
+            src={playerUrl}
+            title={previewTitle}
+            allow="autoplay; encrypted-media; picture-in-picture; web-share"
+            referrerPolicy="strict-origin-when-cross-origin"
+            sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
+            allowFullScreen
+          />
+        </div>
+      ) : canPlay ? (
+        <button className={`preview-media preview-trigger${hasThumbnail ? "" : " no-image"}`} aria-label={`Play ${previewTitle} preview`} onClick={() => setPlaying(true)}>
+          {hasThumbnail && <img src={preview.thumbnailDataUrl} alt={`${previewTitle} preview`} onError={() => setThumbnailFailed(true)} />}
+          {!hasThumbnail && <ActivityLogo event={event} />}
+          <span><Play size={18} fill="currentColor" /> Play preview</span>
+        </button>
+      ) : (
+        <div className="preview-generic"><ActivityLogo event={event} /></div>
+      )}
+      <div className="preview-copy">
+        <span>{preview.kind === "youtube" ? "Recent video" : "Recent resource"}</span>
+        <h3>{previewTitle}</h3>
+        <small>{domainFromUrl(event.url) || event.appName} · {formatTime(event.startedAt)}</small>
+        <small>{preview.kind === "youtube" ? "YouTube loads only after you press play." : "Live sites are not embedded inside Knov."}</small>
+        {openLink}
+        {openError && <small className="preview-error" role="status">{openError}</small>}
+      </div>
+    </section>
+  );
+}
+
+function EvidenceRail({ events, previewEvent }: { events: ActivityEvent[]; previewEvent?: ActivityEvent }) {
   return (
     <div className="evidence-rail">
+      {previewEvent && <ActivityPreviewCard event={previewEvent} />}
+      <EditorChangeSummary events={events} />
       <div className="evidence-heading"><Eye size={16} /><span>Why this thread?</span><small>Observed locally</small></div>
-      {events.length ? events.slice(0, 4).map((event, index) => (
-        <article key={event.id}>
-          <span className="evidence-index">{String(index + 1).padStart(2, "0")}</span>
-          <ActivityLogo event={event} />
-          <div><strong>{event.pageTitle || event.windowTitle || event.appName}</strong><small>{domainFromUrl(event.url) || event.appName} · {formatTime(event.startedAt)}</small></div>
-          <time>{formatDuration(event.durationSeconds)}</time>
-        </article>
-      )) : <p className="evidence-empty">This topic is inferred from aggregate signals; no detailed event is available in this range.</p>}
+      {events.length ? events.slice(0, previewEvent ? 3 : 4).map((event, index) => {
+        const appContext = codeActivityContext(event, events);
+        return (
+          <article key={event.id}>
+            <span className="evidence-index">{String(index + 1).padStart(2, "0")}</span>
+            <ActivityLogo event={event} />
+            <div>
+              <strong>{event.pageTitle || event.windowTitle || event.appName}</strong>
+              <small title={appContext?.title}>{domainFromUrl(event.url) || event.appName}{appContext ? ` · ${appContext.label}` : ""} · {formatTime(event.startedAt)}</small>
+            </div>
+            <time>{activityMeasure(event)}</time>
+          </article>
+        );
+      }) : <p className="evidence-empty">This topic is inferred from aggregate signals; no detailed event is available in this range.</p>}
     </div>
   );
 }
@@ -583,7 +821,7 @@ function ThreadCard({ thread, selected = false, onSelect }: { thread: WorkThread
       <span className="thread-card-top"><span className={`thread-state ${thread.status}`} />{thread.status}<small>{thread.lastActiveAt ? formatTime(thread.lastActiveAt) : "Needs review"}</small></span>
       <strong>{thread.title}</strong>
       <p>{thread.summary}</p>
-      <span className="thread-meta"><span>{thread.events.length} signals</span><span>{formatDuration(thread.totalSeconds)}</span><ChevronRight size={15} /></span>
+      <span className="thread-meta"><span>{thread.events.length} signals</span><span>{threadMeasure(thread)}</span><ChevronRight size={15} /></span>
     </button>
   );
 }
@@ -627,11 +865,15 @@ function ThreadsPage() {
 function ActivityPage() {
   const [range, setRange] = useState<RangeKey>("today");
   const [query, setQuery] = useState("");
+  const [visibleCount, setVisibleCount] = useState(ACTIVITY_PAGE_SIZE);
   const resource = useResource(() => api.activity(range, query), [range]);
   const filtered = useMemo(
-    () => resource.data?.filter((event) => `${event.appName} ${event.windowTitle} ${event.pageTitle} ${event.topic}`.toLowerCase().includes(query.toLowerCase())),
+    () => resource.data?.filter((event) => `${event.appName} ${event.windowTitle} ${event.pageTitle} ${event.searchQuery} ${event.topic}`.toLowerCase().includes(query.toLowerCase())),
     [resource.data, query],
   );
+  useEffect(() => setVisibleCount(ACTIVITY_PAGE_SIZE), [range, query]);
+  const visibleEvents = filtered?.slice(0, visibleCount) ?? [];
+  const hasMore = visibleEvents.length < (filtered?.length ?? 0);
   return (
     <div className="page">
       <PageHeader
@@ -645,8 +887,21 @@ function ActivityPage() {
         <span className="fact-badge"><LockKeyhole size={14} /> Stored locally for 30 days</span>
       </div>
       <section className="panel activity-panel">
+        <EditorChangeSummary events={filtered ?? []} />
         <ResourceState {...resource}>
-          {() => <ActivityList events={filtered ?? []} />}
+          {() => (
+            <>
+              <ActivityList events={visibleEvents} />
+              {hasMore && (
+                <div className="activity-load-more">
+                  <span>Showing {visibleEvents.length} of {filtered?.length ?? 0} events</span>
+                  <button className="ghost-button" onClick={() => setVisibleCount((count) => count + ACTIVITY_PAGE_SIZE)}>
+                    Show more
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </ResourceState>
       </section>
     </div>
@@ -657,20 +912,155 @@ function ActivityList({ events, compact = false }: { events: ActivityEvent[]; co
   if (!events.length) return <EmptyState title="No matching activity" detail="Try a broader filter or another time range." />;
   return (
     <div className={`activity-list ${compact ? "compact" : ""}`}>
-      {events.map((event) => (
-        <article className="activity-row" key={event.id}>
-          <time>{formatTime(event.startedAt)}</time>
-          <div className="timeline-marker" />
-          <ActivityLogo event={event} />
-          <div className="activity-copy">
-            <div><strong>{event.pageTitle || event.windowTitle || event.appName}</strong><span>{event.appName}</span></div>
-            <p>{domainFromUrl(event.url) || event.topic || "Application focus"}</p>
-          </div>
-          <span className={`source-tag ${event.source}`}>{event.source}</span>
-          <strong className="duration">{formatDuration(event.durationSeconds)}</strong>
-        </article>
-      ))}
+      {events.map((event) => {
+        const appContext = codeActivityContext(event, events);
+        return (
+          <article className="activity-row" key={event.id}>
+            <time>{formatTime(event.startedAt)}</time>
+            <div className="timeline-marker" />
+            <ActivityLogo event={event} />
+            <div className="activity-copy">
+              <div>
+                <strong>{editorFilePath(event) || event.pageTitle || event.windowTitle || event.appName}</strong>
+                <span title={appContext?.title}>{event.appName}{appContext ? ` · ${appContext.label}` : ""}</span>
+              </div>
+              <p>{event.source === "editor" ? `${event.topic || "Editor history"} · File save metadata` : domainFromUrl(event.url) || event.topic || "Application focus"}</p>
+            </div>
+            <span className={`source-tag ${event.source}`}>{event.source === "editor" ? "file save" : event.source}</span>
+            <strong className="duration">{activityMeasure(event)}</strong>
+          </article>
+        );
+      })}
     </div>
+  );
+}
+
+interface EditorFileChange {
+  path: string;
+  saves: number;
+  lastSavedAt: string;
+}
+
+interface CodeActivityContext {
+  label: string;
+  title: string;
+}
+
+const CODE_APP_NAMES = new Set(["code", "visual studio code", "cursor", "cortex code", "xcode"]);
+const CODE_FILE_PATTERN = /\.(?:[cm]?[jt]sx?|py|rs|go|java|kt|kts|swift|rb|php|cs|c|cc|cpp|h|hpp|html?|css|scss|sass|less|vue|svelte|sql|sh|bash|zsh|fish|ya?ml|json|toml|xml|graphql|proto)$/i;
+
+function normalizedEditorName(appName: string): string | undefined {
+  const normalized = appName.trim().toLocaleLowerCase();
+  if (!CODE_APP_NAMES.has(normalized)) return undefined;
+  return normalized === "code" || normalized === "visual studio code" ? "visual studio code" : normalized;
+}
+
+function codeFileFromWindow(event: ActivityEvent): string | undefined {
+  if (!normalizedEditorName(event.appName)) return undefined;
+  const candidates = [event.pageTitle, ...(event.windowTitle?.split(/\s+[—–-]\s+/) ?? [])];
+  return candidates
+    .map((value) => value?.trim().replace(/^[●*]\s*/, ""))
+    .find((value): value is string => typeof value === "string" && CODE_FILE_PATTERN.test(value));
+}
+
+function codeFileName(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).pop() || path;
+}
+
+function codeActivityContext(event: ActivityEvent, events: ActivityEvent[]): CodeActivityContext | undefined {
+  const editorName = normalizedEditorName(event.appName);
+  if (!editorName && event.source !== "editor") return undefined;
+
+  const directFile = editorFilePath(event);
+  let modifiedFiles = directFile ? [directFile] : [];
+  if (!directFile && editorName) {
+    const startedAt = Date.parse(event.startedAt);
+    const endedAt = startedAt + Math.max(event.durationSeconds, 0) * 1_000;
+    modifiedFiles = events.flatMap((candidate) => {
+      if (candidate.source !== "editor" || normalizedEditorName(candidate.appName) !== editorName) return [];
+      const savedAt = Date.parse(candidate.startedAt);
+      return savedAt >= startedAt - 60_000 && savedAt <= endedAt + 60_000
+        ? editorFilePath(candidate) ?? []
+        : [];
+    });
+  }
+
+  const uniqueFiles = [...new Map(modifiedFiles.map((path) => [path.toLocaleLowerCase(), path])).values()];
+  if (uniqueFiles.length) {
+    const names = uniqueFiles.slice(0, 2).map(codeFileName).join(", ");
+    const overflow = uniqueFiles.length > 2 ? ` +${uniqueFiles.length - 2} more` : "";
+    return {
+      label: `Modified ${names}${overflow}`,
+      title: `Modified ${uniqueFiles.join(", ")}`,
+    };
+  }
+
+  const workspaceFiles = [...new Map(
+    (event.modifiedFiles ?? []).map((path) => [path.toLocaleLowerCase(), path]),
+  ).values()];
+  if (workspaceFiles.length) {
+    const names = workspaceFiles.slice(0, 2).map(codeFileName).join(", ");
+    const overflow = workspaceFiles.length > 2 ? ` +${workspaceFiles.length - 2} more` : "";
+    return {
+      label: `Changed ${names}${overflow}`,
+      title: `Recent workspace changes: ${workspaceFiles.join(", ")}`,
+    };
+  }
+
+  const visibleFile = codeFileFromWindow(event);
+  return visibleFile
+    ? { label: `Open ${codeFileName(visibleFile)}`, title: `Visible file: ${visibleFile}; no save detected` }
+    : undefined;
+}
+
+function editorFilePath(event: ActivityEvent): string | undefined {
+  if (event.source !== "editor") return undefined;
+  const pageTitle = event.pageTitle?.trim();
+  if (pageTitle) return pageTitle;
+  const windowTitle = event.windowTitle?.trim();
+  if (!windowTitle) return undefined;
+  const separator = windowTitle.indexOf(" — ");
+  return separator >= 0 ? windowTitle.slice(separator + 3).trim() || undefined : undefined;
+}
+
+function summarizeEditorChanges(events: ActivityEvent[]): EditorFileChange[] {
+  const files = new Map<string, EditorFileChange>();
+  events.forEach((event) => {
+    const path = editorFilePath(event);
+    if (!path) return;
+    const key = path.toLocaleLowerCase();
+    const existing = files.get(key);
+    if (!existing) {
+      files.set(key, { path, saves: 1, lastSavedAt: event.startedAt });
+      return;
+    }
+    existing.saves += 1;
+    if (Date.parse(event.startedAt) > Date.parse(existing.lastSavedAt)) existing.lastSavedAt = event.startedAt;
+  });
+  return [...files.values()].sort((a, b) => Date.parse(b.lastSavedAt) - Date.parse(a.lastSavedAt));
+}
+
+function EditorChangeSummary({ events }: { events: ActivityEvent[] }) {
+  const files = summarizeEditorChanges(events);
+  if (!files.length) return null;
+  const saveCount = files.reduce((total, file) => total + file.saves, 0);
+  return (
+    <section className="editor-change-summary" aria-label="Saved files">
+      <div className="editor-change-heading">
+        <FileCode2 size={17} />
+        <span><strong>Saved files</strong><small>{files.length} file{files.length === 1 ? "" : "s"} · {saveCount} save{saveCount === 1 ? "" : "s"}</small></span>
+      </div>
+      <div className="editor-file-list">
+        {files.slice(0, 6).map((file) => (
+          <div className="editor-file-row" key={file.path}>
+            <code title={file.path}>{file.path}</code>
+            <small>{file.saves} save{file.saves === 1 ? "" : "s"} · {formatTime(file.lastSavedAt)}</small>
+          </div>
+        ))}
+      </div>
+      {files.length > 6 && <small className="editor-file-overflow">+{files.length - 6} more file{files.length - 6 === 1 ? "" : "s"}</small>}
+      <p>File paths and save times only. Knov does not read code or compute line diffs.</p>
+    </section>
   );
 }
 
@@ -713,6 +1103,16 @@ function ActivityLogo({ event }: { event: ActivityEvent }) {
   );
 }
 
+function activityMeasure(event: ActivityEvent): string {
+  return event.source === "editor" ? "saved" : formatDuration(event.durationSeconds);
+}
+
+function threadMeasure(thread: WorkThread): string {
+  return thread.events.length > 0 && thread.events.every((event) => event.source === "editor")
+    ? `${thread.events.length} saves`
+    : formatDuration(thread.totalSeconds);
+}
+
 function ProfilePage() {
   const resource = useResource(() => api.profile(), []);
   const [showForm, setShowForm] = useState(false);
@@ -724,11 +1124,10 @@ function ProfilePage() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    resource.setData(
-      editingId
-        ? await api.saveCorrection(label, description || undefined, editingId)
-        : await api.saveCorrection(label, description || undefined),
-    );
+    const profile = editingId
+      ? await api.saveCorrection(label, description || undefined, editingId)
+      : await api.saveCorrection(label, description || undefined);
+    resource.setData(profile);
     setLabel("");
     setDescription("");
     setEditingId(undefined);
@@ -740,7 +1139,7 @@ function ProfilePage() {
       <PageHeader
         eyebrow="Reviewable memory"
         title="What Knov remembers"
-        description="Inferences remain editable. Anything you tell Knov directly becomes authoritative until you remove it."
+        description="Profile facts and authoritative corrections are stored and retrieved locally. Raw activity stays on this Mac."
         actions={<button className="primary-button" onClick={() => { setEditingId(undefined); setLabel(""); setDescription(""); setShowForm(true); }}><Plus size={16} /> Add correction</button>}
       />
       <ResourceState {...resource}>
@@ -792,7 +1191,7 @@ function ProfilePage() {
       {showForm && (
         <Modal title={editingId ? "Edit authoritative correction" : "Add authoritative correction"} onClose={() => setShowForm(false)}>
           <form className="stack-form" onSubmit={(event) => void submit(event)}>
-            <label>What should Knov know?<input required value={label} onChange={(event) => setLabel(event.target.value)} placeholder="I am no longer working on Project X" /></label>
+            <label>What should Knov know?<input required value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Privacy is more important to me than adding features" /></label>
             <label>Optional context<textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="This will always override automatic inference." /></label>
             <div className="modal-actions"><button type="button" className="ghost-button" onClick={() => setShowForm(false)}>Cancel</button><button className="primary-button">Save as truth</button></div>
           </form>
@@ -817,19 +1216,23 @@ function ProfilePage() {
 }
 
 function AssistantPage() {
-  const activeContextBrief = sessionStorage.getItem("knov.active-context-brief");
+  const activeThreadContext = loadThreadContext();
+  const activeContextBrief = activeThreadContext ? makeContextBrief(activeThreadContext) : undefined;
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
       role: "assistant",
       content: activeContextBrief
-        ? "Your selected thread is ready. Ask anything and I’ll use its provisional context brief while distinguishing observation from inference."
-        : "I’m ready. I’ll use your local memory naturally and distinguish what you told me from what I inferred.",
+        ? "Your selected thread is ready. I’ll retrieve only the memories relevant to your question and keep the provisional brief visible."
+        : "Ask anything. I’ll retrieve only the approved memories relevant to this request.",
       createdAt: new Date().toISOString(),
     },
   ]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [economics, setEconomics] = useState<ContextEconomics>();
+  const [retrievedMemories, setRetrievedMemories] = useState<MemoryRecord[]>([]);
+  const [error, setError] = useState("");
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -839,11 +1242,14 @@ function AssistantPage() {
     setMessages(next);
     setDraft("");
     setSending(true);
+    setError("");
     try {
-      const providerMessages = activeContextBrief
-        ? [...messages, { ...userMessage, content: `${activeContextBrief}\n\nQuestion: ${userMessage.content}` }]
-        : next;
-      setMessages([...next, await api.chat(providerMessages)]);
+      const result = await api.chat(next, "optimized", activeThreadContext);
+      setMessages([...next, result.message]);
+      setEconomics(result.economics);
+      setRetrievedMemories(result.retrievedMemories);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setSending(false);
     }
@@ -851,44 +1257,115 @@ function AssistantPage() {
 
   return (
     <div className="page assistant-page">
-      <PageHeader eyebrow="Context-aware assistant" title="Ask without re-explaining" description="Only this conversation and the visible context brief leave your Mac. Raw activity is never attached." actions={<a className="ghost-button" href="#/dashboard">Back to Now</a>} />
-      <section className="chat-shell">
-        <div className="chat-context"><ShieldCheck size={15} /><span>{activeContextBrief ? "Using your selected thread brief" : "Using your local memory"}</span><small>Raw activity is never attached</small></div>
-        {activeContextBrief && <details className="active-context-preview"><summary>Review context being shared</summary><pre>{activeContextBrief}</pre></details>}
-        <div className="message-list">
-          {messages.map((message) => (
-            <article className={`message ${message.role}`} key={message.id}>
-              <div className="message-avatar">{message.role === "assistant" ? <Bot size={18} /> : <CircleUserRound size={18} />}</div>
-              <div className="message-body">
-                {message.role === "assistant" ? (
-                  <MarkdownMessage>{message.content}</MarkdownMessage>
-                ) : (
-                  <div className="message-content user-content">{message.content}</div>
-                )}
-                <time>{formatTime(message.createdAt)}</time>
-              </div>
-            </article>
-          ))}
-          {sending && <article className="message assistant"><div className="message-avatar"><Bot size={18} /></div><div className="typing"><i /><i /><i /></div></article>}
-        </div>
-        <form className="chat-composer" onSubmit={(event) => void submit(event)}>
-          <textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
-              }
-            }}
-            placeholder="What should I focus on next?"
-            rows={2}
-          />
-          <button className="primary-button" disabled={!draft.trim() || sending}>Send <ChevronRight size={16} /></button>
-        </form>
-      </section>
+      <PageHeader
+        eyebrow="Memory-efficient personal AI"
+        title="Remembers more. Sends less."
+        description="One question shows the full-context baseline, the memories Knov selected, and the resulting token reduction."
+        actions={(
+          <div className="assistant-header-actions">
+            <a className="ghost-button" href="#/dashboard">Back to Now</a>
+          </div>
+        )}
+      />
+      <div className="assistant-workspace">
+        <section className="chat-shell">
+          <div className="chat-context"><ShieldCheck size={15} /><span>Local memory + token-budgeted selected evidence</span><small>Full raw logs stay on this Mac</small></div>
+          {activeContextBrief && <details className="active-context-preview"><summary>Review local candidate evidence</summary><pre>{activeContextBrief}</pre></details>}
+          <div className="message-list">
+            {messages.map((message) => (
+              <article className={`message ${message.role}`} key={message.id}>
+                <div className="message-avatar">{message.role === "assistant" ? <Bot size={18} /> : <CircleUserRound size={18} />}</div>
+                <div className="message-body">
+                  {message.role === "assistant" ? (
+                    <MarkdownMessage>{message.content}</MarkdownMessage>
+                  ) : (
+                    <div className="message-content user-content">{message.content}</div>
+                  )}
+                  <time>{formatTime(message.createdAt)}</time>
+                </div>
+              </article>
+            ))}
+            {sending && <article className="message assistant"><div className="message-avatar"><Bot size={18} /></div><div className="typing"><i /><i /><i /></div></article>}
+          </div>
+          {error && <p className="assistant-error error-message">{error}</p>}
+          <form className="chat-composer" onSubmit={(event) => void submit(event)}>
+            <textarea
+              maxLength={4000}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
+              placeholder="What should I prioritize when building the production version?"
+              rows={2}
+            />
+            <button className="primary-button" disabled={!draft.trim() || sending}>{sending ? <LoaderCircle size={16} className="spin" /> : "Send"} {!sending && <ChevronRight size={16} />}</button>
+          </form>
+        </section>
+        <ContextEconomicsPanel
+          economics={economics}
+          memories={retrievedMemories}
+        />
+      </div>
     </div>
   );
+}
+
+function ContextEconomicsPanel({
+  economics,
+  memories,
+}: {
+  economics?: ContextEconomics;
+  memories: MemoryRecord[];
+}) {
+  return (
+    <aside className="economics-panel" aria-label="Context Economics">
+      <div className="economics-title"><BarChart3 size={17} /><div><span>Context Economics</span><small>Cost of Intelligence</small></div></div>
+      {economics ? (
+        <>
+          <div className="economics-hero"><strong>{economics.reductionPercent.toFixed(1)}%</strong><span>fewer input tokens</span></div>
+          <div className="economics-grid">
+            <article><span>Full Context comparison</span><strong>{formatTokenCount(economics.baselineInputTokens)}</strong></article>
+            <article className="optimized"><span>Packed prompt</span><strong>{formatTokenCount(economics.optimizedInputTokens)}</strong></article>
+            <article><span>Tokens Saved</span><strong>{formatTokenCount(economics.tokensSaved)}</strong></article>
+            <article><span>Memories</span><strong>{economics.memoryCount}</strong></article>
+            <article><span>Context units</span><strong>{economics.contextUnitsSent}/{economics.contextUnitsConsidered}</strong></article>
+            <article><span>Context budget</span><strong>{formatTokenCount(economics.contextEstimatedTokens)}/{formatTokenCount(economics.contextBudgetTokens)}</strong></article>
+            <article><span>Cache read</span><strong>{formatTokenCount(economics.cacheReadInputTokens ?? 0)}</strong></article>
+            <article><span>Detail level</span><strong>{economics.contextDetailLevel.replace(/-/g, " ")}</strong></article>
+          </div>
+          <div className="run-meta"><span>{economics.model}</span><span>{economics.latencyMs.toLocaleString()} ms</span><span>{economics.measurementMethod.replace(/_/g, " ")}</span></div>
+          <section className="remembered-list">
+            <div className="economics-section-title"><Brain size={15} /><span>Knov remembered</span></div>
+            {memories.length > 0 ? memories.map((memory) => (
+              <article key={memory.id}>
+                <div><strong>{memory.text}</strong><small>{memory.memoryType} · {memory.source}</small></div>
+                {memory.score !== undefined && <span>{Math.round(memory.score * 100)}%</span>}
+              </article>
+            )) : <p>No relevant memories were retrieved for this query.</p>}
+          </section>
+          <details className="context-comparison"><summary>Compare context payloads</summary><div><span>Full Context comparison</span><small>Computed locally and never sent to the AI provider.</small><pre>{economics.baselineContextPreview}</pre></div><div><span>System context (sent)</span><small>The bounded conversation and current question are sent separately.</small><pre>{economics.optimizedContextPreview}</pre></div></details>
+          <div className="telemetry-line"><span className="status-ok">{economics.telemetryStatus}</span><small>Query {economics.queryId.slice(0, 8)}</small></div>
+        </>
+      ) : (
+        <div className="economics-empty">
+          <strong>Ask one question.</strong>
+              <p>Knov will pack the richest relevant context that fits the configured token budget and compare it with the larger baseline.</p>
+        </div>
+      )}
+      <div className="integration-status">
+        <article><span className="status-light" /><div><strong>Local memory</strong><small>Profile facts and corrections are retrieved on-device.</small></div></article>
+        <article><span className="status-light" /><div><strong>Local economics</strong><small>Aggregate inference metrics stay in Knov's SQLite database.</small></div></article>
+      </div>
+    </aside>
+  );
+}
+
+function formatTokenCount(value: number): string {
+  return new Intl.NumberFormat("en-US").format(value);
 }
 
 function SettingsPage() {
@@ -931,11 +1408,11 @@ function SettingsPage() {
           <div className="settings-grid">
             <section className="panel settings-card">
               <SettingsHeading icon={<KeyRound />} title="AI provider" detail="Your key goes directly from this Mac to the selected provider." />
-              <p className="status-detail">Profile digests and chat are sent only when needed. OpenAI requests disable optional storage; both providers may retain API data under your account and their current policies.</p>
+              <p className="status-detail">Profile digests and chat are sent only when needed. OpenAI disables optional storage. AWS Bedrock uses model-specific token preflight and eligible prompt caching; provider processing remains governed by your account policy.</p>
               <div className="provider-tabs">
-                {(["openai", "anthropic"] as Provider[]).map((provider) => (
+                {providers.map((provider) => (
                   <button className={settings.provider === provider ? "selected" : ""} key={provider} onClick={() => void patch({ provider })}>
-                    {provider === "openai" ? "OpenAI" : "Anthropic"}
+                    {providerLabel(provider)}
                   </button>
                 ))}
               </div>
@@ -949,7 +1426,7 @@ function SettingsPage() {
             </section>
 
             <section className="panel settings-card">
-              <SettingsHeading icon={<Eye />} title="Collection" detail="Foreground app, window title, and permitted browser metadata." />
+              <SettingsHeading icon={<Eye />} title="Collection" detail="Foreground app, window title, selected Chrome history, and editor workspace-change metadata." />
               <Toggle label="Collection active" detail="The Chrome companion follows the Mac state on its next status check." checked={settings.collectionStatus.enabled} onChange={(enabled) => api.setCollectionEnabled(enabled).then(resource.setData)} />
               <Toggle label="Behavioral guidance" detail="Break and focus suggestions; work-continuity guidance stays on." checked={settings.behavioralGuidanceEnabled} onChange={(behavioralGuidanceEnabled) => void patch({ behavioralGuidanceEnabled })} />
               <Toggle label="Launch at login" detail="Resume local collection after you sign in." checked={settings.launchAtLogin} onChange={(launchAtLogin) => void patch({ launchAtLogin })} />
@@ -959,6 +1436,7 @@ function SettingsPage() {
                 {!settings.collectionStatus.accessibilityGranted && <button className="ghost-button" onClick={() => void api.requestAccessibility()}>Open prompt</button>}
               </div>
               {settings.collectionStatus.degradedReasons.map((reason) => <p className="status-detail" key={reason}>{reason}</p>)}
+              <p className="status-detail">While collection is active, Knov backfills new Chrome visits and reads metadata-only Local History indexes and Git working-tree paths from VS Code, Cursor, and Cortex Code workspaces. It never opens saved code snapshots or source contents.</p>
               {settings.collectionStatus.dataPath && <p className="status-detail">Local database: {settings.collectionStatus.dataPath}</p>}
             </section>
 
@@ -996,7 +1474,7 @@ function SettingsPage() {
                         {historyImporting ? "Re-importing…" : "Re-import Chrome history"}
                       </button>
                     </div>
-                    <p className="status-detail">Reads the last 30 days from selected local Chrome profiles for browsing context and rebuilds your profile. Foreground app time comes from live local collection because Chrome history durations are not reliable screen-time data.</p>
+                    <p className="status-detail">Manual re-import reads the last 30 days and rebuilds your profile. While collection is active, new visits are also backfilled approximately every 30 seconds. Foreground app time still comes from live local collection because Chrome history durations are not reliable screen-time data.</p>
                     {historyImportMessage && (
                       <p className={historyImportError ? "error-message" : "success-message"}>
                         {!historyImportError && <Check size={14} />}
@@ -1032,7 +1510,7 @@ function SettingsPage() {
             </section>
 
             <section className="panel settings-card full-width danger-card">
-              <SettingsHeading icon={<Trash2 />} title="Delete Knov data" detail="Permanently removes activity, profiles, corrections, recommendations, settings, and provider credentials." />
+              <SettingsHeading icon={<Trash2 />} title="Delete local Knov data" detail="Permanently removes local activity, profiles, corrections, recommendations, telemetry, settings, and provider credentials." />
               <button className="danger-button" onClick={() => setConfirmDelete(true)}>Delete everything</button>
             </section>
           </div>
@@ -1040,7 +1518,7 @@ function SettingsPage() {
       </ResourceState>
       {confirmDelete && (
         <Modal title="Delete everything?" onClose={() => setConfirmDelete(false)}>
-          <p className="modal-copy">This cannot be undone from within Knov. All app-owned local data and the Keychain credential will be removed.</p>
+          <p className="modal-copy">This cannot be undone from within Knov. Local app data and provider credentials stored in Keychain will be removed.</p>
           <div className="modal-actions"><button className="ghost-button" onClick={() => setConfirmDelete(false)}>Cancel</button><button className="danger-button" onClick={() => api.deleteAllData().then(() => {
             localStorage.removeItem("knov.setup-complete");
             window.location.hash = "";

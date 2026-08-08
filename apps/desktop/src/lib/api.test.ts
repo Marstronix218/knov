@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./api";
 
 describe("browser preview API", () => {
@@ -27,6 +27,24 @@ describe("browser preview API", () => {
     expect(settings.collectionStatus.enabled).toBe(false);
   });
 
+  it("opens resources in a protected browser-preview tab", async () => {
+    const openedWindow = { opener: window };
+    const open = vi.spyOn(window, "open").mockReturnValue(openedWindow as unknown as Window);
+
+    await api.openResource("https://example.com/work");
+
+    expect(open).toHaveBeenCalledWith("https://example.com/work", "_blank");
+    expect(openedWindow.opener).toBeNull();
+  });
+
+  it("rejects when the browser blocks a resource tab", async () => {
+    vi.spyOn(window, "open").mockReturnValue(null);
+
+    await expect(api.openResource("https://example.com/work")).rejects.toThrow(
+      "The browser blocked the new tab.",
+    );
+  });
+
   it("returns a clearly disclosed preview response for chat", async () => {
     const response = await api.chat([
       {
@@ -37,9 +55,11 @@ describe("browser preview API", () => {
       },
     ]);
 
-    expect(response).toMatchObject({
+    expect(response.message).toMatchObject({
       role: "assistant",
       content: expect.stringContaining("browser preview mode"),
     });
+    expect(response.economics.reductionPercent).toBeGreaterThan(0);
+    expect(response.retrievedMemories).not.toHaveLength(0);
   });
 });
