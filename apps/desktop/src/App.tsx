@@ -1,5 +1,6 @@
 import {
   Activity,
+  ArrowUpRight,
   BarChart3,
   Bot,
   Brain,
@@ -7,8 +8,10 @@ import {
   ChevronRight,
   CircleUserRound,
   Clock3,
+  Copy,
   Eye,
   KeyRound,
+  Layers3,
   LayoutDashboard,
   LoaderCircle,
   LockKeyhole,
@@ -36,16 +39,15 @@ import type {
   DashboardData,
   Provider,
   RangeKey,
-  Recommendation,
   SettingsData,
   UsageSlice,
 } from "./types";
 
 const navigation = [
-  { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
+  { to: "/dashboard", label: "Now", icon: LayoutDashboard },
+  { to: "/threads", label: "Threads", icon: Layers3 },
+  { to: "/profile", label: "Memory", icon: Brain },
   { to: "/activity", label: "Activity", icon: Activity },
-  { to: "/profile", label: "Profile", icon: Brain },
-  { to: "/assistant", label: "Assistant", icon: MessageSquareText },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -68,6 +70,7 @@ function App() {
 
   const page = {
     "/dashboard": <DashboardPage />,
+    "/threads": <ThreadsPage />,
     "/activity": <ActivityPage />,
     "/profile": <ProfilePage />,
     "/assistant": <AssistantPage />,
@@ -85,7 +88,7 @@ function App() {
   );
 }
 
-const validRoutes = new Set(navigation.map(({ to }) => to));
+const validRoutes = new Set([...navigation.map(({ to }) => to), "/assistant"]);
 
 function routeFromHash(): string {
   const candidate = window.location.hash.slice(1);
@@ -336,11 +339,11 @@ function DashboardPage() {
   };
 
   return (
-    <div className="page">
+    <div className="page now-page">
       <PageHeader
-        eyebrow="Your day, understood"
-        title="Good afternoon."
-        description="A clear view of what has held your attention and where you may want to go next."
+        eyebrow="Your working context"
+        title="Pick up where you left off."
+        description="Knov reconstructs useful work threads from minimal local signals—without screenshots, audio, keystrokes, or page contents."
         actions={
           <>
             <RangePicker value={range} onChange={setRange} />
@@ -353,99 +356,155 @@ function DashboardPage() {
       {refreshMessage && <p className="refresh-status" role="status">{refreshMessage}</p>}
 
       <ResourceState {...resource}>
-        {(data) => <DashboardContent data={data} onDismiss={(id, feedback) => api.dismissRecommendation(id, feedback).then(resource.reload)} />}
+        {(data) => <DashboardContent data={data} />}
       </ResourceState>
     </div>
   );
 }
 
-function DashboardContent({ data, onDismiss }: { data: DashboardData; onDismiss: (id: string, feedback?: string) => Promise<unknown> }) {
+interface WorkThread {
+  id: string;
+  title: string;
+  summary: string;
+  nextMove: string;
+  events: ActivityEvent[];
+  totalSeconds: number;
+  lastActiveAt?: string;
+  status: "active" | "cooling" | "discovered";
+}
+
+function toThreadId(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "untitled";
+}
+
+function deriveThreads(data: DashboardData): WorkThread[] {
+  const groups = new Map<string, ActivityEvent[]>();
+  data.recentActivity.forEach((event) => {
+    const title = event.topic?.trim() || event.appName;
+    groups.set(title, [...(groups.get(title) ?? []), event]);
+  });
+  data.activeTopics.forEach((topic) => {
+    if (!groups.has(topic.name)) groups.set(topic.name, []);
+  });
+  const continuity = data.recommendations.find((item) => item.kind === "continuity");
+
+  return [...groups.entries()].map(([title, events], index) => {
+    const sortedEvents = [...events].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
+    const apps = [...new Set(events.map((event) => event.appName))];
+    const status: WorkThread["status"] = index === 0 ? "active" : events.length ? "cooling" : "discovered";
+    return {
+      id: toThreadId(title),
+      title,
+      summary: index === 0 && continuity
+        ? continuity.body
+        : events.length
+          ? `${events.length} recent signal${events.length === 1 ? "" : "s"} across ${apps.slice(0, 3).join(", ")}.`
+          : "A recurring topic inferred from recent app, title, and domain signals.",
+      nextMove: index === 0 && continuity
+        ? continuity.title
+        : sortedEvents[0]
+          ? `Return to ${sortedEvents[0].pageTitle || sortedEvents[0].windowTitle || sortedEvents[0].appName}.`
+          : "Review this thread and confirm whether it is still active.",
+      events: sortedEvents,
+      totalSeconds: events.reduce((sum, event) => sum + event.durationSeconds, 0),
+      lastActiveAt: sortedEvents[0]?.startedAt,
+      status,
+    };
+  }).sort((a, b) => (Date.parse(b.lastActiveAt ?? "") || 0) - (Date.parse(a.lastActiveAt ?? "") || 0));
+}
+
+function makeContextBrief(thread: WorkThread): string {
+  const evidence = thread.events.slice(0, 4).map((event) => {
+    const resource = event.pageTitle || event.windowTitle || event.appName;
+    return `- ${resource} (${domainFromUrl(event.url) || event.appName}, ${formatDuration(event.durationSeconds)})`;
+  });
+  return [
+    `Context brief: ${thread.title}`,
+    thread.summary,
+    `Suggested next move: ${thread.nextMove}`,
+    evidence.length ? `Recent evidence:\n${evidence.join("\n")}` : "Recent evidence: no detailed event is available in this range.",
+    "Treat this as provisional behavioral context, not confirmed user intent.",
+  ].join("\n\n");
+}
+
+function DashboardContent({ data }: { data: DashboardData }) {
+  const threads = useMemo(() => deriveThreads(data), [data]);
+  const storedThread = localStorage.getItem("knov.selected-thread");
+  const [selectedId, setSelectedId] = useState(storedThread ?? threads[0]?.id);
+  const [actionMessage, setActionMessage] = useState("");
+  const selected = threads.find((thread) => thread.id === selectedId) ?? threads[0];
   const focusPercent = data.trackedSeconds ? (data.focusedSeconds / data.trackedSeconds) * 100 : 0;
+
+  if (!selected) {
+    return <EmptyState title="No work threads yet" detail="Keep collection on while you work. Knov will group recent activity into reviewable threads." />;
+  }
+
+  const selectThread = (id: string) => {
+    setSelectedId(id);
+    localStorage.setItem("knov.selected-thread", id);
+    setActionMessage("");
+  };
+  const resume = () => {
+    const target = selected.events.find((event) => event.url)?.url;
+    if (target) {
+      window.open(target, "_blank", "noopener,noreferrer");
+      setActionMessage("Opened the latest available resource.");
+    } else {
+      setActionMessage("No reopenable web resource is available. The context brief is ready to use.");
+    }
+  };
+  const copyBrief = async () => {
+    await navigator.clipboard.writeText(makeContextBrief(selected));
+    setActionMessage("Context brief copied.");
+  };
+  const prepareAssistant = () => sessionStorage.setItem("knov.active-context-brief", makeContextBrief(selected));
+
   return (
     <>
-      <section className="metric-strip">
-        <Metric label="Tracked time" value={formatDuration(data.trackedSeconds)} detail="Live foreground activity · idle excluded" icon={<Clock3 />} />
-        <Metric label="Sustained focus" value={formatDuration(data.focusedSeconds)} detail={`${formatPercentage(focusPercent)} of tracked · sessions 5m+`} icon={<Eye />} />
-        <ActiveTopicsMetric topics={data.activeTopics} />
+      <section className="now-status" aria-label="Current context status">
+        <span><i className="status-light" /> {threads.length} active thread{threads.length === 1 ? "" : "s"}</span>
+        <span>{formatDuration(data.trackedSeconds)} observed</span>
+        <span>{formatPercentage(focusPercent)} sustained focus</span>
+        <span className="local-boundary"><ShieldCheck size={15} /> Detailed activity stays local</span>
       </section>
 
-      <div className="dashboard-grid">
-        <section className="panel span-7">
-          <PanelHeader title="Where your time went" subtitle="Foreground application usage" />
-          <UsageBars items={data.appUsage} />
-        </section>
-        <section className="panel span-5">
-          <PanelHeader title="Web attention" subtitle="Active and imported browser activity" />
-          <DonutSummary items={data.siteUsage} />
-        </section>
-        <section className="panel span-7">
-          <PanelHeader title="Recent activity" subtitle="Observed facts from this Mac" link="/#/activity" />
-          <ActivityList events={data.recentActivity.slice(0, 4)} compact />
-        </section>
-        <section className="panel span-5 insights-panel">
-          <PanelHeader title="Patterns worth noticing" subtitle="Facts and cautious inferences" />
-          <div className="insight-list">
-            {data.insights.map((insight) => (
-              <article className="insight-row" key={insight.id}>
-                <div className="insight-metric">{insight.metric}</div>
-                <div>
-                  <h3>{insight.title}</h3>
-                  <p>{insight.description}</p>
-                  <span title={insight.evidence}>Evidence available</span>
-                </div>
-              </article>
-            ))}
+      <section className="resume-card">
+        <div className="resume-orbit" aria-hidden="true"><span /><span /><span /><span /></div>
+        <div className="resume-content">
+          <div className="resume-kicker"><span className={`thread-state ${selected.status}`} /> Continue where you left off</div>
+          <h2>{selected.title}</h2>
+          <p>{selected.summary}</p>
+          <div className="next-move"><Sparkles size={17} /><span><small>Suggested next move</small><strong>{selected.nextMove}</strong></span></div>
+          <div className="resume-actions">
+            <button className="primary-button large" onClick={resume}>Resume thread <ArrowUpRight size={17} /></button>
+            <a className="ghost-button large" href="#/assistant" onClick={prepareAssistant}><MessageSquareText size={17} /> Ask with context</a>
+            <button className="ghost-button large" onClick={() => void copyBrief()}><Copy size={17} /> Copy brief</button>
           </div>
-        </section>
-      </div>
+          {actionMessage && <p className="action-message" role="status">{actionMessage}</p>}
+        </div>
+        <EvidenceRail events={selected.events} />
+      </section>
 
-      <section className="recommendation-section">
+      <section className="thread-section">
         <div className="section-title-row">
-          <div>
-            <div className="eyebrow">A thoughtful next move</div>
-            <h2>Recommendations</h2>
-          </div>
-          <span className="fact-badge"><Sparkles size={14} /> Updated with your profile</span>
+          <div><div className="eyebrow">Your current landscape</div><h2>Active threads</h2></div>
+          <a className="section-link" href="#/threads">Explore all <ChevronRight size={15} /></a>
         </div>
-        <div className="recommendation-grid">
-          {data.recommendations.map((recommendation) => (
-            <RecommendationCard key={recommendation.id} recommendation={recommendation} onDismiss={onDismiss} />
-          ))}
+        <div className="thread-grid">
+          {threads.slice(0, 4).map((thread) => <ThreadCard key={thread.id} thread={thread} selected={thread.id === selected.id} onSelect={() => selectThread(thread.id)} />)}
         </div>
       </section>
+
+      <details className="attention-disclosure">
+        <summary><span><BarChart3 size={17} /> Attention details</span><small>Supporting evidence, not a productivity score</small></summary>
+        <div className="attention-grid">
+          <section className="panel"><PanelHeader title="Application attention" subtitle="Observed foreground usage" /><UsageBars items={data.appUsage} /></section>
+          <section className="panel"><PanelHeader title="Web attention" subtitle="Active and imported browser activity" /><DonutSummary items={data.siteUsage} /></section>
+          <section className="panel attention-activity"><PanelHeader title="Recent evidence" subtitle="Observed facts from this Mac" link="#/activity" /><ActivityList events={data.recentActivity.slice(0, 4)} compact /></section>
+          <section className="panel"><PanelHeader title="Patterns worth reviewing" subtitle="Cautious inferences, not conclusions" /><div className="insight-list">{data.insights.map((insight) => <article className="insight-row" key={insight.id}><div className="insight-metric">{insight.metric}</div><div><h3>{insight.title}</h3><p>{insight.description}</p><span title={insight.evidence}>Evidence available</span></div></article>)}</div></section>
+        </div>
+      </details>
     </>
-  );
-}
-
-function Metric({ label, value, detail, icon }: { label: string; value: string; detail: string; icon: React.ReactNode }) {
-  return (
-    <article className="metric-card">
-      <div className="metric-icon">{icon}</div>
-      <div>
-        <span>{label}</span>
-        <strong>{value}</strong>
-        <small>{detail}</small>
-      </div>
-    </article>
-  );
-}
-
-function ActiveTopicsMetric({ topics }: { topics: DashboardData["activeTopics"] }) {
-  return (
-    <article className="metric-card topic-metric">
-      <div className="metric-icon"><Brain /></div>
-      <div>
-        <span>Active topics</span>
-        {topics.length ? (
-          <ul className="topic-list">
-            {topics.map((topic) => <li key={topic.name}>{topic.name}</li>)}
-          </ul>
-        ) : (
-          <strong className="topic-empty">None yet</strong>
-        )}
-        <small>Inferred from app, title, and domain signals</small>
-      </div>
-    </article>
   );
 }
 
@@ -502,18 +561,66 @@ function DonutSummary({ items }: { items: UsageSlice[] }) {
   );
 }
 
-function RecommendationCard({ recommendation, onDismiss }: { recommendation: Recommendation; onDismiss: (id: string, feedback?: string) => Promise<unknown> }) {
+function EvidenceRail({ events }: { events: ActivityEvent[] }) {
   return (
-    <article className={`recommendation-card ${recommendation.kind}`}>
-      <div className="recommendation-top">
-        <span>{recommendation.kind === "continuity" ? <Sparkles size={15} /> : <Brain size={15} />}{recommendation.kind}</span>
-        <button aria-label="Dismiss recommendation" onClick={() => void onDismiss(recommendation.id)}><X size={15} /></button>
-      </div>
-      <h3>{recommendation.title}</h3>
-      <p>{recommendation.body}</p>
-      <details><summary>Why am I seeing this?</summary><p>{recommendation.evidence}</p></details>
-      <button className="recommendation-feedback" onClick={() => void onDismiss(recommendation.id, "not_useful")}>Not useful</button>
-    </article>
+    <div className="evidence-rail">
+      <div className="evidence-heading"><Eye size={16} /><span>Why this thread?</span><small>Observed locally</small></div>
+      {events.length ? events.slice(0, 4).map((event, index) => (
+        <article key={event.id}>
+          <span className="evidence-index">{String(index + 1).padStart(2, "0")}</span>
+          <ActivityLogo event={event} />
+          <div><strong>{event.pageTitle || event.windowTitle || event.appName}</strong><small>{domainFromUrl(event.url) || event.appName} · {formatTime(event.startedAt)}</small></div>
+          <time>{formatDuration(event.durationSeconds)}</time>
+        </article>
+      )) : <p className="evidence-empty">This topic is inferred from aggregate signals; no detailed event is available in this range.</p>}
+    </div>
+  );
+}
+
+function ThreadCard({ thread, selected = false, onSelect }: { thread: WorkThread; selected?: boolean; onSelect: () => void }) {
+  return (
+    <button className={`thread-card${selected ? " selected" : ""}`} onClick={onSelect}>
+      <span className="thread-card-top"><span className={`thread-state ${thread.status}`} />{thread.status}<small>{thread.lastActiveAt ? formatTime(thread.lastActiveAt) : "Needs review"}</small></span>
+      <strong>{thread.title}</strong>
+      <p>{thread.summary}</p>
+      <span className="thread-meta"><span>{thread.events.length} signals</span><span>{formatDuration(thread.totalSeconds)}</span><ChevronRight size={15} /></span>
+    </button>
+  );
+}
+
+function ThreadsPage() {
+  const [range, setRange] = useState<RangeKey>("7d");
+  const resource = useResource(() => api.dashboard(range), [range]);
+  const [selectedId, setSelectedId] = useState<string>();
+  return (
+    <div className="page threads-page">
+      <PageHeader eyebrow="Reconstructed work" title="Your threads" description="Knov groups related activity into provisional work streams. Review the evidence before treating an inference as intent." actions={<RangePicker value={range} onChange={setRange} />} />
+      <ResourceState {...resource}>
+        {(data) => {
+          const threads = deriveThreads(data);
+          const selected = threads.find((thread) => thread.id === selectedId);
+          return (
+            <div className="threads-layout">
+              <section className="threads-list" aria-label="Work threads">
+                {threads.map((thread) => <ThreadCard key={thread.id} thread={thread} selected={thread.id === selectedId} onSelect={() => setSelectedId(thread.id)} />)}
+              </section>
+              <aside className="thread-detail">
+                {selected ? (
+                  <>
+                    <div className="eyebrow">Thread evidence</div>
+                    <h2>{selected.title}</h2>
+                    <p>{selected.summary}</p>
+                    <div className="next-move"><Sparkles size={17} /><span><small>Suggested next move</small><strong>{selected.nextMove}</strong></span></div>
+                    <EvidenceRail events={selected.events} />
+                    <a className="primary-button large" href="#/dashboard" onClick={() => localStorage.setItem("knov.selected-thread", selected.id)}>Continue in Now <ArrowUpRight size={17} /></a>
+                  </>
+                ) : <EmptyState title="Choose a thread" detail="Select a thread to inspect the local evidence and suggested next move." />}
+              </aside>
+            </div>
+          );
+        }}
+      </ResourceState>
+    </div>
   );
 }
 
@@ -631,8 +738,8 @@ function ProfilePage() {
   return (
     <div className="page">
       <PageHeader
-        eyebrow="Your profile"
-        title="What Knov understands"
+        eyebrow="Reviewable memory"
+        title="What Knov remembers"
         description="Inferences remain editable. Anything you tell Knov directly becomes authoritative until you remove it."
         actions={<button className="primary-button" onClick={() => { setEditingId(undefined); setLabel(""); setDescription(""); setShowForm(true); }}><Plus size={16} /> Add correction</button>}
       />
@@ -710,11 +817,14 @@ function ProfilePage() {
 }
 
 function AssistantPage() {
+  const activeContextBrief = sessionStorage.getItem("knov.active-context-brief");
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "welcome",
       role: "assistant",
-      content: "I’m ready. I’ll use your local profile naturally and I’ll distinguish what you told me from what I inferred.",
+      content: activeContextBrief
+        ? "Your selected thread is ready. Ask anything and I’ll use its provisional context brief while distinguishing observation from inference."
+        : "I’m ready. I’ll use your local memory naturally and distinguish what you told me from what I inferred.",
       createdAt: new Date().toISOString(),
     },
   ]);
@@ -730,7 +840,10 @@ function AssistantPage() {
     setDraft("");
     setSending(true);
     try {
-      setMessages([...next, await api.chat(next)]);
+      const providerMessages = activeContextBrief
+        ? [...messages, { ...userMessage, content: `${activeContextBrief}\n\nQuestion: ${userMessage.content}` }]
+        : next;
+      setMessages([...next, await api.chat(providerMessages)]);
     } finally {
       setSending(false);
     }
@@ -738,9 +851,10 @@ function AssistantPage() {
 
   return (
     <div className="page assistant-page">
-      <PageHeader eyebrow="Context-aware assistant" title="Ask without re-explaining" description="Only this conversation and relevant profile context leave your Mac." />
+      <PageHeader eyebrow="Context-aware assistant" title="Ask without re-explaining" description="Only this conversation and the visible context brief leave your Mac. Raw activity is never attached." actions={<a className="ghost-button" href="#/dashboard">Back to Now</a>} />
       <section className="chat-shell">
-        <div className="chat-context"><ShieldCheck size={15} /><span>Using your local profile</span><small>Raw activity is never attached</small></div>
+        <div className="chat-context"><ShieldCheck size={15} /><span>{activeContextBrief ? "Using your selected thread brief" : "Using your local memory"}</span><small>Raw activity is never attached</small></div>
+        {activeContextBrief && <details className="active-context-preview"><summary>Review context being shared</summary><pre>{activeContextBrief}</pre></details>}
         <div className="message-list">
           {messages.map((message) => (
             <article className={`message ${message.role}`} key={message.id}>

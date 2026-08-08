@@ -10,6 +10,8 @@ function clone<T>(value: T): T {
 }
 
 function stubApi() {
+  sessionStorage.clear();
+  localStorage.removeItem("knov.selected-thread");
   vi.spyOn(api, "settings").mockResolvedValue(clone(mockSettings));
   vi.spyOn(api, "dashboard").mockResolvedValue(clone(mockDashboard));
   vi.spyOn(api, "activity").mockResolvedValue(clone(mockDashboard.recentActivity));
@@ -41,7 +43,7 @@ describe("application navigation", () => {
   it("redirects unknown routes to the dashboard", async () => {
     await renderRoute("#/unknown");
 
-    expect(await screen.findByRole("heading", { name: "Good afternoon." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Pick up where you left off." })).toBeInTheDocument();
   });
 
   it("navigates from the dashboard to activity history", async () => {
@@ -50,6 +52,16 @@ describe("application navigation", () => {
     fireEvent.click(screen.getByRole("link", { name: "Activity" }));
 
     expect(await screen.findByRole("heading", { name: "Your local timeline" })).toBeInTheDocument();
+  });
+
+  it("navigates to reconstructed work threads", async () => {
+    await renderRoute("#/dashboard");
+
+    fireEvent.click(screen.getByRole("link", { name: "Threads" }));
+
+    expect(await screen.findByRole("heading", { name: "Your threads" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Knov implementation/ }));
+    expect(screen.getByText("Thread evidence")).toBeInTheDocument();
   });
 });
 
@@ -71,7 +83,7 @@ describe("onboarding", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /Build my first profile/ }));
 
-    expect(await screen.findByRole("heading", { name: "Good afternoon." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Pick up where you left off." })).toBeInTheDocument();
     expect(localStorage.getItem("knov.setup-complete")).toBe("true");
   });
 });
@@ -79,26 +91,24 @@ describe("onboarding", () => {
 describe("dashboard", () => {
   beforeEach(stubApi);
 
-  it("renders tracked time separately from sustained foreground sessions", async () => {
+  it("leads with a resumable thread and supporting context status", async () => {
     await renderRoute("#/dashboard");
 
-    const trackedMetric = (await screen.findByText("Tracked time")).closest("article");
-    const focusedMetric = screen.getByText("Sustained focus").closest("article");
-
-    expect(trackedMetric).toHaveTextContent("6h 06m");
-    expect(trackedMetric).toHaveTextContent("Live foreground activity · idle excluded");
-    expect(focusedMetric).toHaveTextContent("4h 39m");
-    expect(focusedMetric).toHaveTextContent("76.2% of tracked · sessions 5m+");
+    expect(await screen.findByText("Continue where you left off")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Knov implementation" })).toBeInTheDocument();
+    expect(screen.getByText("6h 06m observed")).toBeInTheDocument();
+    expect(screen.getByText("76.2% sustained focus")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Resume thread/ })).toBeInTheDocument();
   });
 
-  it("lists the active topic names", async () => {
+  it("lists reconstructed work threads and their evidence boundary", async () => {
     await renderRoute("#/dashboard");
 
-    const topics = (await screen.findByText("Active topics")).closest("article");
-    expect(topics).toHaveTextContent("Software development");
-    expect(topics).toHaveTextContent("Planning and notes");
-    expect(topics).toHaveTextContent("Web research");
-    expect(topics).toHaveTextContent("Inferred from app, title, and domain signals");
+    expect(await screen.findByRole("heading", { name: "Active threads" })).toBeInTheDocument();
+    expect(screen.getByText("Product planning")).toBeInTheDocument();
+    expect(screen.getByText("Desktop development")).toBeInTheDocument();
+    expect(screen.getByText("Why this thread?")).toBeInTheDocument();
+    expect(screen.getByText("Detailed activity stays local")).toBeInTheDocument();
   });
 
   it("formats foreground application percentages to one decimal place", async () => {
@@ -128,8 +138,8 @@ describe("dashboard", () => {
     await renderRoute("#/dashboard");
 
     expect(await screen.findByText("Observed facts from this Mac")).toBeInTheDocument();
-    expect(screen.getByText("Facts and cautious inferences")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Recommendations" })).toBeInTheDocument();
+    expect(screen.getByText("Cautious inferences, not conclusions")).toBeInTheDocument();
+    expect(screen.getByText("Supporting evidence, not a productivity score")).toBeInTheDocument();
   });
 
   it("shows website favicons instead of letter placeholders", async () => {
@@ -279,11 +289,34 @@ describe("assistant chat", () => {
     expect(sentMessages.map(({ role, content }) => ({ role, content }))).toEqual([
       {
         role: "assistant",
-        content: "I’m ready. I’ll use your local profile naturally and I’ll distinguish what you told me from what I inferred.",
+        content: "I’m ready. I’ll use your local memory naturally and distinguish what you told me from what I inferred.",
       },
       { role: "user", content: "What should I work on?" },
     ]);
     expect(await screen.findByText(response.content)).toBeInTheDocument();
+  });
+
+  it("passes the selected thread as an inspectable provisional context brief", async () => {
+    const response: ChatMessage = {
+      id: "context-response",
+      role: "assistant",
+      content: "I used the selected thread.",
+      createdAt: "2026-07-27T17:05:00.000Z",
+    };
+    const chat = vi.spyOn(api, "chat").mockResolvedValue(response);
+    await renderRoute("#/dashboard");
+
+    fireEvent.click(await screen.findByRole("link", { name: /Ask with context/ }));
+    expect(await screen.findByText("Review context being shared")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("What should I focus on next?"), { target: { value: "What next?" } });
+    fireEvent.click(screen.getByRole("button", { name: /Send/ }));
+
+    await waitFor(() => expect(chat).toHaveBeenCalledOnce());
+    const sentMessages = chat.mock.calls[0][0];
+    const sent = sentMessages[sentMessages.length - 1]?.content;
+    expect(sent).toContain("Context brief: Knov implementation");
+    expect(sent).toContain("Treat this as provisional behavioral context");
+    expect(sent).toContain("Question: What next?");
   });
 
   it("sends a message when Enter is pressed", async () => {

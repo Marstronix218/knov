@@ -208,16 +208,26 @@ The extension popup shows its connection, collection state, and the page
 currently being timed. Its **Pause collection** button is useful when you want
 to stop browser collection directly.
 
-### Review the Overview
+### Resume work from Now
 
-Open **Overview** to see tracked and focused time, application usage, web
-attention, recent activity, inferred patterns, and recommendations. Use
-**Today**, **7 days**, or **30 days** to change the reporting period.
+Open **Now** to see the work thread Knov believes you are most likely to
+continue, the local evidence behind it, and a suggested next move. Choose
+**Resume thread** to reopen its latest available web resource, **Ask with
+context** to start a provider-backed conversation with an inspectable context
+brief, or **Copy brief** to use that context elsewhere. Raw activity records are
+not attached to chat requests.
 
-Choose the refresh icon beside the date range to rebuild the profile and
-recommendations from current local data. Expand **Why am I seeing this?** on a
-recommendation to inspect its evidence. Use the close button to dismiss a
-recommendation, or **Not useful** to dismiss it while recording that feedback.
+Choose another active thread to change the focal context. Open **Attention
+details** when you want supporting app, web, timeline, and pattern analytics.
+Use **Today**, **7 days**, or **30 days** to change the reporting period, and
+the refresh icon to rebuild the profile and recommendations.
+
+### Review Threads
+
+Open **Threads** to inspect the provisional work streams Knov reconstructs from
+activity. Selecting a thread shows its summary, suggested next move, and exact
+available evidence. Thread groupings are inferences rather than confirmed user
+intent.
 
 ### Inspect the Activity timeline
 
@@ -229,9 +239,9 @@ extension activity (`chrome`).
 Change the date range or use **Filter apps, pages, or topics** to narrow the
 timeline. Detailed activity is retained locally for 30 days.
 
-### Correct the Profile
+### Correct Memory
 
-Open **Profile** to review Knov's current understanding:
+Open **Memory** to review Knov's current understanding:
 
 - **inferred** items were generated from activity and can be hidden with the
   close button;
@@ -243,12 +253,12 @@ User corrections can later be edited or removed. Use **Edit summary** to replace
 the generated profile summary with your own text, or **Clear** to remove the
 saved summary.
 
-### Use the Assistant
+### Ask with context
 
-Open **Assistant**, enter a question, and choose **Send**. Knov sends the
-active conversation and relevant profile context directly to your configured
-provider; raw activity records are not attached. Chat history is not persisted
-and starts over when you leave the Assistant page or reload the app.
+Choose **Ask with context** from Now to review the context brief that will be
+shared, enter a question, and choose **Send**. Knov sends the visible brief,
+active conversation, and relevant profile context directly to the configured
+provider; raw activity records are not attached. Chat history is not persisted.
 
 ### Configure Settings
 
