@@ -1434,6 +1434,68 @@ mod tests {
     }
 
     #[test]
+    fn batch_insert_counts_only_new_events_and_preserves_upserts() {
+        let db = Database::in_memory().unwrap();
+        db.insert_event(&event(100, false), "existing").unwrap();
+
+        let mut updated = event(100, false);
+        updated.duration_seconds = 120;
+        let inserted = db
+            .insert_events(&[
+                (updated, "existing".into()),
+                (event(200, false), "new".into()),
+            ])
+            .unwrap();
+
+        assert_eq!(inserted, 1);
+        let stored = db
+            .history(&HistoryRequest {
+                start_at: 0,
+                end_at: 1_000,
+                search: None,
+                source: None,
+                limit: None,
+                offset: None,
+            })
+            .unwrap();
+        assert_eq!(stored.len(), 2);
+        assert_eq!(
+            stored
+                .iter()
+                .find(|stored_event| stored_event.occurred_at == 100)
+                .map(|stored_event| stored_event.duration_seconds),
+            Some(120)
+        );
+    }
+
+    #[test]
+    fn batch_insert_rolls_back_every_event_when_an_upsert_fails() {
+        let db = Database::in_memory().unwrap();
+        db.conn()
+            .execute_batch(
+                "CREATE TRIGGER reject_test_event
+                 BEFORE INSERT ON activity_events
+                 WHEN NEW.fingerprint='reject'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'rejected test event');
+                 END;",
+            )
+            .unwrap();
+
+        let result = db.insert_events(&[
+            (event(100, false), "accepted".into()),
+            (event(200, false), "reject".into()),
+        ]);
+
+        assert!(result.is_err());
+        let stored: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM activity_events", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(stored, 0);
+    }
+
+    #[test]
     fn reimport_can_correct_an_overstated_chrome_history_duration() {
         let db = Database::in_memory().unwrap();
         let mut imported = event(100, false);

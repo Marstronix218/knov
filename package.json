@@ -27,8 +27,5 @@
     "local-first"
   ],
   "author": "Noriaki Kishida",
-  "license": "UNLICENSED",
-  "devDependencies": {
-    "oh-my-codex": "^0.20.3"
-  }
+  "license": "UNLICENSED"
 }
