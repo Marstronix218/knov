@@ -110,6 +110,30 @@ pub fn import_selected_chrome_history(db: &Database, lookback_days: i64) -> AppR
     Ok(imported)
 }
 
+fn browser_metadata_excluded(settings: &crate::models::Settings, raw_url: &str) -> bool {
+    if settings
+        .excluded_apps
+        .iter()
+        .any(|app| app.eq_ignore_ascii_case("Google Chrome") || app.eq_ignore_ascii_case("Chrome"))
+    {
+        return true;
+    }
+    let Ok(url) = Url::parse(raw_url) else {
+        return true;
+    };
+    if !matches!(url.scheme(), "http" | "https") {
+        return true;
+    }
+    let Some(host) = url.host_str() else {
+        return true;
+    };
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    settings.excluded_domains.iter().any(|domain| {
+        let domain = domain.trim().trim_end_matches('.').to_ascii_lowercase();
+        !domain.is_empty() && (host == domain || host.ends_with(&format!(".{domain}")))
+    })
+}
+
 fn import_chrome_history(
     db: &Database,
     profile_id: &str,
@@ -155,9 +179,13 @@ fn import_chrome_history(
             ))
         })?;
         let now = Utc::now().timestamp();
+        let settings = db.settings()?;
         let mut events = Vec::new();
         for row in rows {
             let (url, title, chrome_time, chrome_duration) = row?;
+            if browser_metadata_excluded(&settings, &url) {
+                continue;
+            }
             let occurred_at = chrome_time / 1_000_000 - 11_644_473_600;
             let reported_duration = chrome_duration.max(0) / 1_000_000;
             let duration_seconds = if reported_duration <= MAX_HISTORICAL_VISIT_SECONDS
@@ -938,6 +966,9 @@ fn ingest_extension_batch(
     settings: &crate::models::Settings,
     batch: ExtensionEventBatch,
 ) -> Result<Vec<String>, (u16, String)> {
+    if !settings.collection_enabled {
+        return Err((409, "collection paused".into()));
+    }
     if batch.protocol_version != 1 || batch.source != "chrome_extension" {
         return Err((400, "unsupported protocol".into()));
     }
@@ -976,18 +1007,8 @@ fn ingest_extension_batch(
             source: ActivitySource::ChromeExtension,
             is_bootstrap: false,
         };
-        let excluded = event
-            .url
-            .as_deref()
-            .and_then(|value| Url::parse(value).ok())
-            .and_then(|url| url.host_str().map(ToOwned::to_owned))
-            .map(|host| {
-                settings
-                    .excluded_domains
-                    .iter()
-                    .any(|v| host == *v || host.ends_with(&format!(".{v}")))
-            })
-            .unwrap_or(false);
+        let excluded =
+            browser_metadata_excluded(settings, event.url.as_deref().unwrap_or_default());
         if !excluded {
             db.insert_event(&event, &fingerprint(&event))
                 .map_err(|_| (500, "storage error".into()))?;
@@ -1389,6 +1410,91 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].duration_seconds, 0);
         assert_eq!(events[0].ended_at, None);
+    }
+
+    #[test]
+    fn history_import_respects_app_and_domain_exclusions() {
+        let history = create_chrome_history(true, 30_000_000);
+        for (apps, domains) in [
+            (vec!["Google Chrome".into()], vec![]),
+            (vec![], vec!["example.com".into()]),
+        ] {
+            let db = Database::in_memory().unwrap();
+            let mut settings = db.settings().unwrap();
+            settings.excluded_apps = apps;
+            settings.excluded_domains = domains;
+            db.save_settings(&settings).unwrap();
+            assert_eq!(
+                import_chrome_history(&db, "Default", &history.path().join("History"), 0).unwrap(),
+                0
+            );
+            assert!(imported_history(&db).is_empty());
+        }
+    }
+
+    #[test]
+    fn browser_exclusion_matching_covers_subdomains_without_suffix_confusion() {
+        let mut settings = crate::models::Settings::default();
+        settings.excluded_domains = vec!["EXAMPLE.com".into()];
+        assert!(browser_metadata_excluded(
+            &settings,
+            "https://sub.example.com/private?token=secret"
+        ));
+        assert!(browser_metadata_excluded(&settings, "chrome://settings"));
+        assert!(!browser_metadata_excluded(
+            &settings,
+            "https://notexample.com/work"
+        ));
+    }
+
+    #[test]
+    fn paused_or_excluded_extension_capture_stores_nothing() {
+        let payload = serde_json::json!({
+            "protocolVersion": 1, "requestId": "privacy-test",
+            "extensionId": "abcdefghijklmnopabcdefghijklmnop", "pairingToken": "token",
+            "sentAt": "2026-01-01T00:00:30Z", "type": "events",
+            "payload": { "protocolVersion": 1, "source": "chrome_extension",
+                "extensionId": "abcdefghijklmnopabcdefghijklmnop", "sentAt": "2026-01-01T00:00:30Z",
+                "events": [{ "id": "private-event", "browserProfileId": "Default",
+                    "url": "https://sub.example.com/private", "title": "Private",
+                    "startedAt": "2026-01-01T00:00:00Z", "endedAt": "2026-01-01T00:00:30Z",
+                    "durationMs": 30000, "incognito": false }]
+            }
+        });
+        for mode in ["paused", "domain", "app", "profile"] {
+            let db = Database::in_memory().unwrap();
+            db.set_pairing_token("token").unwrap();
+            let mut settings = db.settings().unwrap();
+            settings.collection_enabled = mode != "paused";
+            settings.selected_chrome_profiles = if mode == "profile" {
+                vec![]
+            } else {
+                vec!["Default".into()]
+            };
+            if mode == "domain" {
+                settings.excluded_domains = vec!["example.com".into()];
+            }
+            if mode == "app" {
+                settings.excluded_apps = vec!["Google Chrome".into()];
+            }
+            db.save_settings(&settings).unwrap();
+            let response =
+                handle_native_envelope(&db, serde_json::from_value(payload.clone()).unwrap());
+            assert_eq!(response["ok"], mode != "paused");
+            assert!(
+                db.history(&HistoryRequest {
+                    start_at: 0,
+                    end_at: i64::MAX,
+                    search: None,
+                    source: None,
+                    limit: None,
+                    offset: None
+                })
+                .unwrap()
+                .is_empty(),
+                "mode {mode}"
+            );
+        }
     }
 
     #[test]

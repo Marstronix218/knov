@@ -106,6 +106,32 @@ CREATE TABLE product_events (
 CREATE INDEX product_events_time_idx ON product_events(occurred_at DESC);
 CREATE INDEX product_events_type_idx ON product_events(event_type, occurred_at DESC);
 "#,
+    r#"
+CREATE TABLE business_projects (
+  id TEXT PRIMARY KEY, document TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE TABLE business_evidence (
+  id TEXT PRIMARY KEY, started_at INTEGER NOT NULL, ended_at INTEGER NOT NULL,
+  duration_seconds INTEGER NOT NULL, document TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE INDEX business_evidence_time_idx ON business_evidence(started_at, ended_at);
+CREATE TABLE business_records (
+  id TEXT PRIMARY KEY, document TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE TABLE business_certifications (
+  id TEXT PRIMARY KEY, record_id TEXT NOT NULL, record_version INTEGER NOT NULL,
+  certified_at INTEGER NOT NULL, snapshot_json TEXT NOT NULL, sha256 TEXT NOT NULL
+);
+CREATE INDEX business_certifications_record_idx ON business_certifications(record_id, record_version);
+CREATE TABLE business_audit (
+  id TEXT PRIMARY KEY, action TEXT NOT NULL, subject_id TEXT NOT NULL, occurred_at INTEGER NOT NULL
+);
+CREATE INDEX business_audit_time_idx ON business_audit(occurred_at DESC);
+"#,
+    r#"
+CREATE UNIQUE INDEX business_certification_version_idx
+ON business_certifications(record_id, record_version);
+"#,
 ];
 
 pub struct Database {
@@ -153,7 +179,7 @@ impl Database {
         Ok(db)
     }
 
-    fn conn(&self) -> MutexGuard<'_, Connection> {
+    pub(crate) fn conn(&self) -> MutexGuard<'_, Connection> {
         self.connection.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -339,7 +365,12 @@ impl Database {
         } else {
             "DELETE FROM activity_events WHERE occurred_at < ?1 AND is_bootstrap=0"
         };
-        Ok(self.conn().execute(sql, [cutoff])?)
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let deleted = tx.execute(sql, [cutoff])?;
+        crate::business::scrub_expired_evidence_with_conn(&tx)?;
+        tx.commit()?;
+        Ok(deleted)
     }
 
     pub fn profile(&self) -> AppResult<ProfileDocument> {
@@ -843,6 +874,11 @@ impl Database {
             "inference_runs",
             "product_events",
             "extension_state",
+            "business_audit",
+            "business_certifications",
+            "business_records",
+            "business_evidence",
+            "business_projects",
             "settings",
         ] {
             tx.execute(&format!("DELETE FROM {table}"), [])?;

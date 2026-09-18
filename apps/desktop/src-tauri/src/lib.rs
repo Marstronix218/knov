@@ -1,4 +1,5 @@
 mod analytics;
+mod business;
 mod commands;
 mod context;
 mod db;
@@ -54,13 +55,6 @@ pub fn run() {
             if let Err(error) = platform::start_ingestion_server(db) {
                 eprintln!("optional extension ingestion endpoint unavailable: {error}");
             }
-            commands::start_scheduler(Arc::new(AppState {
-                db: state.db.clone(),
-                providers: state.providers.clone(),
-                runtime: state.runtime.clone(),
-                refresh_lock: state.refresh_lock.clone(),
-            }));
-
             let show = MenuItem::with_id(app, "show", "Show Knov", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
@@ -89,6 +83,7 @@ pub fn run() {
             commands::open_application,
             commands::get_profile,
             commands::get_settings,
+            commands::get_settings_with_provider_status,
             commands::get_browser_profiles,
             commands::get_bootstrap_status,
             commands::set_collection_enabled,
@@ -110,7 +105,12 @@ pub fn run() {
             commands::chat,
             commands::get_pairing_info,
             commands::install_native_host,
-            commands::delete_all_data
+            commands::delete_all_data,
+            commands::complete_local_setup,
+            business::business_workspace,
+            business::business_action,
+            business::preview_business_export,
+            business::save_business_export
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

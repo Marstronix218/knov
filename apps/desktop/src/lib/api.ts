@@ -25,6 +25,22 @@ import {
 const isTauri = () => "__TAURI_INTERNALS__" in window;
 export const isDesktopRuntime = isTauri;
 
+function previewSettings(): SettingsData {
+  const saved = localStorage.getItem("knov.preview-settings");
+  try {
+    return saved ? JSON.parse(saved) as SettingsData : structuredClone(mockSettings);
+  } catch {
+    return structuredClone(mockSettings);
+  }
+}
+
+async function updateSettings(command: string, args: Record<string, unknown>, patch: Partial<SettingsData>): Promise<SettingsData> {
+  const settings = isTauri() ? await invoke<SettingsData>(command, args) : { ...previewSettings(), ...patch };
+  if (!isTauri()) localStorage.setItem("knov.preview-settings", JSON.stringify(settings));
+  window.dispatchEvent(new Event("knov:settings-changed"));
+  return settings;
+}
+
 function browserPreview(url: string): ActivityPreview {
   try {
     const parsed = new URL(url);
@@ -78,7 +94,8 @@ export const api = {
   activity: (range: RangeKey, query = "") =>
     call<ActivityEvent[]>("get_activity_history", { range, query }, mockActivity),
   profile: () => call<ProfileData>("get_profile", undefined, mockProfile),
-  settings: () => call<SettingsData>("get_settings", undefined, mockSettings),
+  settings: () => call<SettingsData>("get_settings", undefined, previewSettings()),
+  settingsWithProviderStatus: () => call<SettingsData>("get_settings_with_provider_status", undefined, previewSettings()),
   browserProfiles: () => call<BrowserProfile[]>("get_browser_profiles", undefined, mockBrowsers),
   bootstrapStatus: () =>
     call<BootstrapStatus>(
@@ -87,11 +104,12 @@ export const api = {
       { phase: "not-started", importedEvents: 0, progress: 0, message: "Ready to import browser history." },
     ),
   setCollectionEnabled: (enabled: boolean) =>
-    call<SettingsData>("set_collection_enabled", { enabled }, { ...mockSettings, collectionStatus: { ...mockSettings.collectionStatus, enabled } }),
+    updateSettings("set_collection_enabled", { enabled }, { collectionStatus: { ...previewSettings().collectionStatus, enabled } }),
   requestAccessibility: () => call<boolean>("request_accessibility_permission", undefined, false),
   setBrowserProfiles: (profileIds: string[]) =>
     call<void>("set_browser_profiles", { profileIds }, undefined),
   startBootstrap: () => call<BootstrapStatus>("start_bootstrap", undefined, undefined),
+  completeLocalSetup: () => call<void>("complete_local_setup", undefined, undefined),
   reimportChromeHistory: () =>
     call<ProfileData>("reimport_chrome_history", undefined, mockProfile),
   refreshProfile: () => call<ProfileData>("refresh_profile", undefined, mockProfile),
@@ -110,7 +128,7 @@ export const api = {
   testProvider: (provider: Provider) =>
     call<string>("test_provider", { provider }, "Connection successful."),
   saveSettings: (settings: Partial<SettingsData>) =>
-    call<SettingsData>("save_settings", { settings }, { ...mockSettings, ...settings }),
+    updateSettings("save_settings", { settings }, settings),
   dismissRecommendation: (id: string, feedback?: string) =>
     call<void>("dismiss_recommendation", { id, feedback }, undefined),
   recordProductEvent: (eventType: string, threadId?: string) =>
@@ -161,5 +179,11 @@ export const api = {
         },
       },
     ),
-  deleteAllData: () => call<void>("delete_all_data", undefined, undefined),
+  deleteAllData: async () => {
+    await call<void>("delete_all_data", undefined, undefined);
+    if (!isTauri()) {
+      localStorage.removeItem("knov.business-workspace.v1");
+      localStorage.removeItem("knov.preview-settings");
+    }
+  },
 };

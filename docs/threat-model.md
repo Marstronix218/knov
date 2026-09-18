@@ -2,112 +2,93 @@
 
 ## Security objective
 
-The alpha aims to prevent accidental collection and unnecessary network egress
-and keep provider credentials out of the activity database and frontend. If the
-optional experimental Chrome extension is installed, browser events are
-accepted only from a locally paired instance.
-
-It is not designed to protect data from malware, a compromised macOS account,
-an administrator/root user, forensic disk analysis, or a compromised AI
-provider.
+Knov aims to prevent accidental collection, silent egress, and disclosure of raw endpoint activity through a business record. A third party receives only an explicitly certified, previewed, purpose-specific export. The alpha is not designed to withstand malware, a compromised macOS account, an administrator/root user, forensic disk analysis, coercion outside the product, or a compromised optional AI provider.
 
 ## Assets
 
-- detailed browsing and foreground-application history
-- window and page titles, URLs, and extracted search queries
-- generated profile, recommendations, and user corrections
-- OpenAI or Anthropic API key
-- extension pairing token and unfinished active-tab session
+- raw application, browser, title, URL, query, and editor/Git metadata;
+- project rules, derived evidence, review choices, and exclusions;
+- draft and certified business records;
+- certification statements, version identifiers, and integrity hashes;
+- local audit entries;
+- optional legacy provider credentials; and
+- extension pairing material and an unfinished active-tab session.
 
 ## Trust boundaries
 
-| Boundary | Existing control | Residual risk |
+| Boundary | Control | Residual risk |
 | --- | --- | --- |
-| React to Rust IPC | Tauri command allowlist, strict CSP, and typed arguments | A compromised bundled frontend could invoke exposed commands |
-| Rust to SQLite | Single in-process writer, parameterized queries, local path | Database is not application-level encrypted |
-| Rust to Keychain | Apple-native Keychain backend; keys never returned by commands | A compromised user session or permissive Keychain ACL may access keys |
-| Extension to native host | Chrome `allowed_origins`, protocol version, token, extension-ID binding | Registration is manual; pairing token is stored in plaintext local stores |
-| Native host to Rust core | Mode-0600 per-user Unix socket and bounded message size | Same-user compromise remains in scope |
-| Rust core to provider | HTTPS with direct provider authentication | Provider receives and may retain the disclosed digest/chat data |
+| React to Rust IPC | Tauri command allowlist, strict CSP, typed arguments | A compromised bundled frontend could invoke exposed commands |
+| Rust to SQLite | One application writer, parameterized queries, versioned migrations | SQLite is not application-level encrypted |
+| Raw events to evidence | Local deterministic rules, sanitization, provenance, confidence | Metadata may be sensitive and rules may be wrong |
+| Human review to certification | Explicit attestation, readiness checks, canonical immutable snapshot | The user may misunderstand, be coerced, or share an account/device |
+| Certification to export | Allowlisted serializer, preview, local save dialog | The user or another local process may disclose the saved file later |
+| Rust to Keychain | Apple Keychain; commands never return keys | A compromised user session or permissive ACL may access keys |
+| Extension to native core | Chrome origin restriction, protocol/token/ID validation, local socket | Pairing secrets are readable by a same-user compromise |
+| Explicit legacy provider call | Minimized context over HTTPS | Provider processing, retention, and legal disclosure remain external |
 
-## Controls implemented
+## Pivot-specific threats
 
-- The extension has no content scripts and incognito use is disabled.
-- Only active HTTP(S) tab metadata is observed; completed events are not queued on disk.
-- Native messages are limited to 256 KiB and validated before ingestion.
-- The first extension ID that authenticates with a pairing token is bound in
-  SQLite; later different IDs are rejected.
-- Loopback HTTP accepts only a bearer token and is labeled development-only.
-- Event fingerprints deduplicate repeated ingestion.
-- Profile requests use aggregate rows and domain-only website values rather
-  than sending the raw database.
-- Provider status errors are converted to safe user-facing messages without
-  echoing credentials or response bodies.
-- User corrections are stored separately and supplied as authoritative context.
+### Employer coercion
+
+**Risk:** An employer or other party pressures a user to reveal raw activity or install Knov as a monitoring agent.
+
+**Mitigation:** Knov offers purpose-specific certified exports and has no employer account, raw-data interface, manager mode, network streaming, or remote-control surface. The interface states that raw evidence stays local. Software cannot eliminate interpersonal or employment coercion after someone gains local access.
+
+### Silent egress
+
+**Risk:** Activity or derived records leave the Mac without informed action.
+
+**Mitigation:** The business path has no automatic upload. Certification is local. Export requires preview and an explicit save action, and the preview is generated from the same allowlisted snapshot as the file. Scheduled provider refresh is disabled in the primary workflow.
+
+### Inference error
+
+**Risk:** Evidence is attributed to the wrong project or business category, producing misleading totals.
+
+**Mitigation:** Inferences show high/medium/low confidence and a reason. Low confidence remains unallocated. User corrections are authoritative. Every positive-duration item must be reviewed or excluded and have resolved dimensions before certification.
+
+### Post-certification modification
+
+**Risk:** A record changes after the user attests to it, while continuing to appear certified.
+
+**Mitigation:** Certification creates an immutable canonical snapshot with a SHA-256 hash. Later edits create a new draft/version and require certification again. Export reads the stored snapshot, never mutable evidence.
+
+### Sensitive metadata leakage
+
+**Risk:** URLs, window titles, queries, repository/path names, or source identifiers expose secrets or unrelated personal behavior.
+
+**Mitigation:** Raw metadata remains local and expires after 30 days. Default exports allow only derived record fields and omit raw URLs, titles, paths, event IDs, application timelines, excluded/personal evidence, prompts, and credentials.
+
+### Shared account or device
+
+**Risk:** A collected event is attributed to the wrong human because another person used the Mac or account.
+
+**Mitigation:** Knov treats device activity as evidence, not forensic identity proof. Review supports exclusion, personal/non-work marking, and uncertainty. Certification is a human attestation “to the best of my knowledge,” with no claim that every event was produced by that person.
+
+## Existing controls
+
+- Collection is user-controlled and supports pause, application/domain exclusions, selected browser profiles, and deletion.
+- The extension has no content scripts, ignores incognito/non-HTTP(S) pages, and does not retain completed delivery queues.
+- Native messages are bounded and authenticated; the local socket is per-user.
+- Event fingerprints and interval handling prevent duplicate ingestion and double-counting.
+- Editor collection avoids source contents, snapshots, hidden/generated/dependency trees, and credential-like paths.
+- Provider status errors do not echo credentials or raw response bodies.
+- The local audit trail records lifecycle metadata without copying sensitive evidence content.
+- Certified snapshots survive raw retention without embedding the raw history.
 
 ## Material residual risks
 
-### Sensitive metadata
+Window and page titles remain difficult to sanitize perfectly. Exact exclusion rules can miss renamed apps, novel subdomains, or sensitive text in otherwise permitted contexts. Local SQLite/WAL data, backups, and pairing state remain available to sufficiently privileged local actors.
 
-Window titles and URLs can reveal document names, account identifiers, health or
-financial topics, and search intent. Current redaction is narrow and does not
-identify general secrets or sensitive categories. Exclusions require exact app
-names and normalized domain matching.
+Integrity hashes detect changes to the canonical snapshot; they do not prove who certified it, when an independent timestamp authority observed it, or whether the underlying evidence was complete. CSV/JSON files can be copied or edited after export. Recipients need the stored certification metadata to compare hashes, and the alpha does not provide a hosted verifier.
 
-### Local data exposure
+The optional extension expands browser permissions and local attack surface. The loopback fallback has no TLS and is development-only. Source builds are unsigned and unnotarized, and there has been no independent penetration test.
 
-SQLite uses WAL mode without SQLCipher or field encryption. macOS account
-security, FileVault, filesystem permissions, backups, and endpoint hygiene are
-the primary protections. The pairing token is also available to processes that
-can read the user's local files or Chrome profile.
+## Recommended alpha posture
 
-### Development transport
-
-The localhost fallback has no TLS and expands the local attack surface. The
-bearer token prevents unauthenticated ingestion, but the mode should be used
-only for local development. Native Messaging remains the intended transport.
-
-### Optional extension permissions
-
-The optional extension requests `tabs`, `storage`, `alarms`, and `nativeMessaging`, plus
-loopback host permissions for development. The `tabs` permission can expose tab
-metadata to extension code even though Knov intentionally queries only the
-active tab.
-
-### Provider egress
-
-The provider sees all data described in [Privacy model](privacy-model.md).
-Prompts reduce harmful inference but cannot guarantee a provider will follow
-them or return valid structured data. Provider compromise, account retention,
-abuse monitoring, and legal disclosure are outside the local application's
-control.
-
-### Deletion limits
-
-Row deletion and Keychain deletion are logical application operations, not
-verified secure erasure. The in-app action removes its host manifest but does
-not clear Chrome extension storage, delete the SQLite file, sanitize WAL/free
-pages, remove backups, or delete provider-held data.
-
-### Alpha hardening gaps
-
-- The extension is an optional post-MVP experiment, not a baseline onboarding or
-  release gate.
-- Native helper registration still requires the extension ID in a source build.
-- Desktop and extension domain-exclusion lists are configured separately.
-- There is no code signing, notarization, update channel, or release-integrity
-  process documented for this source alpha.
-- Security behavior has unit/integration coverage but has not undergone an
-  independent penetration test.
-
-## Recommended operating posture
-
-- Use a non-production provider key with a strict spending limit.
-- Enable FileVault and a strong macOS login password.
-- Exclude sensitive applications and domains in both the app and extension.
-- Prefer Native Messaging over loopback HTTP.
-- Keep Chrome extension developer mode limited to this inspected build.
-- Do not use the alpha on shared or managed computers without understanding
-  local administrator access and backup policy.
-- Remove the extension and its stored data after testing if its pairing
-  configuration must not remain in Chrome.
+- Use Knov only on a personally controlled test Mac with FileVault and a strong login.
+- Exclude sensitive applications and domains before resuming collection.
+- Review every included interval; treat suggested classifications as provisional.
+- Inspect the export preview and destination before saving or sending a record.
+- Use limited-purpose provider keys only when deliberately testing legacy features.
+- Do not describe the R&D demo as compliant, audit-proof, or professional advice.

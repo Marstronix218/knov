@@ -67,6 +67,7 @@ function stubApi() {
     ...settings,
   }));
   vi.spyOn(api, "setBrowserProfiles").mockResolvedValue(undefined);
+  vi.spyOn(api, "completeLocalSetup").mockResolvedValue(undefined);
   vi.spyOn(api, "reimportChromeHistory").mockResolvedValue(clone(mockProfile));
   vi.spyOn(api, "dismissRecommendation").mockResolvedValue(undefined);
   vi.spyOn(api, "recordProductEvent").mockResolvedValue(undefined);
@@ -117,10 +118,11 @@ function editorActivity(): ActivityEvent[] {
 describe("application navigation", () => {
   beforeEach(stubApi);
 
-  it("redirects unknown routes to the dashboard", async () => {
+  it("redirects unknown routes to local evidence", async () => {
     await renderRoute("#/unknown");
 
-    expect(await screen.findByRole("heading", { name: "Pick up where you left off." })).toBeInTheDocument();
+    await waitFor(() => expect(window.location.hash).toBe("#/evidence"));
+    expect(screen.getByRole("navigation", { name: "Primary navigation" })).toHaveTextContent("Evidence");
   });
 
   it("navigates from the dashboard to activity history", async () => {
@@ -132,9 +134,9 @@ describe("application navigation", () => {
   });
 
   it("navigates to reconstructed work threads", async () => {
-    await renderRoute("#/dashboard");
+    await renderRoute("#/settings");
 
-    fireEvent.click(screen.getByRole("link", { name: "Threads" }));
+    fireEvent.click(await screen.findByRole("link", { name: "Threads" }));
 
     expect(await screen.findByRole("heading", { name: "Your threads" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Knov implementation/ }));
@@ -145,7 +147,7 @@ describe("application navigation", () => {
 describe("onboarding", () => {
   beforeEach(stubApi);
 
-  it("completes consent without changing the hook order", async () => {
+  it("completes local consent without an AI key or browser profile and opens projects", async () => {
     localStorage.clear();
     vi.mocked(api.recordProductEvent).mockRejectedValueOnce(new Error("local metrics unavailable"));
     window.location.hash = "";
@@ -153,15 +155,13 @@ describe("onboarding", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
-    const profiles = await screen.findAllByRole("checkbox");
-    fireEvent.click(profiles[0]);
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
-    fireEvent.change(screen.getByLabelText("API key"), {
-      target: { value: "sk-test-only" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /Build my first profile/ }));
+    expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Start local collection/ }));
 
-    expect(await screen.findByRole("heading", { name: "Pick up where you left off." })).toBeInTheDocument();
+    await waitFor(() => expect(api.completeLocalSetup).toHaveBeenCalledOnce());
+    expect(api.setBrowserProfiles).toHaveBeenCalledWith([]);
+    await waitFor(() => expect(window.location.hash).toBe("#/projects"));
     expect(localStorage.getItem("knov.setup-complete")).toBe("true");
   });
 });
@@ -689,7 +689,7 @@ describe("settings privacy disclosures", () => {
     await waitFor(() => expect(reimport).toHaveBeenCalledOnce());
     expect(refresh).not.toHaveBeenCalled();
     expect(
-      await screen.findByText("Chrome durations imported and your profile was refreshed."),
+      await screen.findByText("Chrome history imported locally. No provider request was made."),
     ).toBeInTheDocument();
   });
 
@@ -698,7 +698,7 @@ describe("settings privacy disclosures", () => {
 
     expect(
       await screen.findByText(
-        "Permanently removes local activity, profiles, corrections, recommendations, telemetry, settings, and provider credentials.",
+        "Permanently removes local activity, projects, evidence, drafts, certifications, audit history, legacy profiles, settings, and provider credentials. Files already exported are not deleted.",
       ),
     ).toBeInTheDocument();
   });

@@ -1,16 +1,11 @@
 # Testing
 
-## Baseline MVP verification
+## Standard verification
 
-Install dependencies once:
+Install dependencies once, then run the desktop checks from the repository root:
 
 ```sh
 npm install
-```
-
-Run the desktop MVP checks from the root:
-
-```sh
 npm run typecheck --workspace @knov/desktop
 npm test --workspace @knov/desktop
 npm run build --workspace @knov/desktop
@@ -18,28 +13,9 @@ npm run check:rust
 npm run test:rust
 ```
 
-These commands cover:
+These checks cover the TypeScript contract and interface, synthetic browser-preview behavior, the production Vite build, Rust business rules, migrations, retention, collection helpers, certification, and export boundaries.
 
-- desktop TypeScript and React type checking
-- desktop component and browser-preview API tests
-- the production desktop Vite build
-- Rust compilation, database migration/retention tests, digest handling, and
-  collector helper tests
-
-## Targeted checks
-
-Desktop frontend:
-
-```sh
-npm run typecheck --workspace @knov/desktop
-npm test --workspace @knov/desktop
-npm run build --workspace @knov/desktop
-```
-
-### Optional extension compatibility lane
-
-The extension is an implemented post-MVP experiment, not a baseline onboarding
-or release gate. Run these checks when changing or evaluating that companion:
+When changing the optional Chrome companion, also run:
 
 ```sh
 npm run typecheck --workspace @knov/chrome-extension
@@ -47,72 +23,69 @@ npm test --workspace @knov/chrome-extension
 npm run build --workspace @knov/chrome-extension
 ```
 
-Rust core:
+## Business-rule coverage
 
-```sh
-cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
-cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets
-```
+The endpoint-evidence suite should prove:
 
-## Browser preview versus native app
+- deterministic matching for repositories/paths, domains, aliases, and keywords;
+- high/medium/low confidence behavior, ambiguity, and unallocated evidence;
+- authoritative manual project/category overrides and exclusions;
+- half-open date ranges `[start, end)` and overlap-safe duration aggregation;
+- zero-duration Chrome-history/editor signals do not create billable or allocatable time;
+- totals and percentages include reviewed, unreviewed, excluded, and unallocated time;
+- record versions remain distinct;
+- certification requires an explicit accepted statement and a current ready version;
+- positive-duration items cannot be certified while unreviewed/unexcluded or unresolved;
+- canonical snapshot hashing is deterministic and prior certifications are immutable;
+- edits after certification create a new draft/version;
+- CSV and JSON parse correctly and contain only approved fields;
+- preview content matches saved export content;
+- URLs, titles, paths, source events, prompts, and credentials do not enter exports;
+- raw retention does not delete certifications or smuggle raw detail into them; and
+- excluded apps/domains do not contribute to derived evidence.
+
+Existing collection, database, pause, deletion, sanitization, and extension tests remain regression coverage for the reused capture layer.
+
+## Synthetic browser demo
 
 ```sh
 npm run dev
 ```
 
-This starts only the Vite browser preview. It intentionally uses sample data
-when the Tauri runtime is absent. It can validate layout and interactions, but
-it cannot prove collection, SQLite, Keychain, Chrome import, Native Messaging,
-provider calls, autostart, or deletion behavior.
+The browser preview is an explicitly synthetic workspace. It is useful for testing navigation, review actions, record totals, certification state transitions, export preview, and responsive layout. It cannot validate native collection, SQLite persistence, Keychain, operating-system permissions, Chrome import, save dialogs, or filesystem output.
 
-Use the native development app for integration checks:
+Manual browser flow:
+
+1. Confirm primary navigation is **Evidence**, **Projects**, **Records**, **Review & Certify**, **Exports**, **Activity**, and **Settings**.
+2. Confirm the workspace is marked synthetic and contains Search Ranking V2, Authentication, and Internal Operations.
+3. Inspect high-confidence, ambiguous, unallocated, corrected, and excluded evidence.
+4. Attempt certification with unresolved positive-duration evidence and confirm it is blocked.
+5. Resolve or exclude every blocking item, certify, and record the version/hash shown.
+6. Revise the record and confirm the previous certification remains unchanged while the new version requires certification.
+7. Compare **Will be exported** and **Stays private on this Mac** with the CSV and JSON previews.
+
+## Native alpha checklist
+
+Run the native app with:
 
 ```sh
 npm run dev:desktop
 ```
 
-The optional extension bridge is disabled in that baseline command. Use
-`npm run dev:with-extension` only for the extension compatibility checklist.
+1. Complete onboarding without a provider key or Chrome profile.
+2. Confirm collection starts under explicit user control.
+3. Create and edit a project with domain, keyword, repository, and path signals.
+4. Deny Accessibility and verify degraded app-only collection; grant it and verify title evidence after restarting if macOS requires it.
+5. Optionally select one Chrome profile; confirm import is limited to 30 days and does not make a provider call.
+6. Generate evidence and inspect source, time, sanitized context, confidence, and explanation.
+7. Verify pause and excluded app/domain behavior before building a record.
+8. Review all positive-duration evidence, generate a record, and confirm totals do not double-count overlaps.
+9. Certify explicitly; change the underlying draft and confirm the stored certification does not change.
+10. Export CSV and JSON with the native save dialog. Inspect both files for the allowlisted fields and absence of raw metadata.
+11. Let or simulate raw rows expiring and confirm certification remains while detailed provenance reports unavailable.
+12. Invoke **Delete everything** and confirm app-owned rows, certifications, settings, and configured Keychain credentials are removed or failures are reported.
 
-## Manual baseline alpha checklist
-
-Automated tests do not cover macOS permission dialogs, Keychain UI, a real
-Chrome profile, or live provider accounts. Before an alpha handoff:
-
-1. Launch on an Apple Silicon Mac running macOS 26.
-2. Confirm collection begins disabled before consent.
-3. Complete onboarding with one selected Chrome profile and a limited-use
-   provider key.
-4. Deny Accessibility and verify degraded status; grant it and verify window
-   titles appear after restarting if necessary.
-5. Import history and confirm the first profile succeeds.
-6. Save files in a supported editor and verify only safe workspace-relative
-   paths appear; hidden, generated, dependency, and credential paths must not.
-7. Pause desktop collection and verify no new app-owned activity rows are added.
-8. Exercise OpenAI, Anthropic, or Amazon Bedrock validation, profile refresh,
-   and chat with a non-production key.
-9. Verify selected-thread context is sanitized, token-budgeted, and its
-    context-economics record is stored only in local SQLite.
-10. Add a profile correction, refresh, and confirm the correction remains.
-11. Dismiss a recommendation and confirm it leaves the dashboard.
-12. Invoke **Delete everything**, then verify app-owned rows are gone, default
-    settings return, and provider keys are unavailable.
-
-## Optional extension manual checklist
-
-This compatibility lane does not block the MVP handoff:
-
-1. Register and pair the extension using [Alpha setup](alpha-setup.md#optional-chrome-extension-setup).
-2. Focus two ordinary HTTP(S) tabs and verify duration events reach Activity.
-3. Verify incognito, `chrome://` pages, excluded domains, and subdomains are not
-   collected.
-4. Stop the app, create an extension event, restart the app, and verify the
-   failed event is not replayed.
-5. Pause the app and verify the extension follows the native state and no new
-   app-owned activity rows are added.
-6. Invoke **Delete everything** and verify the old extension pairing fails.
-7. Clear/remove the extension separately and remove the Native Messaging
-   manifest when the test is complete.
+The optional legacy BYOK controls can be tested separately from the business workflow. A provider must never be required for onboarding, deterministic classification, certification, or export.
 
 ## Inspect local state
 
@@ -120,22 +93,19 @@ With the app stopped, the macOS database is normally:
 
 ```sh
 KNOV_DB="$HOME/Library/Application Support/com.knov.desktop/knov.sqlite3"
+sqlite3 "$KNOV_DB" 'PRAGMA user_version;'
 sqlite3 "$KNOV_DB" '.tables'
 sqlite3 "$KNOV_DB" \
   'SELECT source, COUNT(*) FROM activity_events GROUP BY source;'
-sqlite3 "$KNOV_DB" \
-  'SELECT event_type, COUNT(*) FROM product_events GROUP BY event_type;'
 ```
 
-Stop the app before direct inspection to avoid mistaking an uncheckpointed WAL
-state for missing data. Do not edit the database; migrations and invariants are
-owned by the Rust core.
+Stop the app before inspection so an uncheckpointed WAL is not mistaken for missing data. Do not edit the database directly; migrations and invariants belong to the Rust core.
 
-## Known coverage gaps
+## Known alpha coverage gaps
 
-- no automated real-macOS Accessibility test
-- no real Chrome Native Messaging end-to-end test
-- no provider contract test against live OpenAI, Anthropic, or Amazon Bedrock APIs
-- no packaged-app, code-signing, notarization, update, or installer test
-- no secure-deletion claim or forensic-erasure test
-- no independent security assessment
+- no automated real-macOS Accessibility or save-dialog test;
+- no real Chrome-profile import or Native Messaging end-to-end automation;
+- no packaged-app, signing, notarization, update, or installer test;
+- no multi-user identity proof, trusted timestamp authority, or hosted hash verifier;
+- no forensic-erasure test; and
+- no independent security assessment.

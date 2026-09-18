@@ -1,133 +1,74 @@
 # Privacy model
 
-Knov is local-first, not fully local. Raw activity is stored on the Mac, but
-profile generation, recommendations, connection tests, and chat use the
-user-selected OpenAI, Anthropic, or Amazon Bedrock API.
+Knov is a local-first endpoint evidence tool. Detailed computer activity stays in app-owned local storage. The business workflow derives purpose-specific records locally and discloses one only after the user reviews, certifies, previews, and explicitly saves an export.
 
-## What is collected
+The alpha is not a compliance service and a certification is a human attestation, not proof of identity, exclusive device use, or statutory compliance.
 
-The desktop collector can record:
+## Data layers
 
-- foreground application name
-- focused window title when Accessibility permission is available
-- session timestamps and duration
-- selected Chrome-history URL, page title, visit time, and recognized search
-  query
-- metadata-only save signals and recent safe Git working-tree paths from
-  supported editor workspaces
+| Layer | Examples | Default lifetime | Egress rule |
+| --- | --- | --- | --- |
+| Raw activity | App sessions, window/page titles, URLs, search terms, editor/Git metadata | Rolling 30 days | Stays local; excluded from business exports |
+| Derived evidence | Sanitized context, source references, project/category suggestions, confidence, explanations, review overrides | Useful while the draft exists; source detail can expire | Stays local |
+| Draft records | Date range, template, projects, categories, totals, review state | Until revised or deleted | Stays local |
+| Certified snapshot | Minimal approved totals, period, template, attestation, version, timestamp, hash | Until explicitly deleted | Eligible for explicit export |
+| Local audit | Lifecycle action, subject identifier, timestamp | Until deleted with app data | Stays local unless a future explicit minimal export is chosen |
 
-The optional experimental Chrome extension can record the focused tab's URL,
-title, start/end time, duration, and extension ID. It ignores incognito tabs,
-non-HTTP(S) URLs, and locally excluded domains. The baseline MVP does not
-require the extension; selected Chrome history and foreground app/window data
-come from the desktop app.
+Raw retention must not be evaded by copying URLs, titles, paths, or source rows into derived or certified data. When raw events expire, evidence can retain its review result and minimal derived fields while clearly reporting that detailed provenance is no longer available.
 
-Knov does not intentionally collect page bodies, DOM content, form input,
-keystrokes, clipboard contents, screenshots, audio, or camera data. The Chrome
-extension has no content scripts. Editor collection does not open source files
-or saved Local History snapshots and excludes hidden, generated, credential,
-certificate, and dependency paths.
+## Collection
 
-Window titles, page titles, URLs, and search queries can nevertheless contain
-sensitive information. Treat the local database as sensitive.
+The native collector can record:
 
-## What remains local
+- foreground application name;
+- focused window title when Accessibility permission is granted;
+- session timestamps and duration;
+- URL, page title, visit time, and recognized search query from an explicitly selected Chrome profile, limited to 30 days;
+- metadata-only editor save/history timing and safe relative Git paths.
 
-The following remains in app-owned local storage unless the user exports or
-copies it outside Knov:
+The optional extension can record focused HTTP(S) tab URL/title timing. It has no content scripts, ignores incognito and non-HTTP(S) pages, and does not persist completed delivery queues.
 
-- detailed activity events and dashboard history
-- complete imported URLs, titles, and extracted search queries
-- generated profile versions, recommendations, and corrections
-- settings and Chrome pairing state
-- allowlisted alpha outcome events such as setup completion, thread resume/copy,
-  and useful/wrong/not-now feedback; these contain only an event type, local
-  thread identifier, and timestamp
+Knov does not intentionally collect screenshots, pixels, OCR, page bodies, DOM content, form values, keystrokes, clipboard contents, source-file bodies, audio, or camera data. Metadata can still expose sensitive facts, so exclusions and local retention remain essential.
 
-Provider keys are stored separately in macOS Keychain. The Chrome pairing token
-is stored in SQLite and in the extension's local Chrome storage; it is not a
-provider credential.
+Collection begins under user control. Pause/resume, application exclusions, domain exclusions, browser-profile authorization, and delete-everything controls are enforced in the native ingestion path. Pausing stops new owned activity; retention cleanup can continue.
 
-## What leaves the Mac
+## Business inference and review
 
-| Action | Data sent directly to provider |
-| --- | --- |
-| OpenAI connection test | API key in authorization; request to list models |
-| Anthropic connection test | API key plus a minimal `Reply OK` message |
-| Amazon Bedrock connection test | API key plus a minimal model-specific token-count request |
-| Profile refresh | Aggregated activity digest and all authoritative corrections |
-| Chat | Locally retrieved profile facts, query-specific aggregates, bounded conversation, new message, and sanitized evidence from the explicitly selected thread |
+The alpha classifier is deterministic and local. It uses project rules and existing local signals; it makes no LLM call. Suggestions carry a confidence band and explanation and never become user truth merely because they were shown. A user override controls every downstream total.
 
-The profiling digest includes app names, domain-only website identifiers,
-durations, counts, and window/page-title strings truncated to 180 characters.
-Local redaction removes common credential markers, email-shaped identifiers,
-home-directory paths, and long token-like identifiers before truncation. It is
-not a general sensitive-data detector, so a title may still disclose private
-information.
+Reviewing, accepting, correcting, splitting, excluding, or marking evidence personal happens locally. No review action sends data to a third party. Positive-duration evidence must be reviewed or excluded, and included evidence must have a resolved project and category, before certification.
 
-Knov does not send the complete activity-events table or complete URLs as
-part of the profile digest. Chat context excludes URL queries/fragments, local
-absolute paths, identifiers, and credential-like values. The full comparison
-baseline and inference-run economics remain local.
-Requests go from the Rust core directly to the selected provider; there is no
-Knov proxy or analytics service. OpenAI requests set `store: false`.
-Provider-side processing and retention remain governed by the selected
-provider's API terms and account settings.
+Optional AI-assisted classification is deferred. If added later, it must be separately initiated, use the existing minimized and inspectable context boundary, remove full paths, credential-like strings, and URL query/fragment data, return structured uncertainty, and record that remote inference occurred.
 
-Rendering activity history does not contact recorded websites. Knov uses local
-application icons or letter placeholders, and resource previews remain
-metadata-only links until the user explicitly opens a resource.
+## Certification and export
 
-## Credentials
+Certification stores a new immutable, allowlisted snapshot plus a SHA-256 integrity hash. The attestation says the user reviewed the record and believes it reasonably represents the covered work. It does not claim forensic attribution or legal sufficiency. Editing underlying evidence or a record creates a new draft/version and requires a new certification.
 
-The settings and onboarding interfaces pass a newly entered key to a Rust
-command, which saves it to Keychain service `com.knov.desktop.llm`. Commands
-never return the key to the frontend.
+The export preview separates **Will be exported** from **Stays private on this Mac**. Default CSV and JSON exports may contain:
 
-For source development only, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or
-`AWS_BEDROCK_API_KEY` in the native process environment takes precedence over Keychain after a provider has
-been configured. Environment variables do not configure first-run provider
-selection, and Knov does not load `.env` files automatically. Environment
-variables may be visible to other processes with sufficient local privileges
-and should not be used for a distributed alpha build.
+- certifying name supplied by the user;
+- covered period;
+- template name;
+- project/client and category allocations;
+- hours, percentages, and approved totals;
+- certification timestamp and statement;
+- record/version and certification identifiers; and
+- integrity hash.
 
-## Retention
+Default business exports exclude raw URLs, browsing-history rows, full window/page titles, application timelines, local and repository paths, source event IDs, excluded/personal activity, LLM prompts, and credentials. Native saving uses a local save dialog. Knov has no automatic submission, employer API, raw-database sharing interface, manager mode, or hidden network destination.
 
-- Normal detailed activity is retained for a rolling 30 days.
-- Imported events from days 31–90 are temporary bootstrap data.
-- Temporary bootstrap data is deleted only after the first profile refresh
-  succeeds. A failed or unavailable provider leaves it in place for retry.
-- Profiles and corrections remain until removed through the app's controls.
-- If installed, the extension does not persist completed activity events. An
-  unfinished active session may exist in Chrome session storage.
+## Optional provider and legacy features
 
-Expired normal activity is purged while the app is running, including while
-collection is paused. If the app is not running, purge execution is delayed
-until the next launch.
+OpenAI, Anthropic, and Amazon Bedrock BYOK support remains available only through explicit legacy controls in Settings. Provider credentials are stored in macOS Keychain and never returned to the frontend. The primary evidence, review, certification, and export path does not require a provider and does not perform scheduled provider refreshes.
 
-## Pause, exclusions, and deletion
+If a user explicitly invokes a legacy provider feature, the existing minimized-context rules and provider terms apply. That egress is separate from business export and must remain inspectable. Source-development environment overrides may expose credentials to sufficiently privileged local processes and should use limited-purpose keys.
 
-Desktop collection starts disabled and remains disabled until the user resumes
-it from the app. Desktop app exclusions are enforced by the Rust collector and
-ingestion core. If the optional extension is installed, its exclusions and
-pause state are enforced by the extension.
+## Retention and deletion
 
-The extension checks the desktop collection state before delivery and on its
-regular checkpoint. Events completed during a stale-policy window are discarded,
-not retained for later upload. Configure domain exclusions in both places when
-testing the extension.
+- Raw detailed activity expires after 30 days while Knov runs; a stopped app purges on its next launch.
+- Chrome import is optional and limited to that same 30-day window.
+- Derived evidence gracefully loses links to expired raw detail.
+- Minimal certified snapshots remain until the user deletes them.
+- Delete everything removes app-owned rows, resets settings, removes configured Keychain credentials or reports failure, rotates pairing material, and removes Knov's per-user Native Messaging manifest.
 
-`Delete everything`:
-
-- removes app-owned SQLite rows
-- resets settings to defaults
-- removes all configured provider credentials from Keychain or reports failure
-- creates a new pairing token
-- removes Knov's per-user Chrome Native Messaging manifest
-
-It does not promise forensic or cryptographic erasure. SQLite/WAL pages, APFS
-snapshots, backups, SSD behavior, crash remnants, and provider-held request data
-are outside that guarantee. The database file and Chrome extension storage are
-not removed by the in-app action. Clear the
-extension's site data or remove the extension to delete its pairing
-configuration.
+Deletion is logical application deletion, not guaranteed forensic erasure. SQLite/WAL pages, APFS snapshots, backups, SSD behavior, crash remnants, exported files, Chrome extension storage, and provider-held data are outside that guarantee. The user controls separately saved exports and must remove the extension or its site data to clear its local pairing state.

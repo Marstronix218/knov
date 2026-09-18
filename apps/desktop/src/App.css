@@ -67,7 +67,9 @@ small { font-size: inherit; }
 .brand-mark { width: 34px; height: 34px; display: block; border-radius: 10px; box-shadow: 0 0 24px rgba(183, 255, 60, .14); }
 .brand-name { font-weight: 760; letter-spacing: -.03em; }
 .brand-caption { margin-top: 2px; color: var(--muted); font-size: 13px; }
-.sidebar-nav { display: grid; gap: 5px; }
+.sidebar-nav { display: grid; gap: 16px; }
+.nav-section { display: grid; gap: 5px; }
+.nav-section-title { padding: 0 11px 2px; color: #5d6764; font-size: 11px; font-weight: 720; letter-spacing: .11em; text-transform: uppercase; }
 .nav-link { display: flex; align-items: center; gap: 11px; padding: 10px 11px; border-radius: 9px; color: #929c98; font-size: 14px; font-weight: 560; transition: .18s ease; }
 .nav-link:hover { color: var(--text); background: rgba(255,255,255,.04); }
 .nav-link.active { color: var(--text); background: #1b2020; box-shadow: inset 0 0 0 1px rgba(255,255,255,.04); }

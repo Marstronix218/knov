@@ -33,6 +33,7 @@ import "./App.css";
 import { MarkdownMessage } from "./components/MarkdownMessage";
 import { useResource } from "./hooks/useResource";
 import { api, isDesktopRuntime } from "./lib/api";
+import { BusinessPage } from "./components/BusinessWorkspace";
 import { domainFromUrl, formatDuration, formatPercentage, formatTime } from "./lib/format";
 import type {
   ActivityEvent,
@@ -50,12 +51,35 @@ import type {
 } from "./types";
 
 const navigation = [
-  { to: "/dashboard", label: "Now", icon: LayoutDashboard },
-  { to: "/threads", label: "Threads", icon: Layers3 },
-  { to: "/profile", label: "Memory", icon: Brain },
-  { to: "/activity", label: "Activity", icon: Activity },
-  { to: "/settings", label: "Settings", icon: Settings },
+  {
+    title: "Business records",
+    items: [
+      { to: "/evidence", label: "Evidence", icon: Eye },
+      { to: "/projects", label: "Projects", icon: Layers3 },
+      { to: "/records", label: "Records", icon: FileCode2 },
+      { to: "/review", label: "Review & Certify", icon: ShieldCheck },
+      { to: "/exports", label: "Exports", icon: ArrowUpRight },
+    ],
+  },
+  {
+    title: "Personal context",
+    items: [
+      { to: "/dashboard", label: "Overview", icon: LayoutDashboard },
+      { to: "/threads", label: "Threads", icon: Layers3 },
+      { to: "/profile", label: "Profile", icon: Brain },
+      { to: "/assistant", label: "Assistant", icon: MessageSquareText },
+    ],
+  },
+  {
+    title: "Workspace",
+    items: [
+      { to: "/activity", label: "Activity", icon: Activity },
+      { to: "/settings", label: "Settings", icon: Settings },
+    ],
+  },
 ];
+
+const navigationItems = navigation.flatMap((section) => section.items);
 
 const providers: Provider[] = ["openai", "anthropic", "bedrock"];
 const ACTIVITY_PAGE_SIZE = 100;
@@ -64,12 +88,6 @@ function providerLabel(provider: Provider): string {
   if (provider === "openai") return "OpenAI";
   if (provider === "anthropic") return "Anthropic";
   return "AWS Bedrock";
-}
-
-function providerKeyPlaceholder(provider: Provider): string {
-  if (provider === "openai") return "sk-…";
-  if (provider === "anthropic") return "sk-ant-…";
-  return "ABSK…";
 }
 
 function App() {
@@ -90,6 +108,13 @@ function App() {
   }
 
   const page = {
+    // No per-page `key`: the business tabs share one workspace, so keeping the same
+    // component instance avoids a remount (and a reload) on every tab switch.
+    "/evidence": <BusinessPage page="evidence" />,
+    "/projects": <BusinessPage page="projects" />,
+    "/records": <BusinessPage page="records" />,
+    "/review": <BusinessPage page="review" />,
+    "/exports": <BusinessPage page="exports" />,
     "/dashboard": <DashboardPage />,
     "/threads": <ThreadsPage />,
     "/activity": <ActivityPage />,
@@ -102,28 +127,33 @@ function App() {
     <div className="app-shell">
       <Sidebar route={route} />
       <main className="main-stage">
-        {!isDesktopRuntime() && <div className="demo-banner">Browser preview · sample data · controls do not change your Mac</div>}
+        {!isDesktopRuntime() && <div className="demo-banner">Synthetic demo · all projects and activity are fake · no computer activity is collected</div>}
+        {["/dashboard", "/threads", "/profile", "/assistant"].includes(route) && <div className="demo-banner">Personal context · separate from business records · <a href="#/evidence">Return to Evidence</a></div>}
         {page}
       </main>
     </div>
   );
 }
 
-const validRoutes = new Set([...navigation.map(({ to }) => to), "/assistant"]);
+const validRoutes = new Set(navigationItems.map(({ to }) => to));
 
 function routeFromHash(): string {
   const candidate = window.location.hash.slice(1);
-  return validRoutes.has(candidate) ? candidate : "/dashboard";
+  return validRoutes.has(candidate) ? candidate : "/evidence";
 }
 
 function useHashRoute(): string {
   const [route, setRoute] = useState(routeFromHash);
 
   useEffect(() => {
-    const syncRoute = () => setRoute(routeFromHash());
+    const syncRoute = () => {
+      setRoute(routeFromHash());
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+    };
     window.addEventListener("hashchange", syncRoute);
     if (!validRoutes.has(window.location.hash.slice(1))) {
-      window.history.replaceState(null, "", "#/dashboard");
+      window.history.replaceState(null, "", "#/evidence");
     }
     return () => window.removeEventListener("hashchange", syncRoute);
   }, []);
@@ -133,26 +163,21 @@ function useHashRoute(): string {
 
 function SetupWizard({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState(0);
-  const [provider, setProvider] = useState<Provider>("openai");
-  const [providerKey, setProviderKey] = useState("");
   const [selectedProfiles, setSelectedProfiles] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const browsers = useResource(() => api.browserProfiles(), []);
 
-  const steps = ["Welcome", "Permissions", "Browser profiles", "AI provider"];
+  const steps = ["Privacy", "Permissions", "Browser profiles", "Your records"];
 
   const finish = async () => {
     setBusy(true);
     setMessage("");
     try {
-      if (providerKey.trim()) {
-        await api.saveProviderKey(provider, providerKey.trim());
-      }
       await api.setBrowserProfiles(selectedProfiles);
-      await api.startBootstrap();
-      await api.setCollectionEnabled(true);
+      await api.completeLocalSetup();
       void api.recordProductEvent("setup_completed").catch(() => undefined);
+      window.location.hash = "#/projects";
       onComplete();
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : String(cause));
@@ -177,13 +202,13 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
         {step === 0 && (
           <div className="setup-content">
             <div className="setup-icon"><ShieldCheck size={30} /></div>
-            <div className="eyebrow">Your context stays yours</div>
-            <h1>An assistant that learns from how you actually work.</h1>
-            <p>Knov observes foreground apps, permitted window titles, and selected browser activity. Raw history stays on this Mac. When you select a thread, a visible, sanitized detail packet is packed under a token budget for the AI provider.</p>
+            <div className="eyebrow">Your evidence. Your decision.</div>
+            <h1>Work records you can stand behind.</h1>
+            <p>Knov turns limited local work activity into reviewable, purpose-specific business records. You correct the evidence, explicitly certify a record, and preview exactly what you export. Raw activity stays on this Mac.</p>
             <div className="consent-grid">
               <article><LockKeyhole size={18} /><strong>Local raw data</strong><span>SQLite on this Mac, detailed history retained for 30 days.</span></article>
               <article><Eye size={18} /><strong>Visible collection</strong><span>Pause, exclude, inspect, edit, or delete at any time.</span></article>
-              <article><KeyRound size={18} /><strong>Your API key</strong><span>Stored in macOS Keychain and sent only to your provider.</span></article>
+              <article><ShieldCheck size={18} /><strong>You approve disclosure</strong><span>No automatic submission. Only your explicit export saves a business record.</span></article>
             </div>
           </div>
         )}
@@ -201,9 +226,9 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
         {step === 2 && (
           <div className="setup-content">
-            <div className="eyebrow">Cold-start context</div>
+            <div className="eyebrow">Optional browser evidence</div>
             <h1>Select browser profiles.</h1>
-            <p>Knov can temporarily inspect up to 90 days of selected history to build the first profile. Days 31–90 are deleted after that first profile succeeds.</p>
+            <p>Only profiles you select are imported, for the last 30 days. Visits provide context, not reliable work duration. You can continue without a browser profile.</p>
             <ResourceState {...browsers}>
               {(profiles) => (
                 <div className="setup-browser-grid">
@@ -227,14 +252,11 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
         {step === 3 && (
           <div className="setup-content narrow">
-            <div className="setup-icon"><KeyRound size={30} /></div>
-            <div className="eyebrow">Bring your own key</div>
-            <h1>Connect an AI provider.</h1>
-            <p>Your key is stored in macOS Keychain. Provider calls originate in the native core, never the browser extension or React interface.</p>
-            <div className="provider-tabs">
-              {providers.map((item) => <button className={provider === item ? "selected" : ""} key={item} onClick={() => setProvider(item)}>{providerLabel(item)}</button>)}
-            </div>
-            <label className="secret-field">API key<input type="password" value={providerKey} onChange={(event) => setProviderKey(event.target.value)} placeholder={providerKeyPlaceholder(provider)} /></label>
+            <div className="setup-icon"><ShieldCheck size={30} /></div>
+            <div className="eyebrow">Evidence → Review → Certify → Export</div>
+            <h1>You decide what represents your work.</h1>
+            <p>Start local collection, then create your first project or work unit. Knov will suggest allocations from metadata. Review stays local; nothing is shared until you explicitly export.</p>
+            <p>No AI key is needed. Optional legacy AI tools remain in Settings and send minimized context only when you invoke them. A certification is your attestation, not proof of identity or a compliance guarantee.</p>
             {message && <p className="error-message">{message}</p>}
           </div>
         )}
@@ -243,8 +265,8 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
           <button className="ghost-button" disabled={step === 0} onClick={() => setStep((value) => value - 1)}>Back</button>
           <span>{step + 1} of {steps.length}</span>
           {step < steps.length - 1
-            ? <button className="primary-button" disabled={step === 2 && selectedProfiles.length === 0} onClick={() => setStep((value) => value + 1)}>Continue <ChevronRight size={15} /></button>
-            : <button className="primary-button" disabled={busy || !providerKey.trim() || selectedProfiles.length === 0} onClick={() => void finish()}>{busy ? <LoaderCircle size={15} className="spin" /> : <Sparkles size={15} />} Build my first profile</button>}
+            ? <button className="primary-button" onClick={() => setStep((value) => value + 1)}>Continue <ChevronRight size={15} /></button>
+            : <button className="primary-button" disabled={busy} onClick={() => void finish()}>{busy ? <LoaderCircle size={15} className="spin" /> : <ShieldCheck size={15} />} Start local collection</button>}
         </footer>
       </section>
     </div>
@@ -252,12 +274,23 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
 }
 
 function Sidebar({ route }: { route: string }) {
-  const { data: settings, setData } = useResource(() => api.settings(), []);
+  const { data: settings, setData, reload } = useResource(() => api.settings(), []);
+  const [collectionError, setCollectionError] = useState("");
+  useEffect(() => {
+    const refresh = () => { void reload(); };
+    window.addEventListener("knov:settings-changed", refresh);
+    return () => window.removeEventListener("knov:settings-changed", refresh);
+  }, [reload]);
   const enabled = settings?.collectionStatus.enabled ?? false;
+  const desktop = isDesktopRuntime();
 
   const toggle = async () => {
-    const next = await api.setCollectionEnabled(!enabled);
-    setData(next);
+    try {
+      setCollectionError("");
+      setData(await api.setCollectionEnabled(!enabled));
+    } catch (cause) {
+      setCollectionError(cause instanceof Error ? cause.message : String(cause));
+    }
   };
 
   return (
@@ -266,31 +299,37 @@ function Sidebar({ route }: { route: string }) {
         <LogoMark />
         <div>
           <div className="brand-name">Knov</div>
-          <div className="brand-caption">Remembers more. Sends less.</div>
+          <div className="brand-caption">Private evidence. Reviewed records.</div>
         </div>
       </div>
 
       <nav className="sidebar-nav" aria-label="Primary navigation">
-        {navigation.map(({ to, label, icon: Icon }) => (
-          <a key={to} href={`#${to}`} className={`nav-link${route === to ? " active" : ""}`}>
-            <Icon size={18} />
-            <span>{label}</span>
-          </a>
+        {navigation.map((section) => (
+          <div className="nav-section" key={section.title}>
+            <div className="nav-section-title">{section.title}</div>
+            {section.items.map(({ to, label, icon: Icon }) => (
+              <a key={to} href={`#${to}`} className={`nav-link${route === to ? " active" : ""}`}>
+                <Icon size={18} />
+                <span>{label}</span>
+              </a>
+            ))}
+          </div>
         ))}
       </nav>
 
       <div className="sidebar-spacer" />
 
-      <div className={`capture-card ${enabled ? "live" : "paused"}`}>
+      <div className={`capture-card ${desktop && enabled ? "live" : "paused"}`}>
         <div className="capture-status">
           <span className="pulse-dot" />
-          <span>{enabled ? "Collection active" : "Collection paused"}</span>
+          <span>{desktop ? (enabled ? "Collection active" : "Collection paused") : "Synthetic workspace"}</span>
         </div>
-        <p>{enabled ? "Activity stays on this Mac." : "No new activity is being stored."}</p>
-        <button className="ghost-button full" onClick={() => void toggle()}>
+        <p>{desktop ? (enabled ? "Activity stays on this Mac." : "No new activity is being stored.") : "No Mac activity is collected in browser preview."}</p>
+        <button className="ghost-button full" disabled={!desktop} onClick={() => void toggle()}>
           {enabled ? <Pause size={15} /> : <Play size={15} />}
-          {enabled ? "Pause" : "Resume"}
+          {desktop ? (enabled ? "Pause" : "Resume") : "Demo only"}
         </button>
+        {collectionError && <p role="alert">{collectionError}</p>}
       </div>
 
       <div className="privacy-note">
@@ -1424,7 +1463,7 @@ function formatTokenCount(value: number): string {
 }
 
 function SettingsPage() {
-  const resource = useResource(() => api.settings(), []);
+  const resource = useResource(() => api.settingsWithProviderStatus(), []);
   const browsers = useResource(() => api.browserProfiles(), []);
   const [key, setKey] = useState("");
   const [providerMessage, setProviderMessage] = useState("");
@@ -1434,7 +1473,8 @@ function SettingsPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const patch = async (settings: Partial<SettingsData>) => {
-    resource.setData(await api.saveSettings(settings));
+    await api.saveSettings(settings);
+    resource.setData(await api.settingsWithProviderStatus());
   };
 
   const reimportHistory = async () => {
@@ -1443,7 +1483,7 @@ function SettingsPage() {
     setHistoryImportMessage("Re-importing the last 30 days of Chrome history…");
     try {
       await api.reimportChromeHistory();
-      setHistoryImportMessage("Chrome durations imported and your profile was refreshed.");
+      setHistoryImportMessage("Chrome history imported locally. No provider request was made.");
     } catch (cause) {
       setHistoryImportError(true);
       setHistoryImportMessage(cause instanceof Error ? cause.message : String(cause));
@@ -1460,7 +1500,7 @@ function SettingsPage() {
           <div className="settings-grid">
             <section className="panel settings-card">
               <SettingsHeading icon={<KeyRound />} title="AI provider" detail="Your key goes directly from this Mac to the selected provider." />
-              <p className="status-detail">Profile digests and chat are sent only when needed. OpenAI disables optional storage. AWS Bedrock uses model-specific token preflight and eligible prompt caching; provider processing remains governed by your account policy.</p>
+              <p className="status-detail">Optional legacy tools only. Records and project suggestions require no AI key. Manual profile refresh and chat send minimized context directly to this provider; background provider refresh is disabled.</p>
               <div className="provider-tabs">
                 {providers.map((provider) => (
                   <button className={settings.provider === provider ? "selected" : ""} key={provider} onClick={() => void patch({ provider })}>
@@ -1479,7 +1519,7 @@ function SettingsPage() {
 
             <section className="panel settings-card">
               <SettingsHeading icon={<Eye />} title="Collection" detail="Foreground app, window title, selected Chrome history, and editor workspace-change metadata." />
-              <Toggle label="Collection active" detail="Collect local foreground activity and backfill selected browser and editor metadata." checked={settings.collectionStatus.enabled} onChange={(enabled) => api.setCollectionEnabled(enabled).then(resource.setData)} />
+              <Toggle label="Collection active" detail="Collect local foreground activity and backfill selected browser and editor metadata." checked={settings.collectionStatus.enabled} onChange={(enabled) => api.setCollectionEnabled(enabled).then(() => resource.reload())} />
               <Toggle label="Behavioral guidance" detail="Break and focus suggestions; work-continuity guidance stays on." checked={settings.behavioralGuidanceEnabled} onChange={(behavioralGuidanceEnabled) => void patch({ behavioralGuidanceEnabled })} />
               <Toggle label="Launch at login" detail="Resume local collection after you sign in." checked={settings.launchAtLogin} onChange={(launchAtLogin) => void patch({ launchAtLogin })} />
               <div className="permission-row">
@@ -1526,7 +1566,7 @@ function SettingsPage() {
                         {historyImporting ? "Re-importing…" : "Re-import Chrome history"}
                       </button>
                     </div>
-                    <p className="status-detail">Manual re-import reads the last 30 days and rebuilds your profile. While collection is active, new visits are also backfilled approximately every 30 seconds. Foreground app time still comes from live local collection because Chrome history durations are not reliable screen-time data.</p>
+                    <p className="status-detail">Manual re-import reads the last 30 days locally. While collection is active, new visits are also backfilled approximately every 30 seconds. History visits provide context and contribute no work duration to business records.</p>
                     {historyImportMessage && (
                       <p className={historyImportError ? "error-message" : "success-message"}>
                         {!historyImportError && <Check size={14} />}
@@ -1539,7 +1579,7 @@ function SettingsPage() {
             </section>
 
             <section className="panel settings-card">
-              <SettingsHeading icon={<ShieldCheck />} title="Exclusions" detail="Excluded applications and domains are dropped locally before they can affect your profile." />
+              <SettingsHeading icon={<ShieldCheck />} title="Exclusions" detail="Excluded applications and domains do not contribute to derived evidence or draft work totals. Existing certifications remain unchanged." />
               <ExclusionEditor
                 settings={settings}
                 onSave={(excludedApps, excludedDomains) => patch({ excludedApps, excludedDomains })}
@@ -1547,7 +1587,7 @@ function SettingsPage() {
             </section>
 
             <section className="panel settings-card full-width danger-card">
-              <SettingsHeading icon={<Trash2 />} title="Delete local Knov data" detail="Permanently removes local activity, profiles, corrections, recommendations, telemetry, settings, and provider credentials." />
+              <SettingsHeading icon={<Trash2 />} title="Delete local Knov data" detail="Permanently removes local activity, projects, evidence, drafts, certifications, audit history, legacy profiles, settings, and provider credentials. Files already exported are not deleted." />
               <button className="danger-button" onClick={() => setConfirmDelete(true)}>Delete everything</button>
             </section>
           </div>

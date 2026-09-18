@@ -2,7 +2,7 @@
   "name": "knov",
   "version": "0.1.0",
   "private": true,
-  "description": "A local-first behavioral context layer for personal AI",
+  "description": "Local endpoint evidence for user-reviewed, certified business records",
   "workspaces": [
     "apps/desktop",
     "apps/extension"
@@ -23,7 +23,7 @@
   },
   "keywords": [
     "tauri",
-    "personal-ai",
+    "endpoint-evidence",
     "local-first"
   ],
   "author": "Noriaki Kishida",

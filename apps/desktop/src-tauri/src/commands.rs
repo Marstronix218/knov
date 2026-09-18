@@ -34,9 +34,7 @@ use crate::{
     db::Database,
     error::{AppError, AppResult},
     memory::safe_local_search,
-    models::{
-        ChatMessage, DashboardRequest, HistoryRequest, Settings, ThreadContext, UserCorrection,
-    },
+    models::{ChatMessage, DashboardRequest, HistoryRequest, ThreadContext, UserCorrection},
     platform::{
         collection_status, discover_chrome_profiles, ensure_pairing_token,
         import_selected_chrome_history, recent_editor_workspace_changes, RuntimeStatus,
@@ -633,7 +631,12 @@ pub fn get_profile(state: State<'_, AppState>) -> AppResult<Value> {
 
 #[tauri::command]
 pub fn get_settings(state: State<'_, AppState>) -> AppResult<Value> {
-    settings_to_ui(&state)
+    settings_to_ui(&state, false)
+}
+
+#[tauri::command]
+pub fn get_settings_with_provider_status(state: State<'_, AppState>) -> AppResult<Value> {
+    settings_to_ui(&state, true)
 }
 
 #[tauri::command]
@@ -670,7 +673,7 @@ pub fn set_collection_enabled(enabled: bool, state: State<'_, AppState>) -> AppR
     let mut settings = state.db.settings()?;
     settings.collection_enabled = enabled;
     state.db.save_settings(&settings)?;
-    settings_to_ui(&state)
+    settings_to_ui(&state, false)
 }
 
 #[tauri::command]
@@ -689,11 +692,6 @@ pub fn request_accessibility_permission(state: State<'_, AppState>) -> bool {
 #[tauri::command]
 pub fn set_browser_profiles(profile_ids: Vec<String>, state: State<'_, AppState>) -> AppResult<()> {
     let available = discover_chrome_profiles(&state.db)?;
-    if profile_ids.is_empty() {
-        return Err(AppError::InvalidInput(
-            "Select at least one Chrome profile.".into(),
-        ));
-    }
     if profile_ids
         .iter()
         .any(|id| !available.iter().any(|profile| &profile.id == id))
@@ -705,6 +703,22 @@ pub fn set_browser_profiles(profile_ids: Vec<String>, state: State<'_, AppState>
     let mut settings = state.db.settings()?;
     settings.selected_chrome_profiles = profile_ids;
     state.db.save_settings(&settings)
+}
+
+#[tauri::command]
+pub fn complete_local_setup(state: State<'_, AppState>) -> AppResult<()> {
+    // Consent was obtained by the local setup screen. This path never calls a provider.
+    import_selected_chrome_history(&state.db, 30)?;
+    finish_local_setup(&state.db)
+}
+
+fn finish_local_setup(db: &Database) -> AppResult<()> {
+    // End legacy 90-day bootstrap retention even when no provider is configured.
+    db.purge_expired(Utc::now().timestamp(), true)?;
+    let mut settings = db.settings()?;
+    settings.collection_enabled = true;
+    db.save_settings(&settings)?;
+    db.set_setting("local_setup_completed", &true)
 }
 
 #[tauri::command]
@@ -752,11 +766,7 @@ pub async fn reimport_chrome_history(state: State<'_, AppState>) -> AppResult<Va
     })??;
 
     import_selected_chrome_history(&state.db, 30)?;
-    let provider = selected_provider(&state.db)?;
-    state
-        .providers
-        .refresh_profile(&state.db, &provider, "manual")
-        .await?;
+    // Import is a local evidence action, not consent to a provider request.
     profile_to_ui(&state.db)
 }
 
@@ -907,7 +917,7 @@ pub fn save_settings(
         current.selected_chrome_profiles = string_array(values);
     }
     state.db.save_settings(&current)?;
-    settings_to_ui(&state)
+    settings_to_ui(&state, false)
 }
 
 #[tauri::command]
@@ -1230,42 +1240,7 @@ pub fn delete_all_data(state: State<'_, AppState>) -> AppResult<()> {
     Ok(())
 }
 
-pub fn start_scheduler(state: Arc<AppState>) {
-    std::thread::spawn(move || loop {
-        std::thread::sleep(Duration::from_secs(60));
-        let settings = match state.db.settings() {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-        let today = Local::now().format("%Y-%m-%d").to_string();
-        if !scheduled_refresh_due(&settings, &today) {
-            continue;
-        }
-        let Some(provider) = settings.selected_provider else {
-            continue;
-        };
-        if !state.providers.has_key(&provider) {
-            continue;
-        }
-        if let Ok(_permit) = acquire_refresh(&state.refresh_lock) {
-            let result = tauri::async_runtime::block_on(
-                state
-                    .providers
-                    .refresh_profile(&state.db, &provider, "nightly"),
-            );
-            if let Err(error) = result {
-                eprintln!("scheduled profile refresh did not complete: {error}");
-            }
-        }
-    });
-}
-
-fn scheduled_refresh_due(settings: &Settings, today: &str) -> bool {
-    settings.initial_profile_completed
-        && settings.last_profile_refresh_day.as_deref() != Some(today)
-}
-
-fn settings_to_ui(state: &AppState) -> AppResult<Value> {
+fn settings_to_ui(state: &AppState, include_provider_status: bool) -> AppResult<Value> {
     let settings = state.db.settings()?;
     let status = collection_status(&state.db, &state.runtime)?;
     let provider = settings
@@ -1274,7 +1249,9 @@ fn settings_to_ui(state: &AppState) -> AppResult<Value> {
         .unwrap_or_else(|| "openai".into());
     Ok(json!({
         "provider":provider,
-        "hasProviderKey":state.providers.has_key(&provider),
+        // Reading a Keychain secret can display a macOS authorization dialog.
+        // Keep that access behind the explicit legacy provider settings screen.
+        "hasProviderKey":include_provider_status && state.providers.has_key(&provider),
         "behavioralGuidanceEnabled":settings.behavioral_guidance_enabled,
         "launchAtLogin":settings.launch_at_login,
         "selectedBrowserProfileIds":settings.selected_chrome_profiles,
@@ -1667,15 +1644,21 @@ mod tests {
     use crate::models::{ActivityEvent, ActivitySource};
 
     #[test]
-    fn scheduled_refresh_waits_for_bootstrap_and_runs_once_per_day() {
-        let mut settings = Settings::default();
-        assert!(!scheduled_refresh_due(&settings, "2026-07-27"));
-
-        settings.initial_profile_completed = true;
-        assert!(scheduled_refresh_due(&settings, "2026-07-27"));
-
-        settings.last_profile_refresh_day = Some("2026-07-27".into());
-        assert!(!scheduled_refresh_due(&settings, "2026-07-27"));
+    fn local_setup_needs_no_provider_and_preserves_local_settings() {
+        let db = Database::in_memory().unwrap();
+        let mut settings = db.settings().unwrap();
+        settings.excluded_apps = vec!["Private app".into()];
+        db.save_settings(&settings).unwrap();
+        finish_local_setup(&db).unwrap();
+        let settings = db.settings().unwrap();
+        assert!(settings.collection_enabled);
+        assert!(settings.selected_provider.is_none());
+        assert!(settings.selected_chrome_profiles.is_empty());
+        assert_eq!(settings.excluded_apps, vec!["Private app"]);
+        assert_eq!(
+            db.get_setting::<bool>("local_setup_completed").unwrap(),
+            Some(true)
+        );
     }
 
     #[test]
