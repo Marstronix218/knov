@@ -28,6 +28,8 @@ Implemented and usable from source:
 - deterministic, sanitized context packing with local context-economics metrics
 - OpenAI, Anthropic, and Amazon Bedrock BYOK credentials through macOS Keychain
 - direct provider-backed profile refresh, recommendations, and chat
+- opt-in Prediction Experiment with local history retrieval, a deterministic
+  baseline, provider candidates, and local outcome evaluation
 - dashboard, activity history, profile corrections, pause, and delete controls
 
 Important alpha limitations:
@@ -231,6 +233,25 @@ details** when you want supporting app, web, timeline, and pattern analytics.
 Use **Today**, **7 days**, or **30 days** to change the reporting period, and
 the refresh icon to rebuild the profile and recommendations.
 
+### Try the Prediction Experiment
+
+The Prediction Experiment is off by default. Enable it in **Settings** to let
+Knov estimate likely next work intents, actions, and resources from recent
+activity, semantic threads, and similar local history. Knov records both a
+deterministic baseline and up to three provider candidates so their outcomes
+can be compared. The provider receives only minimized, sanitized context; the
+prediction records, observed outcomes, match scores, and optional feedback stay
+in local SQLite.
+
+Predictions above the current confidence threshold can appear under **Likely
+next** on Now. Lower-confidence candidates remain available to the local
+evaluation path without being shown. **Resume predicted work** uses Knov's
+existing safe thread/resource resumption. It does not edit files, run commands,
+send messages, submit forms, or otherwise execute work autonomously.
+
+See [Prediction Engine](docs/prediction-engine.md) for the architecture,
+triggering, local schema, evaluator, and privacy boundaries.
+
 ### Review Threads
 
 Open **Threads** to inspect the provisional work streams Knov reconstructs from
@@ -280,6 +301,8 @@ Use **Settings** to:
   Keychain credential, and run **Test connection**;
 - enable or disable collection, behavioral break/focus guidance, and launch at
   login;
+- enable or disable the Prediction Experiment and inspect its local history
+  and evaluation metrics;
 - inspect Accessibility and Chrome connection diagnostics and the local
   database path;
 - approve or remove Chrome profiles;
@@ -296,10 +319,11 @@ excludes its subdomains.
 
 To reset Knov, use **Settings → Delete Knov data → Delete everything**.
 This permanently removes app-owned activity, profiles, corrections,
-recommendations, settings, provider credentials, and the Native Messaging
-manifest, then rotates the pairing token. It does not remove the unpacked Chrome
-extension or clear the extension's local settings; remove the extension from
-`chrome://extensions` to clear those.
+recommendations, predictions, prediction feedback and evaluations, settings,
+provider credentials, and the Native Messaging manifest, then rotates the
+pairing token. It does not remove the unpacked Chrome extension or clear the
+extension's local settings; remove the extension from `chrome://extensions` to
+clear those.
 
 ## Troubleshooting
 
@@ -342,6 +366,7 @@ unsigned technical-alpha build; code signing and notarization are not included.
 - [Alpha setup](docs/alpha-setup.md)
 - [Architecture](docs/architecture.md)
 - [Privacy model](docs/privacy-model.md)
+- [Prediction Engine](docs/prediction-engine.md)
 - [Threat model](docs/threat-model.md)
 - [Testing](docs/testing.md)
 - [Product requirements](knov_prd.md)

@@ -10,6 +10,9 @@ import type {
   DashboardData,
   ProfileData,
   Provider,
+  PredictionDashboard,
+  PredictionFeedback,
+  PredictionHistoryItem,
   RangeKey,
   SettingsData,
   ThreadContext,
@@ -19,6 +22,8 @@ import {
   mockBrowsers,
   mockDashboard,
   mockProfile,
+  mockPredictionDashboard,
+  mockPredictions,
   mockSettings,
 } from "./mockData";
 
@@ -79,6 +84,17 @@ export const api = {
     call<ActivityEvent[]>("get_activity_history", { range, query }, mockActivity),
   profile: () => call<ProfileData>("get_profile", undefined, mockProfile),
   settings: () => call<SettingsData>("get_settings", undefined, mockSettings),
+  predictionsDashboard: () =>
+    call<PredictionDashboard>("get_predictions_dashboard", undefined, mockPredictionDashboard),
+  predictionHistory: () =>
+    call<PredictionHistoryItem[]>("get_prediction_history", undefined, mockPredictions),
+  generatePredictions: () =>
+    call<PredictionDashboard>("generate_predictions", undefined, {
+      ...mockPredictionDashboard,
+      enabled: true,
+    }),
+  recordPredictionFeedback: (predictionId: string, feedback: PredictionFeedback) =>
+    call<void>("record_prediction_feedback", { predictionId, feedback }, undefined),
   browserProfiles: () => call<BrowserProfile[]>("get_browser_profiles", undefined, mockBrowsers),
   bootstrapStatus: () =>
     call<BootstrapStatus>(

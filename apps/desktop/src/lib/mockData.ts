@@ -4,10 +4,13 @@ import type {
   DashboardData,
   ProfileData,
   SettingsData,
+  PredictionDashboard,
+  WorkPrediction,
 } from "../types";
 
 const now = Date.now();
 const minutesAgo = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
+const secondsAgo = (minutes: number) => Math.floor((now - minutes * 60_000) / 1000);
 
 export const mockActivity: ActivityEvent[] = [
   {
@@ -205,6 +208,8 @@ export const mockSettings: SettingsData = {
   provider: "openai",
   hasProviderKey: false,
   behavioralGuidanceEnabled: true,
+  predictionExperimentEnabled: false,
+  predictionDisplayThreshold: 0.65,
   launchAtLogin: false,
   selectedBrowserProfileIds: ["chrome-default", "chrome-profile-1"],
   excludedApps: ["1Password"],
@@ -213,5 +218,61 @@ export const mockSettings: SettingsData = {
     enabled: true,
     accessibilityGranted: false,
     degradedReasons: ["Accessibility permission is not granted."],
+  },
+};
+
+export const mockPredictions: WorkPrediction[] = [
+  {
+    id: "prediction-provider-1",
+    createdAt: secondsAgo(4),
+    source: "provider",
+    intent: "Continue validating the Knov permission bridge",
+    nextAction: "Review the Tauri capability settings and continue the desktop implementation.",
+    nextResource: {
+      type: "url",
+      label: "Tauri security capabilities",
+      safeLocator: "https://v2.tauri.app/security/capabilities/",
+    },
+    threadId: "knov-implementation",
+    confidence: 0.78,
+    horizonMinutes: 20,
+    reasoningSummary: "Your recent work stayed in the Knov implementation thread and moved between code and Tauri security guidance.",
+    evidence: [
+      "28 min in Visual Studio Code",
+      "Recent Tauri security reference",
+      "Same work thread across recent activity",
+    ],
+    evaluationStatus: "pending",
+    expiresAt: secondsAgo(-16),
+  },
+  {
+    id: "prediction-baseline-1",
+    createdAt: secondsAgo(4),
+    source: "heuristic",
+    intent: "Return to Knov implementation",
+    nextAction: "Resume the most recently active work thread.",
+    threadId: "knov-implementation",
+    confidence: 0.61,
+    horizonMinutes: 20,
+    reasoningSummary: "This was the most recently active thread.",
+    evidence: ["Most recently active thread"],
+    evaluationStatus: "pending",
+    expiresAt: secondsAgo(-16),
+  },
+];
+
+export const mockPredictionDashboard: PredictionDashboard = {
+  enabled: false,
+  predictions: mockPredictions,
+  stats: {
+    totalPredictions: 18,
+    evaluatedPredictions: 14,
+    matched: 7,
+    partial: 4,
+    missed: 3,
+    providerTop1Accuracy: 0.64,
+    baselineTop1Accuracy: 0.43,
+    highConfidenceAccuracy: 0.71,
+    userPositiveFeedbackRate: 0.75,
   },
 };

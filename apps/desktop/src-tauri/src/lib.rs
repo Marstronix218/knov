@@ -6,6 +6,7 @@ mod error;
 mod memory;
 mod models;
 mod platform;
+mod prediction;
 mod providers;
 mod threading;
 
@@ -47,6 +48,7 @@ pub fn run() {
                 providers: providers::ProviderClient::default(),
                 runtime: runtime.clone(),
                 refresh_lock: Arc::new(AtomicBool::new(false)),
+                prediction_lock: Arc::new(AtomicBool::new(false)),
             };
             platform::start_collector(db.clone(), runtime);
             platform::start_local_metadata_collectors(db.clone());
@@ -59,6 +61,7 @@ pub fn run() {
                 providers: state.providers.clone(),
                 runtime: state.runtime.clone(),
                 refresh_lock: state.refresh_lock.clone(),
+                prediction_lock: state.prediction_lock.clone(),
             }));
 
             let show = MenuItem::with_id(app, "show", "Show Knov", true, None::<&str>)?;
@@ -107,6 +110,10 @@ pub fn run() {
             commands::save_settings,
             commands::dismiss_recommendation,
             commands::record_product_event,
+            commands::get_predictions_dashboard,
+            commands::get_prediction_history,
+            commands::generate_predictions,
+            commands::record_prediction_feedback,
             commands::chat,
             commands::get_pairing_info,
             commands::install_native_host,

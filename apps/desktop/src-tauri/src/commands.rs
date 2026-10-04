@@ -41,6 +41,7 @@ use crate::{
         collection_status, discover_chrome_profiles, ensure_pairing_token,
         import_selected_chrome_history, recent_editor_workspace_changes, RuntimeStatus,
     },
+    prediction::{self, PredictionDashboard, PredictionHistoryItem},
     providers::ProviderClient,
     threading::semantic_topics,
 };
@@ -50,6 +51,13 @@ pub struct AppState {
     pub providers: ProviderClient,
     pub runtime: Arc<RwLock<RuntimeStatus>>,
     pub refresh_lock: Arc<AtomicBool>,
+    pub prediction_lock: Arc<AtomicBool>,
+}
+
+fn acquire_prediction(lock: &Arc<AtomicBool>) -> AppResult<RefreshPermit> {
+    lock.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .map(|_| RefreshPermit(lock.clone()))
+        .map_err(|_| AppError::InvalidInput("Prediction generation is already running.".into()))
 }
 
 #[derive(Debug)]
@@ -879,6 +887,18 @@ pub fn save_settings(
     {
         current.behavioral_guidance_enabled = enabled;
     }
+    if let Some(enabled) = settings
+        .get("predictionExperimentEnabled")
+        .and_then(Value::as_bool)
+    {
+        current.prediction_experiment_enabled = enabled;
+    }
+    if let Some(threshold) = settings
+        .get("predictionDisplayThreshold")
+        .and_then(Value::as_f64)
+    {
+        current.prediction_display_threshold = threshold.clamp(0.0, 1.0);
+    }
     if let Some(enabled) = settings.get("launchAtLogin").and_then(Value::as_bool) {
         current.launch_at_login = enabled;
         if enabled {
@@ -943,6 +963,46 @@ pub fn record_product_event(
     state
         .db
         .record_product_event(&event_type, thread_id.as_deref(), Utc::now().timestamp())
+}
+
+#[tauri::command]
+pub fn get_predictions_dashboard(state: State<'_, AppState>) -> AppResult<PredictionDashboard> {
+    let settings = state.db.settings()?;
+    prediction::dashboard(&state.db, &settings, Utc::now().timestamp())
+}
+
+#[tauri::command]
+pub fn get_prediction_history(state: State<'_, AppState>) -> AppResult<Vec<PredictionHistoryItem>> {
+    state.db.prediction_history(250)
+}
+
+#[tauri::command]
+pub async fn generate_predictions(state: State<'_, AppState>) -> AppResult<PredictionDashboard> {
+    let _permit = acquire_prediction(&state.prediction_lock)?;
+    let settings = state.db.settings()?;
+    prediction::evaluate_due_predictions(&state.db, &settings, Utc::now().timestamp())?;
+    prediction::generate_prediction_set(&state.db, &state.providers, &settings).await?;
+    prediction::dashboard(&state.db, &settings, Utc::now().timestamp())
+}
+
+#[tauri::command]
+pub fn record_prediction_feedback(
+    prediction_id: String,
+    feedback: String,
+    state: State<'_, AppState>,
+) -> AppResult<()> {
+    if !matches!(feedback.as_str(), "correct" | "incorrect" | "dismissed") {
+        return Err(AppError::InvalidInput(
+            "Unsupported prediction feedback.".into(),
+        ));
+    }
+    if !state
+        .db
+        .record_prediction_feedback(&prediction_id, &feedback, None)?
+    {
+        return Err(AppError::InvalidInput("Prediction was not found.".into()));
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -1237,6 +1297,24 @@ pub fn start_scheduler(state: Arc<AppState>) {
             Ok(value) => value,
             Err(_) => continue,
         };
+        if let Err(error) =
+            prediction::evaluate_due_predictions(&state.db, &settings, Utc::now().timestamp())
+        {
+            eprintln!("scheduled prediction evaluation did not complete: {error}");
+        }
+        if prediction_generation_due(&state.db, &settings)
+            && state
+                .providers
+                .has_key(settings.selected_provider.as_deref().unwrap_or_default())
+        {
+            if let Ok(_permit) = acquire_prediction(&state.prediction_lock) {
+                if let Err(error) = tauri::async_runtime::block_on(
+                    prediction::generate_prediction_set(&state.db, &state.providers, &settings),
+                ) {
+                    eprintln!("scheduled prediction generation did not complete: {error}");
+                }
+            }
+        }
         let today = Local::now().format("%Y-%m-%d").to_string();
         if !scheduled_refresh_due(&settings, &today) {
             continue;
@@ -1260,6 +1338,19 @@ pub fn start_scheduler(state: Arc<AppState>) {
     });
 }
 
+fn prediction_generation_due(db: &Database, settings: &Settings) -> bool {
+    if !settings.prediction_experiment_enabled || !settings.collection_enabled {
+        return false;
+    }
+    let last_prediction = db.last_prediction_at().ok().flatten();
+    let latest_activity = db.latest_activity_at().ok().flatten();
+    let cooldown = settings.prediction_cooldown_minutes.clamp(10, 120) * 60;
+    let now = Utc::now().timestamp();
+    last_prediction.is_none_or(|last| now.saturating_sub(last) >= cooldown)
+        && latest_activity
+            .is_some_and(|activity| last_prediction.is_none_or(|last| activity > last))
+}
+
 fn scheduled_refresh_due(settings: &Settings, today: &str) -> bool {
     settings.initial_profile_completed
         && settings.last_profile_refresh_day.as_deref() != Some(today)
@@ -1276,6 +1367,8 @@ fn settings_to_ui(state: &AppState) -> AppResult<Value> {
         "provider":provider,
         "hasProviderKey":state.providers.has_key(&provider),
         "behavioralGuidanceEnabled":settings.behavioral_guidance_enabled,
+        "predictionExperimentEnabled":settings.prediction_experiment_enabled,
+        "predictionDisplayThreshold":settings.prediction_display_threshold,
         "launchAtLogin":settings.launch_at_login,
         "selectedBrowserProfileIds":settings.selected_chrome_profiles,
         "excludedApps":settings.excluded_apps,

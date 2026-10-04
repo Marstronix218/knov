@@ -150,6 +150,9 @@ pub struct Settings {
     pub suppressed_profile_items: Vec<String>,
     pub last_profile_refresh_day: Option<String>,
     pub initial_profile_completed: bool,
+    pub prediction_experiment_enabled: bool,
+    pub prediction_display_threshold: f64,
+    pub prediction_cooldown_minutes: i64,
 }
 
 impl Default for Settings {
@@ -166,6 +169,9 @@ impl Default for Settings {
             suppressed_profile_items: vec![],
             last_profile_refresh_day: None,
             initial_profile_completed: false,
+            prediction_experiment_enabled: false,
+            prediction_display_threshold: 0.65,
+            prediction_cooldown_minutes: 15,
         }
     }
 }

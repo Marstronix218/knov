@@ -23,8 +23,11 @@ These commands cover:
 - desktop TypeScript and React type checking
 - desktop component and browser-preview API tests
 - the production desktop Vite build
-- Rust compilation, database migration/retention tests, digest handling, and
-  collector helper tests
+- Rust compilation, database migration/retention tests, prediction state,
+  persistence/evaluation, digest handling, and collector helper tests
+
+Prediction tests use mocked provider responses. The automated suite must not
+require a provider credential or make a live provider request.
 
 ## Targeted checks
 
@@ -95,7 +98,23 @@ Chrome profile, or live provider accounts. Before an alpha handoff:
     context-economics record is stored only in local SQLite.
 10. Add a profile correction, refresh, and confirm the correction remains.
 11. Dismiss a recommendation and confirm it leaves the dashboard.
-12. Invoke **Delete everything**, then verify app-owned rows are gone, default
+12. Confirm the Prediction Experiment is disabled by default and produces no
+    prediction request while disabled or collection is paused.
+13. Enable the experiment, create enough meaningful activity, and confirm an
+    automatically generated provider batch and deterministic baseline are
+    stored no more often than the configured cooldown permits.
+14. Confirm only unexpired candidates at or above the display threshold appear
+    under **Likely next**; submit correct, not-what-I’m-doing, and dismiss
+    feedback and verify it appears in **Local prediction history**.
+15. Resume a safe predicted thread/resource and verify that Knov does not run a
+    command, edit a file, send a message, or submit a form.
+16. After the prediction horizon, verify a local outcome, status, and match
+    score are recorded and the provider/baseline aggregate metrics update.
+17. Force a prediction-only provider or parsing failure and verify collection,
+    the existing Now fallback, profile refresh, and chat remain independently
+    usable. Provider-dependent actions may still report their own connection
+    error when the provider itself is unavailable.
+18. Invoke **Delete everything**, then verify app-owned rows are gone, default
     settings return, and provider keys are unavailable.
 
 ## Optional extension manual checklist
@@ -125,6 +144,8 @@ sqlite3 "$KNOV_DB" \
   'SELECT source, COUNT(*) FROM activity_events GROUP BY source;'
 sqlite3 "$KNOV_DB" \
   'SELECT event_type, COUNT(*) FROM product_events GROUP BY event_type;'
+sqlite3 "$KNOV_DB" \
+  'SELECT prediction_source, evaluation_status, COUNT(*) FROM predictions GROUP BY prediction_source, evaluation_status;'
 ```
 
 Stop the app before direct inspection to avoid mistaking an uncheckpointed WAL
@@ -136,6 +157,8 @@ owned by the Rust core.
 - no automated real-macOS Accessibility test
 - no real Chrome Native Messaging end-to-end test
 - no provider contract test against live OpenAI, Anthropic, or Amazon Bedrock APIs
+- no long-running real-activity validation of prediction accuracy or personal
+  historical-pattern quality
 - no packaged-app, code-signing, notarization, update, or installer test
 - no secure-deletion claim or forensic-erasure test
 - no independent security assessment

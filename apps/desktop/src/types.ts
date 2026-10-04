@@ -108,11 +108,65 @@ export interface SettingsData {
   provider: Provider;
   hasProviderKey: boolean;
   behavioralGuidanceEnabled: boolean;
+  predictionExperimentEnabled: boolean;
+  predictionDisplayThreshold: number;
   launchAtLogin: boolean;
   selectedBrowserProfileIds: string[];
   excludedApps: string[];
   excludedDomains: string[];
   collectionStatus: CollectionStatus;
+}
+
+export type PredictionSource = "heuristic" | "provider";
+export type PredictionEvaluationStatus = "pending" | "matched" | "partial" | "missed" | "expired";
+export type PredictionFeedback = "correct" | "incorrect" | "dismissed";
+
+export interface PredictionResource {
+  type: "thread" | "url" | "domain" | "application" | "document" | "repository" | "unknown";
+  label: string;
+  safeLocator?: string;
+}
+
+export interface WorkPrediction {
+  id: string;
+  createdAt: number;
+  source: PredictionSource;
+  intent: string;
+  nextAction: string;
+  nextResource?: PredictionResource;
+  threadId?: string;
+  confidence: number;
+  horizonMinutes: number;
+  reasoningSummary: string;
+  evidence: string[];
+  evaluationStatus: PredictionEvaluationStatus;
+  expiresAt: number;
+  observedOutcome?: string;
+  matchScore?: number;
+  userFeedback?: PredictionFeedback;
+  evaluatedAt?: number;
+}
+
+export interface PredictionHistoryItem extends WorkPrediction {
+  feedbackReason?: string;
+}
+
+export interface PredictionStats {
+  totalPredictions: number;
+  evaluatedPredictions: number;
+  matched: number;
+  partial: number;
+  missed: number;
+  providerTop1Accuracy?: number;
+  baselineTop1Accuracy?: number;
+  highConfidenceAccuracy?: number;
+  userPositiveFeedbackRate?: number;
+}
+
+export interface PredictionDashboard {
+  enabled: boolean;
+  predictions: WorkPrediction[];
+  stats: PredictionStats;
 }
 
 export interface ChatMessage {

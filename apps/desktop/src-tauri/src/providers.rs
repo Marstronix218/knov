@@ -1,7 +1,7 @@
 use chrono::Utc;
 use keyring::Entry;
 use reqwest::{Client, StatusCode};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -164,6 +164,39 @@ impl ProviderClient {
             Some(input_token_limit),
         )
         .await
+    }
+
+    pub async fn predict_work<S: Serialize, H: Serialize>(
+        &self,
+        provider: &str,
+        current_state: &S,
+        historical_examples: &H,
+    ) -> AppResult<Value> {
+        let system = "Predict the user's likely next meaningful WORK INTENT, not merely the next UI click. \
+            Use the supplied personal historical behavior when available. Prefer meaningful actions over superficial \
+            application transitions. Do not invent resources or thread IDs unsupported by evidence. Distinguish \
+            uncertainty and use lower confidence when evidence is weak. Return JSON only, with up to three ranked \
+            predictions. Reasoning summaries and evidence must be short, evidence-based explanations, never hidden \
+            chain-of-thought.";
+        let prompt = format!(
+            "SANITIZED CURRENT WORK STATE:\n{}\nSANITIZED RELEVANT HISTORICAL SEQUENCES:\n{}",
+            serde_json::to_string(current_state)?,
+            serde_json::to_string(historical_examples)?
+        );
+        let completion = self
+            .complete(
+                provider,
+                system,
+                &[ChatMessage {
+                    role: "user".into(),
+                    content: prompt,
+                }],
+                1600,
+                Some(prediction_response_format()),
+                Some(12_000),
+            )
+            .await?;
+        parse_json_response(&completion.text)
     }
 
     pub async fn refresh_profile(
@@ -678,6 +711,49 @@ fn profile_response_format() -> Value {
                 }
             },
             "required":["profile","recommendations"],
+            "additionalProperties":false
+        }
+    })
+}
+
+fn prediction_response_format() -> Value {
+    json!({
+        "type":"json_schema",
+        "name":"knov_work_predictions",
+        "strict":true,
+        "schema":{
+            "type":"object",
+            "properties":{
+                "predictions":{
+                    "type":"array",
+                    "maxItems":3,
+                    "items":{
+                        "type":"object",
+                        "properties":{
+                            "intent":{"type":"string"},
+                            "nextAction":{"type":"string"},
+                            "nextResource":{
+                                "anyOf":[
+                                    {"type":"null"},
+                                    {"type":"object","properties":{
+                                        "type":{"type":"string","enum":["thread","url","domain","application","document","repository","unknown"]},
+                                        "label":{"type":"string"},
+                                        "safeLocator":{"type":["string","null"]}
+                                    },"required":["type","label","safeLocator"],"additionalProperties":false}
+                                ]
+                            },
+                            "threadId":{"type":["string","null"]},
+                            "confidence":{"type":"number","minimum":0,"maximum":1},
+                            "horizonMinutes":{"type":"integer","minimum":5,"maximum":120},
+                            "reasoningSummary":{"type":"string"},
+                            "evidence":{"type":"array","maxItems":5,"items":{"type":"string"}}
+                        },
+                        "required":["intent","nextAction","nextResource","threadId","confidence","horizonMinutes","reasoningSummary","evidence"],
+                        "additionalProperties":false
+                    }
+                }
+            },
+            "required":["predictions"],
             "additionalProperties":false
         }
     })

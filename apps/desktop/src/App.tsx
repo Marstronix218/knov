@@ -41,12 +41,15 @@ import type {
   DashboardData,
   MemoryRecord,
   Provider,
+  PredictionDashboard,
+  PredictionFeedback,
   RangeKey,
   Recommendation,
   SettingsData,
   ThreadContext,
   ThreadContextEvent,
   UsageSlice,
+  WorkPrediction,
 } from "./types";
 
 const navigation = [
@@ -549,6 +552,7 @@ function formatContextDateTime(value: string): string {
 
 function DashboardContent({ data }: { data: DashboardData }) {
   const threads = useMemo(() => deriveThreads(data), [data]);
+  const predictions = useResource(() => api.predictionsDashboard(), []);
   const storedThread = localStorage.getItem("knov.selected-thread");
   const [selectedId, setSelectedId] = useState(storedThread ?? threads[0]?.id);
   const [actionMessage, setActionMessage] = useState("");
@@ -640,6 +644,7 @@ function DashboardContent({ data }: { data: DashboardData }) {
 
   return (
     <>
+      <PredictionSection resource={predictions} threads={threads} onSelectThread={selectThread} />
       <section className="now-status" aria-label="Current context status">
         <span><i className="status-light" /> {threads.length} active thread{threads.length === 1 ? "" : "s"}</span>
         <span>{formatDuration(data.trackedSeconds)} observed</span>
@@ -695,6 +700,142 @@ function DashboardContent({ data }: { data: DashboardData }) {
         </div>
       </details>
     </>
+  );
+}
+
+const PREDICTION_DISPLAY_THRESHOLD = 0.65;
+
+function predictionExpiresAt(prediction: WorkPrediction): number {
+  if (Number.isFinite(prediction.expiresAt)) return prediction.expiresAt * 1000;
+  return Number.isFinite(prediction.createdAt)
+    ? (prediction.createdAt + Math.max(0, prediction.horizonMinutes) * 60) * 1000
+    : 0;
+}
+
+function formatPredictionTime(value: number): string {
+  return formatTime(new Date(value * 1000).toISOString());
+}
+
+function visiblePrediction(prediction: WorkPrediction, now = Date.now()): boolean {
+  return prediction.evaluationStatus === "pending"
+    && prediction.confidence >= PREDICTION_DISPLAY_THRESHOLD
+    && predictionExpiresAt(prediction) > now;
+}
+
+function PredictionSection({
+  resource,
+  threads,
+  onSelectThread,
+}: {
+  resource: ReturnType<typeof useResource<PredictionDashboard>>;
+  threads: WorkThread[];
+  onSelectThread: (id: string) => void;
+}) {
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  const [pendingId, setPendingId] = useState<string>();
+  const [message, setMessage] = useState("");
+
+  if (resource.loading && !resource.data) {
+    return (
+      <section className="prediction-state" aria-label="Likely next">
+        <LoaderCircle className="spin" size={17} />
+        <span>Checking for a likely next step…</span>
+      </section>
+    );
+  }
+  if (resource.error && !resource.data) {
+    return (
+      <section className="prediction-state prediction-error" aria-label="Likely next">
+        <Sparkles size={17} />
+        <span>Likely next is unavailable. Your current work context is still ready below.</span>
+      </section>
+    );
+  }
+  if (!resource.data?.enabled) return null;
+
+  const prediction = resource.data.predictions
+    .filter((candidate) => !hiddenIds.has(candidate.id) && visiblePrediction(candidate))
+    .sort((a, b) => b.confidence - a.confidence)[0];
+  if (!prediction) return null;
+
+  const sendFeedback = async (feedback: PredictionFeedback) => {
+    setPendingId(prediction.id);
+    setMessage("Saving feedback locally…");
+    try {
+      await api.recordPredictionFeedback(prediction.id, feedback);
+      if (feedback === "dismissed") {
+        setHiddenIds((current) => new Set(current).add(prediction.id));
+      } else {
+        setMessage(feedback === "correct" ? "Marked correct and stored locally." : "Thanks—stored locally for evaluation.");
+      }
+    } catch {
+      setMessage("Could not store that feedback. The prediction is still visible.");
+    } finally {
+      setPendingId(undefined);
+    }
+  };
+
+  const resume = async () => {
+    setMessage("Preparing the predicted work…");
+    const safeUrl = reopenableWebUrl(prediction.nextResource?.safeLocator);
+    const thread = prediction.threadId
+      ? threads.find((candidate) => candidate.id === prediction.threadId)
+      : undefined;
+    const threadUrl = thread?.events.map((event) => reopenableWebUrl(event.url)).find(Boolean);
+
+    try {
+      if (safeUrl) {
+        await api.openResource(safeUrl);
+      } else if (threadUrl) {
+        await api.openResource(threadUrl);
+      } else if (prediction.nextResource?.type === "application") {
+        await api.openApplication(prediction.nextResource.safeLocator || prediction.nextResource.label);
+      } else if (thread) {
+        const appName = thread.events.map((event) => event.appName.trim()).find(Boolean);
+        if (!appName) throw new Error("No safe resource is available.");
+        await api.openApplication(appName);
+      } else {
+        throw new Error("No safe resource is available.");
+      }
+      if (thread) onSelectThread(thread.id);
+      setMessage("Opened the predicted work resource.");
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "Could not open the predicted work resource.");
+    }
+  };
+
+  return (
+    <section className="prediction-section" aria-label="Likely next">
+      <div className="prediction-heading">
+        <span><Sparkles size={15} /> Likely next</span>
+        <small>{Math.round(prediction.confidence * 100)}% confidence</small>
+      </div>
+      <div className="prediction-layout">
+        <div className="prediction-copy">
+          <h2>{prediction.intent}</h2>
+          <p>{prediction.reasoningSummary}</p>
+          <div className="prediction-action"><small>Likely next</small><strong>{prediction.nextAction}</strong></div>
+          <div className="prediction-controls">
+            {(prediction.nextResource || prediction.threadId) && (
+              <button className="primary-button" onClick={() => void resume()}>Resume predicted work <ArrowUpRight size={15} /></button>
+            )}
+            <button disabled={pendingId === prediction.id} className="feedback-button" onClick={() => void sendFeedback("correct")}>Correct</button>
+            <button disabled={pendingId === prediction.id} className="feedback-button" onClick={() => void sendFeedback("incorrect")}>Not what I’m doing</button>
+            <button disabled={pendingId === prediction.id} className="feedback-button" onClick={() => void sendFeedback("dismissed")}>Dismiss</button>
+          </div>
+          {message && <p className="prediction-message" role="status">{message}</p>}
+        </div>
+        <div className="prediction-evidence">
+          <strong>Based on recent work</strong>
+          <ul>
+            {prediction.evidence.slice(0, 4).map((evidence, index) => (
+              <li key={`${evidence}-${index}`}><span>{evidence}</span></li>
+            ))}
+          </ul>
+          <small>Experimental prediction · no work is executed automatically</small>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -1492,6 +1633,12 @@ function SettingsPage() {
               {settings.collectionStatus.dataPath && <p className="status-detail">Local database: {settings.collectionStatus.dataPath}</p>}
             </section>
 
+            <PredictionSettings
+              enabled={settings.predictionExperimentEnabled}
+              collectionEnabled={settings.collectionStatus.enabled}
+              onToggle={(predictionExperimentEnabled) => patch({ predictionExperimentEnabled })}
+            />
+
             <section className="panel settings-card full-width">
               <SettingsHeading icon={<BarChart3 />} title="Browser profiles" detail="Select local Chrome profiles for history import and continuous backfill." />
               <ResourceState {...browsers}>
@@ -1564,6 +1711,112 @@ function SettingsPage() {
         </Modal>
       )}
     </div>
+  );
+}
+
+function formatAccuracy(value?: number): string {
+  return value === undefined ? "—" : formatPercentage(value * 100);
+}
+
+function PredictionSettings({
+  enabled,
+  collectionEnabled,
+  onToggle,
+}: {
+  enabled: boolean;
+  collectionEnabled: boolean;
+  onToggle: (enabled: boolean) => Promise<void>;
+}) {
+  const dashboard = useResource(() => api.predictionsDashboard(), []);
+  const history = useResource(() => api.predictionHistory(), []);
+  const [generating, setGenerating] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const generate = async () => {
+    setGenerating(true);
+    setMessage("Generating from sanitized recent context…");
+    try {
+      await api.generatePredictions();
+      await Promise.all([dashboard.reload(), history.reload()]);
+      setMessage("Prediction set generated and stored locally.");
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "Could not generate predictions.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <section className="panel settings-card full-width prediction-settings">
+      <SettingsHeading icon={<Sparkles />} title="Prediction experiment" detail="Opt in to local shadow-mode predictions of likely next work. Default is off." />
+      <Toggle
+        label="Prediction experiment"
+        detail="Creates predictions at a limited cadence while collection is active. Only sanitized, minimized context may go to your configured provider. Knov never acts automatically."
+        checked={enabled}
+        onChange={(next) => void onToggle(next)}
+      />
+      {!enabled ? (
+        <div className="prediction-disabled" role="status">
+          <LockKeyhole size={16} />
+          <span><strong>Experiment disabled</strong><small>No new prediction sets are generated or shown on Now.</small></span>
+        </div>
+      ) : !collectionEnabled ? (
+        <div className="prediction-disabled" role="status">
+          <Pause size={16} />
+          <span><strong>Collection is paused</strong><small>Prediction generation waits until collection is active again.</small></span>
+        </div>
+      ) : (
+        <div className="inline-actions">
+          <button className="ghost-button" disabled={generating} onClick={() => void generate()}>
+            {generating ? <LoaderCircle size={15} className="spin" /> : <Sparkles size={15} />}
+            {generating ? "Generating…" : "Generate now"}
+          </button>
+        </div>
+      )}
+      {message && <p className="status-detail" role="status">{message}</p>}
+
+      <div className="prediction-debug-heading">
+        <strong>Local prediction history</strong>
+        <small>Technical-alpha evaluation</small>
+      </div>
+      {dashboard.loading || history.loading ? (
+        <div className="prediction-inline-state"><LoaderCircle className="spin" size={16} /> Loading local prediction history…</div>
+      ) : dashboard.error || history.error ? (
+        <div className="prediction-inline-state prediction-error">Couldn’t load prediction history: {dashboard.error || history.error}</div>
+      ) : dashboard.data && history.data ? (
+        <>
+          <div className="prediction-stats" aria-label="Prediction statistics">
+            <span><small>Total</small><strong>{dashboard.data.stats.totalPredictions}</strong></span>
+            <span><small>Evaluated</small><strong>{dashboard.data.stats.evaluatedPredictions}</strong></span>
+            <span><small>Matched</small><strong>{dashboard.data.stats.matched}</strong></span>
+            <span><small>Partial</small><strong>{dashboard.data.stats.partial}</strong></span>
+            <span><small>Missed</small><strong>{dashboard.data.stats.missed}</strong></span>
+            <span><small>Provider top-1</small><strong>{formatAccuracy(dashboard.data.stats.providerTop1Accuracy)}</strong></span>
+            <span><small>Baseline top-1</small><strong>{formatAccuracy(dashboard.data.stats.baselineTop1Accuracy)}</strong></span>
+            <span><small>High-confidence</small><strong>{formatAccuracy(dashboard.data.stats.highConfidenceAccuracy)}</strong></span>
+            <span><small>Positive feedback</small><strong>{formatAccuracy(dashboard.data.stats.userPositiveFeedbackRate)}</strong></span>
+          </div>
+          {history.data.length ? (
+            <div className="prediction-history" role="table" aria-label="Prediction history">
+              <div className="prediction-history-row heading" role="row">
+                <span>Time</span><span>Prediction</span><span>Confidence</span><span>Outcome</span><span>Match</span><span>Source</span><span>Feedback</span>
+              </div>
+              {history.data.slice(0, 8).map((prediction) => (
+                <div className="prediction-history-row" role="row" key={prediction.id}>
+                  <time dateTime={new Date(prediction.createdAt * 1000).toISOString()}>{formatPredictionTime(prediction.createdAt)}</time>
+                  <strong>{prediction.intent}</strong>
+                  <span>{Math.round(prediction.confidence * 100)}%</span>
+                  <span>{prediction.evaluationStatus}</span>
+                  <span>{prediction.matchScore === undefined ? "—" : formatPercentage(prediction.matchScore * 100)}</span>
+                  <span>{prediction.source}</span>
+                  <span>{prediction.userFeedback ?? "—"}</span>
+                </div>
+              ))}
+            </div>
+          ) : <p className="status-detail">No prediction records yet.</p>}
+        </>
+      ) : null}
+    </section>
   );
 }
 

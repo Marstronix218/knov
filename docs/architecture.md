@@ -14,10 +14,10 @@ There is no Knov-hosted backend in the alpha.
 | --- | --- | --- |
 | React/Vite interface | `apps/desktop/src` | Onboarding, dashboard, history, profile, assistant, and settings |
 | Tauri/Rust core | `apps/desktop/src-tauri/src` | IPC commands, collection, Chrome import, retention, SQLite, Keychain, scheduling, and provider calls |
-| SQLite store | Tauri application-data directory | Activity, settings, profiles, corrections, recommendations, local inference metrics, and extension pairing state |
+| SQLite store | Tauri application-data directory | Activity, settings, profiles, corrections, recommendations, predictions and evaluations, local inference metrics, and extension pairing state |
 | Optional Chrome extension | `apps/extension` | Experimental active-tab URL/title timing, exclusions, pause, and local transport |
 | Optional Native Messaging helper | `apps/desktop/src-tauri/src/bin/knov-native-host.rs` | Chrome stdio framing and forwarding to the running Rust core |
-| OpenAI, Anthropic, or Amazon Bedrock | external | Profile generation, recommendations, and assistant responses |
+| OpenAI, Anthropic, or Amazon Bedrock | external | Profile generation, recommendations, prediction candidates, and assistant responses |
 
 No Swift helper is currently used.
 
@@ -40,7 +40,7 @@ Chrome tabs --> optional extension --> local bridge --> SQLite
                            selected BYOK AI provider
                                             |
                                             v
-                             local profile/recommendations
+                     local profile/recommendations/predictions
 ```
 
 The frontend calls typed Tauri commands through `invoke`. It does not open the
@@ -115,6 +115,8 @@ Main stored records:
 - separately stored authoritative user corrections
 - pairing token, first authenticated extension ID, and last-seen timestamp
 - local context-economics records for completed assistant queries
+- prediction candidates, sanitized state summaries, outcomes, evaluation
+  scores, and optional user feedback
 
 Chat messages are held in frontend memory for the current session and are not
 persisted by Knov.
@@ -138,6 +140,31 @@ day when a provider and credential are available. This also provides catch-up
 after sleep or restart. Manual refresh uses the same provider path. A successful
 first refresh deletes bootstrap activity older than 30 days.
 
+## Prediction Engine
+
+The opt-in Prediction Experiment extends the same frontend-to-Rust-to-SQLite
+path. Rust constructs a normalized current-work state from recent, non-excluded
+activity and semantic threads, retrieves a small set of similar historical
+sequences locally, and creates a deterministic baseline. The configured BYOK
+provider can return up to three structured candidates from a minimized,
+sanitized form of that context. React does not query activity or prediction
+tables and never receives provider credentials.
+
+Prediction triggering is intentionally conservative. The experiment is off by
+default, respects collection pause, and requires useful recent context. A
+15-minute default cooldown limits scheduled prediction batches; the stored
+value is constrained to 10–120 minutes. An in-flight guard prevents overlapping
+provider requests. Provider, parsing, persistence, or evaluation failures
+remain isolated from collection, profile refresh, chat, and the existing Now
+experience.
+
+After a candidate's horizon, Rust compares it with subsequent local activity.
+The deterministic evaluator considers supported thread, application, domain,
+resource, and semantic-overlap signals and stores a score from 0 to 1. Provider
+and heuristic candidates share the same persistence and evaluation path so the
+technical alpha can compare their top-ranked results. See [Prediction
+Engine](prediction-engine.md) for the detailed flow and schema.
+
 ## Current implementation boundaries
 
 - Chrome history import is the baseline browser integration; Safari and Firefox
@@ -151,6 +178,9 @@ first refresh deletes bootstrap activity older than 30 days.
   plugin.
 - Behavioral guidance is suppressed during generation and dashboard display
   when disabled.
+- The Prediction Experiment is disabled by default. It prepares only safe
+  existing Knov threads/resources for user-initiated resumption; it does not
+  execute arbitrary actions.
 - Provider-key removal is available in Settings.
 - Profile summary editing, inferred-item suppression, and editable authoritative
   corrections are available locally.

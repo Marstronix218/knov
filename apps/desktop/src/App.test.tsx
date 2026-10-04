@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { api } from "./lib/api";
-import { mockBrowsers, mockDashboard, mockProfile, mockSettings } from "./lib/mockData";
+import { mockBrowsers, mockDashboard, mockPredictionDashboard, mockProfile, mockSettings } from "./lib/mockData";
 import type { ActivityEvent, ChatMessage, ChatRunResult, ProfileData } from "./types";
 
 function clone<T>(value: T): T {
@@ -51,6 +51,10 @@ function stubApi() {
   sessionStorage.clear();
   localStorage.removeItem("knov.selected-thread");
   vi.spyOn(api, "settings").mockResolvedValue(clone(mockSettings));
+  vi.spyOn(api, "predictionsDashboard").mockResolvedValue(clone(mockPredictionDashboard));
+  vi.spyOn(api, "predictionHistory").mockResolvedValue(clone(mockPredictionDashboard.predictions));
+  vi.spyOn(api, "generatePredictions").mockResolvedValue({ ...clone(mockPredictionDashboard), enabled: true });
+  vi.spyOn(api, "recordPredictionFeedback").mockResolvedValue(undefined);
   vi.spyOn(api, "openResource").mockResolvedValue(undefined);
   vi.spyOn(api, "openApplication").mockResolvedValue(undefined);
   vi.spyOn(api, "activityIcon").mockResolvedValue(null);
@@ -420,6 +424,83 @@ describe("dashboard", () => {
     await renderRoute("#/dashboard");
 
     expect(await screen.findAllByText(/Visual Studio Code · Modified App\.tsx ·/)).not.toHaveLength(0);
+  });
+});
+
+describe("prediction experiment", () => {
+  beforeEach(stubApi);
+
+  it("renders a high-confidence pending prediction with evidence", async () => {
+    vi.mocked(api.predictionsDashboard).mockResolvedValue({
+      ...clone(mockPredictionDashboard),
+      enabled: true,
+    });
+
+    await renderRoute("#/dashboard");
+
+    const predictionHeading = await screen.findByRole("heading", { name: "Continue validating the Knov permission bridge" });
+    const section = predictionHeading.closest("section")!;
+    expect(predictionHeading).toBeInTheDocument();
+    expect(within(section).getByText("78% confidence")).toBeInTheDocument();
+    expect(within(section).getByText("Recent Tauri security reference")).toBeInTheDocument();
+    expect(within(section).getByRole("button", { name: /Resume predicted work/ })).toBeInTheDocument();
+  });
+
+  it("keeps low-confidence predictions in shadow mode", async () => {
+    vi.mocked(api.predictionsDashboard).mockResolvedValue({
+      ...clone(mockPredictionDashboard),
+      enabled: true,
+      predictions: [{ ...clone(mockPredictionDashboard.predictions[0]), confidence: 0.64 }],
+    });
+
+    await renderRoute("#/dashboard");
+    await screen.findByRole("heading", { name: "Pick up where you left off." });
+
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Likely next" })).not.toBeInTheDocument());
+    expect(screen.queryByText("Continue validating the Knov permission bridge")).not.toBeInTheDocument();
+  });
+
+  it("records explicit prediction feedback locally", async () => {
+    vi.mocked(api.predictionsDashboard).mockResolvedValue({
+      ...clone(mockPredictionDashboard),
+      enabled: true,
+    });
+
+    await renderRoute("#/dashboard");
+    const predictionHeading = await screen.findByRole("heading", { name: "Continue validating the Knov permission bridge" });
+    const section = predictionHeading.closest("section")!;
+    fireEvent.click(within(section).getByRole("button", { name: "Not what I’m doing" }));
+
+    await waitFor(() => {
+      expect(api.recordPredictionFeedback).toHaveBeenCalledWith("prediction-provider-1", "incorrect");
+      expect(within(section).getByRole("status")).toHaveTextContent("stored locally for evaluation");
+    });
+  });
+
+  it("shows a non-blocking loading state", async () => {
+    vi.mocked(api.predictionsDashboard).mockReturnValue(new Promise(() => undefined));
+
+    await renderRoute("#/dashboard");
+
+    expect(await screen.findByText("Checking for a likely next step…")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Knov implementation" })).toBeInTheDocument();
+  });
+
+  it("shows a non-blocking error state", async () => {
+    vi.mocked(api.predictionsDashboard).mockRejectedValue(new Error("prediction service unavailable"));
+
+    await renderRoute("#/dashboard");
+
+    expect(await screen.findByText(/Likely next is unavailable/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Knov implementation" })).toBeInTheDocument();
+  });
+
+  it("shows the default-off disabled state in Settings", async () => {
+    await renderRoute("#/settings");
+
+    expect(await screen.findByText("Experiment disabled")).toBeInTheDocument();
+    expect(screen.getByText("No new prediction sets are generated or shown on Now.")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Prediction experiment/ })).not.toBeChecked();
   });
 });
 

@@ -1,8 +1,8 @@
 # Privacy model
 
 Knov is local-first, not fully local. Raw activity is stored on the Mac, but
-profile generation, recommendations, connection tests, and chat use the
-user-selected OpenAI, Anthropic, or Amazon Bedrock API.
+profile generation, recommendations, prediction generation, connection tests,
+and chat use the user-selected OpenAI, Anthropic, or Amazon Bedrock API.
 
 ## What is collected
 
@@ -39,6 +39,8 @@ copies it outside Knov:
 - detailed activity events and dashboard history
 - complete imported URLs, titles, and extracted search queries
 - generated profile versions, recommendations, and corrections
+- prediction candidates, sanitized state summaries, observed outcomes,
+  evaluation scores, and optional feedback
 - settings and Chrome pairing state
 - allowlisted alpha outcome events such as setup completion, thread resume/copy,
   and useful/wrong/not-now feedback; these contain only an event type, local
@@ -56,6 +58,7 @@ provider credential.
 | Anthropic connection test | API key plus a minimal `Reply OK` message |
 | Amazon Bedrock connection test | API key plus a minimal model-specific token-count request |
 | Profile refresh | Aggregated activity digest and all authoritative corrections |
+| Prediction generation | Minimized current-work features and a small set of sanitized historical patterns needed to produce candidates |
 | Chat | Locally retrieved profile facts, query-specific aggregates, bounded conversation, new message, and sanitized evidence from the explicitly selected thread |
 
 The profiling digest includes app names, domain-only website identifiers,
@@ -73,6 +76,13 @@ Requests go from the Rust core directly to the selected provider; there is no
 Knov proxy or analytics service. OpenAI requests set `store: false`.
 Provider-side processing and retention remain governed by the selected
 provider's API terms and account settings.
+
+Prediction requests do not contain complete browsing history, full URLs,
+absolute local paths, credentials, excluded activity, or unrelated historical
+events. The raw provider prompt is not stored. Historical retrieval, the
+heuristic baseline, outcome evaluation, aggregate accuracy metrics, and user
+feedback remain local. Disabling the experiment stops new prediction requests;
+pausing collection also suppresses prediction generation.
 
 Rendering activity history does not contact recorded websites. Knov uses local
 application icons or letter placeholders, and resource previews remain
@@ -98,6 +108,8 @@ and should not be used for a distributed alpha build.
 - Temporary bootstrap data is deleted only after the first profile refresh
   succeeds. A failed or unavailable provider leaves it in place for retry.
 - Profiles and corrections remain until removed through the app's controls.
+- Predictions, evaluations, and feedback remain local until removed through
+  **Delete everything**.
 - If installed, the extension does not persist completed activity events. An
   unfinished active session may exist in Chrome session storage.
 

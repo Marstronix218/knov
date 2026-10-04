@@ -106,6 +106,35 @@ CREATE TABLE product_events (
 CREATE INDEX product_events_time_idx ON product_events(occurred_at DESC);
 CREATE INDEX product_events_type_idx ON product_events(event_type, occurred_at DESC);
 "#,
+    r#"
+CREATE TABLE predictions (
+  id TEXT PRIMARY KEY,
+  batch_id TEXT NOT NULL,
+  rank INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  prediction_source TEXT NOT NULL CHECK(prediction_source IN ('heuristic','provider')),
+  predicted_intent TEXT NOT NULL,
+  predicted_action TEXT NOT NULL,
+  predicted_resource_type TEXT,
+  predicted_resource_label TEXT,
+  predicted_resource_locator TEXT,
+  predicted_thread_id TEXT,
+  confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1),
+  horizon_minutes INTEGER NOT NULL,
+  reasoning_summary TEXT NOT NULL,
+  evidence_json TEXT NOT NULL,
+  sanitized_state_summary TEXT NOT NULL,
+  evaluation_status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(evaluation_status IN ('pending','matched','partial','missed','expired')),
+  observed_outcome TEXT,
+  match_score REAL,
+  user_feedback TEXT,
+  feedback_reason TEXT,
+  evaluated_at INTEGER
+);
+CREATE INDEX predictions_created_idx ON predictions(created_at DESC);
+CREATE INDEX predictions_pending_idx ON predictions(evaluation_status, created_at);
+"#,
 ];
 
 pub struct Database {
@@ -153,7 +182,7 @@ impl Database {
         Ok(db)
     }
 
-    fn conn(&self) -> MutexGuard<'_, Connection> {
+    pub(crate) fn conn(&self) -> MutexGuard<'_, Connection> {
         self.connection.lock().unwrap_or_else(|e| e.into_inner())
     }
 
@@ -842,6 +871,7 @@ impl Database {
             "refresh_runs",
             "inference_runs",
             "product_events",
+            "predictions",
             "extension_state",
             "settings",
         ] {
