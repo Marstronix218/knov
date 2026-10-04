@@ -25,6 +25,10 @@ use tauri_plugin_autostart::ManagerExt;
 use uuid::Uuid;
 
 use crate::{
+    agent::{
+        self, ActionDecision, AgentOverview, AgentRun, AutonomyOverview, GrantRequest,
+        ProposalResponse, Skill, SkillUpdate, Workflow,
+    },
     analytics::{estimated_cost_usd, estimated_tokens, provider_scaled_measurement, InferenceRun},
     context::{
         build_baseline_context, build_optimized_context_package, compose_measured_prompt,
@@ -39,7 +43,9 @@ use crate::{
     },
     platform::{
         collection_status, discover_chrome_profiles, ensure_pairing_token,
-        import_selected_chrome_history, recent_editor_workspace_changes, RuntimeStatus,
+        import_selected_chrome_history, normalized_application_name, open_external_url,
+        open_native_application, recent_editor_workspace_changes, reopenable_web_url,
+        RuntimeStatus,
     },
     prediction::{self, PredictionDashboard, PredictionHistoryItem},
     providers::ProviderClient,
@@ -52,6 +58,8 @@ pub struct AppState {
     pub runtime: Arc<RwLock<RuntimeStatus>>,
     pub refresh_lock: Arc<AtomicBool>,
     pub prediction_lock: Arc<AtomicBool>,
+    pub agent_host: Arc<dyn agent::ActionHost>,
+    pub agent_lock: Arc<AtomicBool>,
 }
 
 fn acquire_prediction(lock: &Arc<AtomicBool>) -> AppResult<RefreshPermit> {
@@ -410,21 +418,6 @@ fn activity_preview(value: &str) -> AppResult<ActivityPreview> {
     })
 }
 
-fn reopenable_web_url(value: &str) -> AppResult<url::Url> {
-    let parsed = url::Url::parse(value.trim())
-        .map_err(|_| AppError::InvalidInput("The resource URL is invalid.".into()))?;
-    if !matches!(parsed.scheme(), "http" | "https")
-        || parsed.host_str().is_none()
-        || !parsed.username().is_empty()
-        || parsed.password().is_some()
-    {
-        return Err(AppError::InvalidInput(
-            "Only HTTP and HTTPS resources without credentials can be reopened.".into(),
-        ));
-    }
-    Ok(parsed)
-}
-
 #[tauri::command]
 pub fn open_resource(url: String) -> AppResult<()> {
     let url = reopenable_web_url(&url)?;
@@ -438,25 +431,6 @@ pub fn open_resource(url: String) -> AppResult<()> {
     }
 }
 
-fn normalized_application_name(value: &str) -> AppResult<String> {
-    let app_name = value.trim();
-    if app_name.is_empty()
-        || app_name.chars().count() > 128
-        || value.chars().any(char::is_control)
-        || app_name.contains(['/', '\\'])
-        || app_name.starts_with('-')
-        || matches!(app_name, "." | "..")
-    {
-        return Err(AppError::InvalidInput(
-            "The application name is invalid.".into(),
-        ));
-    }
-    Ok(match app_name {
-        "Code" => "Visual Studio Code".into(),
-        _ => app_name.into(),
-    })
-}
-
 #[tauri::command]
 pub fn open_application(app_name: String) -> AppResult<()> {
     let app_name = normalized_application_name(&app_name)?;
@@ -468,37 +442,6 @@ pub fn open_application(app_name: String) -> AppResult<()> {
             "The system could not open the application.".into(),
         ))
     }
-}
-
-#[cfg(target_os = "macos")]
-fn open_native_application(app_name: &str) -> AppResult<std::process::ExitStatus> {
-    Ok(Command::new("/usr/bin/open")
-        .args(["-a", app_name])
-        .status()?)
-}
-
-#[cfg(not(target_os = "macos"))]
-fn open_native_application(_app_name: &str) -> AppResult<std::process::ExitStatus> {
-    Err(AppError::InvalidInput(
-        "Opening native applications is currently supported only on macOS.".into(),
-    ))
-}
-
-#[cfg(target_os = "macos")]
-fn open_external_url(url: &str) -> std::io::Result<std::process::ExitStatus> {
-    Command::new("/usr/bin/open").arg(url).status()
-}
-
-#[cfg(target_os = "windows")]
-fn open_external_url(url: &str) -> std::io::Result<std::process::ExitStatus> {
-    Command::new("rundll32")
-        .args(["url.dll,FileProtocolHandler", url])
-        .status()
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-fn open_external_url(url: &str) -> std::io::Result<std::process::ExitStatus> {
-    Command::new("xdg-open").arg(url).status()
 }
 
 fn youtube_video_id(value: &str) -> Option<String> {
@@ -696,23 +639,47 @@ pub fn request_accessibility_permission(state: State<'_, AppState>) -> bool {
 
 #[tauri::command]
 pub fn set_browser_profiles(profile_ids: Vec<String>, state: State<'_, AppState>) -> AppResult<()> {
-    let available = discover_chrome_profiles(&state.db)?;
-    if profile_ids.is_empty() {
-        return Err(AppError::InvalidInput(
-            "Select at least one Chrome profile.".into(),
-        ));
-    }
-    if profile_ids
+    let available = available_profile_ids(&state.db)?;
+    let mut settings = state.db.settings()?;
+    settings.selected_chrome_profiles =
+        validated_profile_selection(&profile_ids, &available, &settings.selected_chrome_profiles)?;
+    state.db.save_settings(&settings)
+}
+
+fn available_profile_ids(db: &Database) -> AppResult<Vec<String>> {
+    Ok(discover_chrome_profiles(db)?
+        .into_iter()
+        .map(|profile| profile.id)
+        .collect())
+}
+
+/// A profile deleted in Chrome after it was selected is dropped rather than
+/// blocking every later change; an ID that was never selected must exist.
+fn validated_profile_selection(
+    requested: &[String],
+    available: &[String],
+    previous: &[String],
+) -> AppResult<Vec<String>> {
+    if requested
         .iter()
-        .any(|id| !available.iter().any(|profile| &profile.id == id))
+        .any(|id| !available.contains(id) && !previous.contains(id))
     {
         return Err(AppError::InvalidInput(
             "A selected Chrome profile is unavailable.".into(),
         ));
     }
-    let mut settings = state.db.settings()?;
-    settings.selected_chrome_profiles = profile_ids;
-    state.db.save_settings(&settings)
+    let mut seen = HashSet::new();
+    let selection = requested
+        .iter()
+        .filter(|id| available.contains(id) && seen.insert(id.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if selection.is_empty() {
+        return Err(AppError::InvalidInput(
+            "Select at least one Chrome profile.".into(),
+        ));
+    }
+    Ok(selection)
 }
 
 #[tauri::command]
@@ -744,6 +711,23 @@ pub async fn start_bootstrap(state: State<'_, AppState>) -> AppResult<Value> {
             Err(error)
         }
     }
+}
+
+/// First-run path without an AI provider: imports only the 30-day retention
+/// window (no temporary bootstrap data) so local threads, workflows, and the
+/// agent work immediately. Profiles and chat wait until a key is added.
+#[tauri::command]
+pub async fn start_local_bootstrap(state: State<'_, AppState>) -> AppResult<Value> {
+    let _permit = acquire_refresh(&state.refresh_lock)?;
+    let imported = import_selected_chrome_history(&state.db, 30)?;
+    let value = json!({
+        "phase":"complete",
+        "importedEvents":imported,
+        "progress":100,
+        "message":"Local context is ready. Connect an AI provider later for profiles and chat."
+    });
+    state.db.set_setting("bootstrap_status", &value)?;
+    Ok(value)
 }
 
 #[tauri::command]
@@ -899,6 +883,12 @@ pub fn save_settings(
     {
         current.prediction_display_threshold = threshold.clamp(0.0, 1.0);
     }
+    if let Some(budget) = settings
+        .get("agentMaxActionsPerHour")
+        .and_then(Value::as_i64)
+    {
+        current.agent_max_actions_per_hour = budget.clamp(1, 200);
+    }
     if let Some(enabled) = settings.get("launchAtLogin").and_then(Value::as_bool) {
         current.launch_at_login = enabled;
         if enabled {
@@ -924,7 +914,11 @@ pub fn save_settings(
         .get("selectedBrowserProfileIds")
         .and_then(Value::as_array)
     {
-        current.selected_chrome_profiles = string_array(values);
+        current.selected_chrome_profiles = validated_profile_selection(
+            &string_array(values),
+            &available_profile_ids(&state.db)?,
+            &current.selected_chrome_profiles,
+        )?;
     }
     state.db.save_settings(&current)?;
     settings_to_ui(&state)
@@ -1003,6 +997,227 @@ pub fn record_prediction_feedback(
         return Err(AppError::InvalidInput("Prediction was not found.".into()));
     }
     Ok(())
+}
+
+fn unix_now() -> i64 {
+    Utc::now().timestamp()
+}
+
+fn kick_executor(state: &AppState) {
+    agent::spawn_executor(
+        state.db.clone(),
+        state.agent_host.clone(),
+        state.agent_lock.clone(),
+    );
+}
+
+#[tauri::command]
+pub async fn get_agent_overview(state: State<'_, AppState>) -> AppResult<AgentOverview> {
+    let db = state.db.clone();
+    blocking(move || {
+        let settings = db.settings()?;
+        agent::overview(&db, &settings, unix_now())
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn review_goal(
+    goal_id: String,
+    status: String,
+    title: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<AgentOverview> {
+    let db = state.db.clone();
+    blocking(move || {
+        let settings = db.settings()?;
+        agent::review_goal(
+            &db,
+            &settings,
+            &goal_id,
+            &status,
+            title.as_deref(),
+            unix_now(),
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn get_workflows(state: State<'_, AppState>) -> AppResult<Vec<Workflow>> {
+    agent::workflows(&state.db)
+}
+
+#[tauri::command]
+pub async fn rescan_workflows(state: State<'_, AppState>) -> AppResult<Vec<Workflow>> {
+    let db = state.db.clone();
+    blocking(move || {
+        let settings = db.settings()?;
+        agent::refresh_workflows(&db, &settings, unix_now())
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn review_workflow(
+    workflow_id: String,
+    status: String,
+    title: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<Workflow> {
+    agent::review_workflow(
+        &state.db,
+        &workflow_id,
+        &status,
+        title.as_deref(),
+        unix_now(),
+    )
+}
+
+#[tauri::command]
+pub fn get_skills(state: State<'_, AppState>) -> AppResult<Vec<Skill>> {
+    agent::skills(&state.db)
+}
+
+#[tauri::command]
+pub fn create_skill(workflow_id: String, state: State<'_, AppState>) -> AppResult<Skill> {
+    agent::create_skill(&state.db, &workflow_id, unix_now())
+}
+
+#[tauri::command]
+pub fn update_skill(skill: SkillUpdate, state: State<'_, AppState>) -> AppResult<Skill> {
+    agent::update_skill(&state.db, skill, unix_now())
+}
+
+#[tauri::command]
+pub fn delete_skill(skill_id: String, state: State<'_, AppState>) -> AppResult<()> {
+    agent::delete_skill(&state.db, &skill_id, unix_now())
+}
+
+/// Plans a manual run and stores it for review. Nothing executes until the
+/// user approves it with `decide_agent_run`.
+#[tauri::command]
+pub async fn preview_skill_run(
+    skill_id: String,
+    state: State<'_, AppState>,
+) -> AppResult<AgentRun> {
+    let db = state.db.clone();
+    blocking(move || {
+        let settings = db.settings()?;
+        agent::start_run(&db, &settings, &skill_id, "manual", unix_now())
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn decide_agent_run(
+    run_id: String,
+    decisions: Vec<ActionDecision>,
+    state: State<'_, AppState>,
+) -> AppResult<AgentRun> {
+    let run = agent::decide_run(&state.db, &run_id, &decisions, unix_now())?;
+    kick_executor(&state);
+    Ok(run)
+}
+
+#[tauri::command]
+pub fn cancel_agent_run(run_id: String, state: State<'_, AppState>) -> AppResult<AgentRun> {
+    agent::cancel_run(&state.db, &run_id, unix_now())
+}
+
+#[tauri::command]
+pub fn acknowledge_agent_run(run_id: String, state: State<'_, AppState>) -> AppResult<()> {
+    agent::acknowledge_run(&state.db, &run_id, unix_now())
+}
+
+#[tauri::command]
+pub fn get_agent_runs(limit: Option<i64>, state: State<'_, AppState>) -> AppResult<Vec<AgentRun>> {
+    agent::runs(&state.db, limit.unwrap_or(30))
+}
+
+#[tauri::command]
+pub fn get_agent_run(run_id: String, state: State<'_, AppState>) -> AppResult<AgentRun> {
+    agent::run(&state.db, &run_id)
+}
+
+#[tauri::command]
+pub fn rollback_agent_action(action_id: String, state: State<'_, AppState>) -> AppResult<AgentRun> {
+    agent::rollback_action(&state.db, state.agent_host.as_ref(), &action_id, unix_now())
+}
+
+#[tauri::command]
+pub fn open_agent_draft(action_id: String, state: State<'_, AppState>) -> AppResult<()> {
+    agent::open_draft(&state.db, state.agent_host.as_ref(), &action_id)
+}
+
+#[tauri::command]
+pub fn get_autonomy(state: State<'_, AppState>) -> AppResult<AutonomyOverview> {
+    let settings = state.db.settings()?;
+    agent::autonomy(&state.db, &settings, unix_now())
+}
+
+/// The agent kill switch. Pausing also stops anything already approved but
+/// not yet started; collection is unaffected.
+#[tauri::command]
+pub fn set_agent_paused(paused: bool, state: State<'_, AppState>) -> AppResult<AutonomyOverview> {
+    let mut settings = state.db.settings()?;
+    settings.agent_paused = paused;
+    state.db.save_settings(&settings)?;
+    kick_executor(&state);
+    agent::autonomy(&state.db, &settings, unix_now())
+}
+
+#[tauri::command]
+pub fn save_autonomy_grant(
+    grant: GrantRequest,
+    state: State<'_, AppState>,
+) -> AppResult<AutonomyOverview> {
+    let settings = state.db.settings()?;
+    agent::put_grant(&state.db, &settings, grant, unix_now())
+}
+
+#[tauri::command]
+pub fn revoke_autonomy_grant(
+    grant_id: String,
+    state: State<'_, AppState>,
+) -> AppResult<AutonomyOverview> {
+    let settings = state.db.settings()?;
+    agent::revoke_grant(&state.db, &settings, &grant_id, unix_now())
+}
+
+#[tauri::command]
+pub fn respond_autonomy_proposal(
+    response: ProposalResponse,
+    state: State<'_, AppState>,
+) -> AppResult<AutonomyOverview> {
+    let settings = state.db.settings()?;
+    agent::respond_proposal(&state.db, &settings, response, unix_now())
+}
+
+#[tauri::command]
+pub fn approve_agent_workspace(
+    path: String,
+    state: State<'_, AppState>,
+) -> AppResult<AutonomyOverview> {
+    let settings = state.db.settings()?;
+    agent::approve_workspace(&state.db, &settings, &path, unix_now())
+}
+
+#[tauri::command]
+pub fn remove_agent_workspace(
+    workspace_id: String,
+    state: State<'_, AppState>,
+) -> AppResult<AutonomyOverview> {
+    let settings = state.db.settings()?;
+    agent::remove_workspace(&state.db, &settings, &workspace_id, unix_now())
+}
+
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> AppResult<T> + Send + 'static,
+) -> AppResult<T> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|error| AppError::InvalidInput(format!("Background work failed: {error}")))?
 }
 
 #[derive(Deserialize)]
@@ -1278,6 +1493,10 @@ pub fn delete_all_data(state: State<'_, AppState>) -> AppResult<()> {
     state.providers.delete_key("anthropic")?;
     state.providers.delete_key("bedrock")?;
     state.db.delete_all_local_data()?;
+    let drafts = state.agent_host.drafts_dir();
+    if drafts.exists() {
+        std::fs::remove_dir_all(drafts)?;
+    }
     ensure_pairing_token(&state.db)?;
     if let Some(home) = dirs::home_dir() {
         let manifest = home.join(
@@ -1302,11 +1521,9 @@ pub fn start_scheduler(state: Arc<AppState>) {
         {
             eprintln!("scheduled prediction evaluation did not complete: {error}");
         }
-        if prediction_generation_due(&state.db, &settings)
-            && state
-                .providers
-                .has_key(settings.selected_provider.as_deref().unwrap_or_default())
-        {
+        // The baseline and workflow sources are local, so a provider key is
+        // optional; provider candidates are added only when one is configured.
+        if prediction_generation_due(&state.db, &settings) {
             if let Ok(_permit) = acquire_prediction(&state.prediction_lock) {
                 if let Err(error) = tauri::async_runtime::block_on(
                     prediction::generate_prediction_set(&state.db, &state.providers, &settings),
@@ -1314,6 +1531,14 @@ pub fn start_scheduler(state: Arc<AppState>) {
                     eprintln!("scheduled prediction generation did not complete: {error}");
                 }
             }
+        }
+        if let Err(error) = agent::scheduler_tick(
+            &state.db,
+            &state.agent_host,
+            &state.agent_lock,
+            Utc::now().timestamp(),
+        ) {
+            eprintln!("agent scheduler tick did not complete: {error}");
         }
         let today = Local::now().format("%Y-%m-%d").to_string();
         if !scheduled_refresh_due(&settings, &today) {
@@ -1369,6 +1594,8 @@ fn settings_to_ui(state: &AppState) -> AppResult<Value> {
         "behavioralGuidanceEnabled":settings.behavioral_guidance_enabled,
         "predictionExperimentEnabled":settings.prediction_experiment_enabled,
         "predictionDisplayThreshold":settings.prediction_display_threshold,
+        "agentPaused":settings.agent_paused,
+        "agentMaxActionsPerHour":settings.agent_max_actions_per_hour,
         "launchAtLogin":settings.launch_at_login,
         "selectedBrowserProfileIds":settings.selected_chrome_profiles,
         "excludedApps":settings.excluded_apps,
@@ -1758,6 +1985,39 @@ fn format_duration(seconds: i64) -> String {
 mod tests {
     use super::*;
     use crate::models::{ActivityEvent, ActivitySource};
+
+    #[test]
+    fn profile_selection_drops_profiles_deleted_in_chrome_but_rejects_unknown_ones() {
+        let ids = |values: &[&str]| {
+            values
+                .iter()
+                .map(|value| value.to_string())
+                .collect::<Vec<_>>()
+        };
+        let available = ids(&["Default", "Profile 13", "Profile 22"]);
+        let previous = ids(&["Profile 7", "Default"]);
+
+        // Adding a profile works even though a previously selected one is gone.
+        assert_eq!(
+            validated_profile_selection(
+                &ids(&["Profile 7", "Default", "Profile 22"]),
+                &available,
+                &previous
+            )
+            .unwrap(),
+            ids(&["Default", "Profile 22"])
+        );
+        // Removing works, and duplicates collapse.
+        assert_eq!(
+            validated_profile_selection(&ids(&["Profile 13", "Profile 13"]), &available, &previous)
+                .unwrap(),
+            ids(&["Profile 13"])
+        );
+        // Never-seen IDs and selections that would end up empty are rejected.
+        assert!(validated_profile_selection(&ids(&["Profile 99"]), &available, &previous).is_err());
+        assert!(validated_profile_selection(&ids(&["Profile 7"]), &available, &previous).is_err());
+        assert!(validated_profile_selection(&[], &available, &previous).is_err());
+    }
 
     #[test]
     fn scheduled_refresh_waits_for_bootstrap_and_runs_once_per_day() {

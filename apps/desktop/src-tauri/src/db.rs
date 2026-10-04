@@ -16,6 +16,35 @@ use crate::{
     },
 };
 
+macro_rules! predictions_v1_columns {
+    () => {
+        "id TEXT PRIMARY KEY, batch_id TEXT NOT NULL, rank INTEGER NOT NULL, created_at INTEGER NOT NULL,
+  prediction_source TEXT NOT NULL CHECK(prediction_source IN ('heuristic','provider')),
+  predicted_intent TEXT NOT NULL, predicted_action TEXT NOT NULL, predicted_resource_type TEXT,
+  predicted_resource_label TEXT, predicted_resource_locator TEXT, predicted_thread_id TEXT,
+  confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1), horizon_minutes INTEGER NOT NULL,
+  reasoning_summary TEXT NOT NULL, evidence_json TEXT NOT NULL, sanitized_state_summary TEXT NOT NULL,
+  evaluation_status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(evaluation_status IN ('pending','matched','partial','missed','expired')),
+  observed_outcome TEXT, match_score REAL, user_feedback TEXT, feedback_reason TEXT, evaluated_at INTEGER"
+    };
+}
+
+macro_rules! predictions_v2_columns {
+    () => {
+        "id TEXT PRIMARY KEY, batch_id TEXT NOT NULL, rank INTEGER NOT NULL, created_at INTEGER NOT NULL,
+  prediction_source TEXT NOT NULL CHECK(prediction_source IN ('heuristic','provider','workflow')),
+  predicted_intent TEXT NOT NULL, predicted_action TEXT NOT NULL, predicted_resource_type TEXT,
+  predicted_resource_label TEXT, predicted_resource_locator TEXT, predicted_thread_id TEXT,
+  predicted_goal TEXT, predicted_workflow_id TEXT,
+  confidence REAL NOT NULL CHECK(confidence >= 0 AND confidence <= 1), horizon_minutes INTEGER NOT NULL,
+  reasoning_summary TEXT NOT NULL, evidence_json TEXT NOT NULL, sanitized_state_summary TEXT NOT NULL,
+  evaluation_status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(evaluation_status IN ('pending','matched','partial','missed','expired')),
+  observed_outcome TEXT, match_score REAL, user_feedback TEXT, feedback_reason TEXT, evaluated_at INTEGER"
+    };
+}
+
 const MIGRATIONS: &[&str] = &[
     r#"
 CREATE TABLE activity_events (
@@ -135,7 +164,151 @@ CREATE TABLE predictions (
 CREATE INDEX predictions_created_idx ON predictions(created_at DESC);
 CREATE INDEX predictions_pending_idx ON predictions(evaluation_status, created_at);
 "#,
+    r#"
+CREATE TABLE IF NOT EXISTS workflows (
+  id TEXT PRIMARY KEY,
+  generated_title TEXT NOT NULL,
+  user_title TEXT,
+  status TEXT NOT NULL DEFAULT 'discovered' CHECK(status IN ('discovered','confirmed','dismissed')),
+  active INTEGER NOT NULL DEFAULT 1,
+  steps_json TEXT NOT NULL,
+  stats_json TEXT NOT NULL,
+  evidence_json TEXT NOT NULL,
+  first_seen_at INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS skills (
+  id TEXT PRIMARY KEY,
+  workflow_id TEXT,
+  definition_json TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  last_triggered_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id TEXT PRIMARY KEY,
+  skill_id TEXT,
+  title TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK(origin IN ('manual','schedule','context')),
+  status TEXT NOT NULL,
+  on_exception TEXT NOT NULL DEFAULT 'stop',
+  state_json TEXT NOT NULL,
+  manual_steps_json TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  acknowledged_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS agent_runs_created_idx ON agent_runs(created_at DESC);
+CREATE INDEX IF NOT EXISTS agent_runs_status_idx ON agent_runs(status, created_at DESC);
+CREATE TABLE IF NOT EXISTS agent_actions (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES agent_runs(id),
+  step_id TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  action_type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  risk_class TEXT NOT NULL,
+  spec_json TEXT,
+  target_label TEXT NOT NULL,
+  rationale TEXT NOT NULL,
+  scope_kind TEXT NOT NULL,
+  scope_value TEXT,
+  scope_label TEXT NOT NULL,
+  decision TEXT NOT NULL,
+  decision_reason TEXT NOT NULL DEFAULT '',
+  grant_id TEXT,
+  status TEXT NOT NULL,
+  result_summary TEXT,
+  output_excerpt TEXT,
+  verification_json TEXT,
+  rollback_json TEXT,
+  created_at INTEGER NOT NULL,
+  started_at INTEGER,
+  finished_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS agent_actions_run_idx ON agent_actions(run_id, position);
+CREATE INDEX IF NOT EXISTS agent_actions_status_idx ON agent_actions(status, created_at);
+CREATE TABLE IF NOT EXISTS autonomy_grants (
+  id TEXT PRIMARY KEY,
+  action_type TEXT NOT NULL,
+  scope_kind TEXT NOT NULL CHECK(scope_kind IN ('global','skill','workspace')),
+  scope_value TEXT,
+  scope_label TEXT NOT NULL,
+  mode TEXT NOT NULL CHECK(mode IN ('auto','ask','never')),
+  source TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER,
+  revoked_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS autonomy_proposal_dismissals (
+  action_type TEXT NOT NULL,
+  scope_kind TEXT NOT NULL,
+  scope_value TEXT NOT NULL DEFAULT '',
+  approvals_at_dismissal INTEGER NOT NULL,
+  dismissed_at INTEGER NOT NULL,
+  PRIMARY KEY(action_type, scope_kind, scope_value)
+);
+CREATE TABLE IF NOT EXISTS approved_workspaces (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  path TEXT NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS goal_reviews (
+  id TEXT PRIMARY KEY,
+  status TEXT NOT NULL CHECK(status IN ('confirmed','dismissed','completed')),
+  user_title TEXT,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS state_snapshots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at INTEGER NOT NULL,
+  snapshot_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS state_snapshots_time_idx ON state_snapshots(created_at DESC);
+"#,
+    concat!(
+        // Databases whose migration history diverged may lack the table.
+        "CREATE TABLE IF NOT EXISTS predictions (",
+        predictions_v1_columns!(),
+        ");\n",
+        "CREATE TABLE predictions_next (",
+        predictions_v2_columns!(),
+        ");\n",
+        r#"
+INSERT INTO predictions_next (id,batch_id,rank,created_at,prediction_source,predicted_intent,
+  predicted_action,predicted_resource_type,predicted_resource_label,predicted_resource_locator,
+  predicted_thread_id,confidence,horizon_minutes,reasoning_summary,evidence_json,
+  sanitized_state_summary,evaluation_status,observed_outcome,match_score,user_feedback,
+  feedback_reason,evaluated_at)
+SELECT id,batch_id,rank,created_at,prediction_source,predicted_intent,predicted_action,
+  predicted_resource_type,predicted_resource_label,predicted_resource_locator,predicted_thread_id,
+  confidence,horizon_minutes,reasoning_summary,evidence_json,sanitized_state_summary,
+  evaluation_status,observed_outcome,match_score,user_feedback,feedback_reason,evaluated_at
+FROM predictions;
+DROP TABLE predictions;
+ALTER TABLE predictions_next RENAME TO predictions;
+CREATE INDEX predictions_created_idx ON predictions(created_at DESC);
+CREATE INDEX predictions_pending_idx ON predictions(evaluation_status, created_at);
+"#
+    ),
 ];
+
+/// Index of the idempotent agent-schema migration, re-applied after
+/// migrating so a database whose `user_version` diverged (for example from
+/// another branch sharing the app-data directory) still gets every table.
+const AGENT_SCHEMA_MIGRATION: usize = 6;
+
+const SCHEMA_REPAIR: &str = concat!(
+    "CREATE TABLE IF NOT EXISTS predictions (", predictions_v2_columns!(), ");\n",
+    "CREATE INDEX IF NOT EXISTS predictions_created_idx ON predictions(created_at DESC);\n",
+    "CREATE INDEX IF NOT EXISTS predictions_pending_idx ON predictions(evaluation_status, created_at);\n",
+    "CREATE TABLE IF NOT EXISTS product_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL,\n",
+    "  thread_id TEXT, occurred_at INTEGER NOT NULL);\n",
+);
 
 pub struct Database {
     connection: Mutex<Connection>,
@@ -195,6 +368,10 @@ impl Database {
             transaction.pragma_update(None, "user_version", index + 1)?;
             transaction.commit()?;
         }
+        let transaction = conn.transaction()?;
+        transaction.execute_batch(MIGRATIONS[AGENT_SCHEMA_MIGRATION])?;
+        transaction.execute_batch(SCHEMA_REPAIR)?;
+        transaction.commit()?;
         Ok(())
     }
 
@@ -368,7 +545,24 @@ impl Database {
         } else {
             "DELETE FROM activity_events WHERE occurred_at < ?1 AND is_bootstrap=0"
         };
-        Ok(self.conn().execute(sql, [cutoff])?)
+        let conn = self.conn();
+        let purged = conn.execute(sql, [cutoff])?;
+        // Derived agent state follows the same 30-day window; the action
+        // journal is an audit trail and is kept for 90 days.
+        conn.execute(
+            "DELETE FROM state_snapshots WHERE created_at < ?1",
+            [cutoff],
+        )?;
+        let journal_cutoff = now - 90 * 86_400;
+        conn.execute(
+            "DELETE FROM agent_actions WHERE run_id IN (SELECT id FROM agent_runs WHERE created_at < ?1)",
+            [journal_cutoff],
+        )?;
+        conn.execute(
+            "DELETE FROM agent_runs WHERE created_at < ?1",
+            [journal_cutoff],
+        )?;
+        Ok(purged)
     }
 
     pub fn profile(&self) -> AppResult<ProfileDocument> {
@@ -872,6 +1066,15 @@ impl Database {
             "inference_runs",
             "product_events",
             "predictions",
+            "agent_actions",
+            "agent_runs",
+            "skills",
+            "workflows",
+            "autonomy_grants",
+            "autonomy_proposal_dismissals",
+            "approved_workspaces",
+            "goal_reviews",
+            "state_snapshots",
             "extension_state",
             "settings",
         ] {
@@ -952,7 +1155,13 @@ impl Database {
         Ok(result)
     }
 
-    pub fn save_chrome_profiles(&self, profiles: &[(String, String, String)]) -> AppResult<()> {
+    /// Upserts discovered profiles. With `prune_missing`, rows for profiles
+    /// Chrome no longer lists are removed so they cannot be imported from.
+    pub fn save_chrome_profiles(
+        &self,
+        profiles: &[(String, String, String)],
+        prune_missing: bool,
+    ) -> AppResult<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
         for (id, name, path) in profiles {
@@ -961,6 +1170,20 @@ impl Database {
                  ON CONFLICT(id) DO UPDATE SET name=excluded.name,path=excluded.path",
                 params![id, name, path],
             )?;
+        }
+        if prune_missing {
+            let current = profiles
+                .iter()
+                .map(|(id, _, _)| id.as_str())
+                .collect::<HashSet<_>>();
+            let existing = {
+                let mut statement = tx.prepare("SELECT id FROM chrome_profiles")?;
+                let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+                rows.collect::<Result<Vec<_>, _>>()?
+            };
+            for id in existing.iter().filter(|id| !current.contains(id.as_str())) {
+                tx.execute("DELETE FROM chrome_profiles WHERE id=?1", [id])?;
+            }
         }
         tx.commit()?;
         Ok(())
@@ -1004,7 +1227,7 @@ fn upsert_event(conn: &Connection, event: &ActivityEvent, fingerprint: &str) -> 
     Ok(!existed)
 }
 
-fn map_activity(row: &rusqlite::Row<'_>) -> rusqlite::Result<ActivityEvent> {
+pub(crate) fn map_activity(row: &rusqlite::Row<'_>) -> rusqlite::Result<ActivityEvent> {
     let source: String = row.get(10)?;
     Ok(ActivityEvent {
         id: row.get(0)?,
@@ -1294,6 +1517,118 @@ mod tests {
             source: ActivitySource::AppFocus,
             is_bootstrap: bootstrap,
         }
+    }
+
+    #[test]
+    fn chrome_profile_rows_for_deleted_profiles_are_pruned_only_when_listed() {
+        let db = Database::in_memory().unwrap();
+        let row = |id: &str| (id.to_string(), id.to_string(), format!("/tmp/{id}"));
+        let count = |db: &Database| -> i64 {
+            db.conn()
+                .query_row("SELECT COUNT(*) FROM chrome_profiles", [], |row| row.get(0))
+                .unwrap()
+        };
+        db.save_chrome_profiles(&[row("Default"), row("Profile 7")], true)
+            .unwrap();
+        db.save_chrome_profiles(&[row("Default")], false).unwrap();
+        assert_eq!(count(&db), 2);
+        db.save_chrome_profiles(&[row("Default")], true).unwrap();
+        assert_eq!(count(&db), 1);
+    }
+
+    #[test]
+    fn divergent_schema_history_still_opens_with_every_required_table() {
+        // Mirrors a database where another branch used migration slots 5–6
+        // for unrelated tables, leaving user_version at 7 without predictions.
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("knov.sqlite3");
+        {
+            let conn = Connection::open(&path).unwrap();
+            for sql in &MIGRATIONS[..5] {
+                conn.execute_batch(sql).unwrap();
+            }
+            conn.execute_batch("CREATE TABLE business_records (id INTEGER PRIMARY KEY);")
+                .unwrap();
+            conn.pragma_update(None, "user_version", 7).unwrap();
+        }
+        let db = Database::open(&path).unwrap();
+        for table in [
+            "predictions",
+            "workflows",
+            "agent_runs",
+            "agent_actions",
+            "business_records",
+        ] {
+            let exists: bool = db
+                .conn()
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+                    [table],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert!(exists, "{table} should exist");
+        }
+        db.conn()
+            .execute(
+                "INSERT INTO predictions (id,batch_id,rank,created_at,prediction_source,predicted_intent,
+                   predicted_action,confidence,horizon_minutes,reasoning_summary,evidence_json,
+                   sanitized_state_summary) VALUES ('w','b',1,1,'workflow','I','A',0.5,20,'r','[]','{}')",
+                [],
+            )
+            .unwrap();
+        db.delete_all_local_data().unwrap();
+        drop(db);
+        // Reopening is idempotent.
+        Database::open(&path).unwrap();
+    }
+
+    #[test]
+    fn prediction_table_rebuild_preserves_rows_and_accepts_workflow_source() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("knov.sqlite3");
+        {
+            let conn = Connection::open(&path).unwrap();
+            for sql in &MIGRATIONS[..6] {
+                conn.execute_batch(sql).unwrap();
+            }
+            conn.pragma_update(None, "user_version", 6).unwrap();
+            conn.execute(
+                "INSERT INTO predictions (id,batch_id,rank,created_at,prediction_source,predicted_intent,
+                   predicted_action,confidence,horizon_minutes,reasoning_summary,evidence_json,
+                   sanitized_state_summary,user_feedback)
+                 VALUES ('old','b',1,10,'provider','Intent','Action',0.7,20,'why','[]','{}','correct')",
+                [],
+            )
+            .unwrap();
+        }
+        let db = Database::open(&path).unwrap();
+        let (intent, feedback, goal): (String, String, Option<String>) = db
+            .conn()
+            .query_row(
+                "SELECT predicted_intent,user_feedback,predicted_goal FROM predictions WHERE id='old'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (intent.as_str(), feedback.as_str(), goal),
+            ("Intent", "correct", None)
+        );
+        db.conn()
+            .execute(
+                "INSERT INTO predictions (id,batch_id,rank,created_at,prediction_source,predicted_intent,
+                   predicted_action,confidence,horizon_minutes,reasoning_summary,evidence_json,
+                   sanitized_state_summary,predicted_workflow_id)
+                 VALUES ('new','b',1,11,'workflow','Intent','Action',0.8,20,'why','[]','{}','wf-1')",
+                [],
+            )
+            .unwrap();
+        let version: usize = db
+            .conn()
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, MIGRATIONS.len());
     }
 
     #[test]

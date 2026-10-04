@@ -1,3 +1,4 @@
+mod agent;
 mod analytics;
 mod commands;
 mod context;
@@ -43,12 +44,19 @@ pub fn run() {
                 eprintln!("launch-at-login state could not be applied: {error}");
             }
             let runtime = Arc::new(RwLock::new(RuntimeStatus::default()));
+            if let Err(error) = agent::recover(&db, chrono::Utc::now().timestamp()) {
+                eprintln!("interrupted agent actions could not be closed: {error}");
+            }
+            let agent_host: Arc<dyn agent::ActionHost> =
+                Arc::new(agent::SystemHost::new(data_dir.join("drafts")));
             let state = AppState {
                 db: db.clone(),
                 providers: providers::ProviderClient::default(),
                 runtime: runtime.clone(),
                 refresh_lock: Arc::new(AtomicBool::new(false)),
                 prediction_lock: Arc::new(AtomicBool::new(false)),
+                agent_host,
+                agent_lock: Arc::new(AtomicBool::new(false)),
             };
             platform::start_collector(db.clone(), runtime);
             platform::start_local_metadata_collectors(db.clone());
@@ -62,6 +70,8 @@ pub fn run() {
                 runtime: state.runtime.clone(),
                 refresh_lock: state.refresh_lock.clone(),
                 prediction_lock: state.prediction_lock.clone(),
+                agent_host: state.agent_host.clone(),
+                agent_lock: state.agent_lock.clone(),
             }));
 
             let show = MenuItem::with_id(app, "show", "Show Knov", true, None::<&str>)?;
@@ -98,6 +108,7 @@ pub fn run() {
             commands::request_accessibility_permission,
             commands::set_browser_profiles,
             commands::start_bootstrap,
+            commands::start_local_bootstrap,
             commands::reimport_chrome_history,
             commands::refresh_profile,
             commands::save_profile_correction,
@@ -114,6 +125,30 @@ pub fn run() {
             commands::get_prediction_history,
             commands::generate_predictions,
             commands::record_prediction_feedback,
+            commands::get_agent_overview,
+            commands::review_goal,
+            commands::get_workflows,
+            commands::rescan_workflows,
+            commands::review_workflow,
+            commands::get_skills,
+            commands::create_skill,
+            commands::update_skill,
+            commands::delete_skill,
+            commands::preview_skill_run,
+            commands::decide_agent_run,
+            commands::cancel_agent_run,
+            commands::acknowledge_agent_run,
+            commands::get_agent_runs,
+            commands::get_agent_run,
+            commands::rollback_agent_action,
+            commands::open_agent_draft,
+            commands::get_autonomy,
+            commands::set_agent_paused,
+            commands::save_autonomy_grant,
+            commands::revoke_autonomy_grant,
+            commands::respond_autonomy_proposal,
+            commands::approve_agent_workspace,
+            commands::remove_agent_workspace,
             commands::chat,
             commands::get_pairing_info,
             commands::install_native_host,

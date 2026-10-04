@@ -55,24 +55,36 @@ pub async fn generate_prediction_set(
     let history = historical_examples(db, settings, &state, now)?;
     let state_summary = serde_json::to_string(&state)?;
     let batch_id = Uuid::new_v4().to_string();
-    let baseline = baseline_prediction(&state, &batch_id);
+    // Agent context is optional: a failure here must not block predictions.
+    let agent = crate::agent::prediction_context(db, settings, now).ok();
+    let goal = agent.as_ref().and_then(|context| context.goal.clone());
+    let mut baseline = baseline_prediction(&state, &batch_id);
+    baseline.goal = goal.clone();
     db.insert_prediction(&baseline, &batch_id, 1, &state_summary)?;
+    let mut local = vec![baseline];
+    if let Some(candidate) = agent
+        .as_ref()
+        .and_then(|context| workflow_candidate(context, goal.clone(), now))
+    {
+        db.insert_prediction(&candidate, &batch_id, 1, &state_summary)?;
+        local.push(candidate);
+    }
 
     let Some(provider) = settings.selected_provider.as_deref() else {
-        return Ok(vec![baseline]);
+        return Ok(local);
     };
     if !provider_client.has_key(provider) {
-        return Ok(vec![baseline]);
+        return Ok(local);
     }
 
     let raw = provider_client
         .predict_work(provider, &state, &history)
         .await;
     let Ok(raw) = raw else {
-        return Ok(vec![baseline]);
+        return Ok(local);
     };
     let Ok(decoded) = serde_json::from_value::<ProviderPredictions>(raw) else {
-        return Ok(vec![baseline]);
+        return Ok(local);
     };
     let allowed_threads = state
         .active_thread_id
@@ -81,18 +93,86 @@ pub async fn generate_prediction_set(
         .collect::<HashSet<_>>();
     let mut generated = Vec::new();
     for (rank, candidate) in decoded.predictions.into_iter().take(3).enumerate() {
-        if let Some(prediction) =
+        if let Some(mut prediction) =
             normalize_provider_prediction(candidate, now, &allowed_threads, &state_summary)
         {
+            prediction.goal = goal.clone();
             db.insert_prediction(&prediction, &batch_id, rank as i64 + 1, &state_summary)?;
             generated.push(prediction);
         }
     }
     if generated.is_empty() {
-        Ok(vec![baseline])
+        Ok(local)
     } else {
+        generated.extend(
+            local
+                .into_iter()
+                .filter(|prediction| prediction.source == "workflow"),
+        );
         Ok(generated)
     }
+}
+
+/// Grounded next-step candidate from a repeated workflow the user is part-way
+/// through. Its confidence is the workflow's observed completion rate,
+/// adjusted for how far along the user is.
+fn workflow_candidate(
+    context: &crate::agent::PredictionContext,
+    goal: Option<String>,
+    now: i64,
+) -> Option<WorkPrediction> {
+    let progress = context.progress.as_ref()?;
+    let step = &progress.next_step;
+    let next_resource = match step.kind.as_str() {
+        "app" => Some(PredictionResource {
+            resource_type: "application".into(),
+            label: sanitize_text(&step.label, 160),
+            safe_locator: None,
+        }),
+        "web" => step
+            .key
+            .strip_prefix("web:")
+            .map(|rest| PredictionResource {
+                resource_type: "domain".into(),
+                label: rest.split('/').next().unwrap_or(rest).to_string(),
+                safe_locator: step.resource.as_deref().and_then(safe_locator),
+            }),
+        _ => None,
+    };
+    Some(WorkPrediction {
+        id: Uuid::new_v4().to_string(),
+        created_at: now,
+        source: "workflow".into(),
+        intent: sanitize_text(&format!("Continue “{}”", progress.title), 240),
+        next_action: sanitize_text(&step.title, 300),
+        next_resource,
+        thread_id: context.workflow_thread.as_deref().map(stable_thread_id),
+        confidence: progress.confidence.clamp(0.0, 1.0),
+        horizon_minutes: DEFAULT_HORIZON_MINUTES,
+        reasoning_summary: format!(
+            "You have done {} of {} steps of a workflow you repeat, and it usually continues this way.",
+            progress.matched_steps, progress.total_steps
+        ),
+        evidence: vec![
+            sanitize_text(
+                &format!(
+                    "Matched the first {} steps of “{}”",
+                    progress.matched_steps, progress.title
+                ),
+                180,
+            ),
+            format!(
+                "This workflow is usually finished once started ({:.0}% confidence)",
+                progress.confidence * 100.0
+            ),
+        ],
+        evaluation_status: "pending".into(),
+        expires_at: now + DEFAULT_HORIZON_MINUTES * 60,
+        match_score: None,
+        user_feedback: None,
+        goal,
+        workflow_id: Some(progress.workflow_id.clone()),
+    })
 }
 
 pub fn evaluate_due_predictions(db: &Database, settings: &Settings, now: i64) -> AppResult<usize> {
@@ -342,6 +422,8 @@ fn baseline_prediction(state: &CurrentWorkState, batch_id: &str) -> WorkPredicti
         expires_at: state.generated_at + DEFAULT_HORIZON_MINUTES * 60,
         match_score: None,
         user_feedback: None,
+        goal: None,
+        workflow_id: None,
     }
 }
 
@@ -415,6 +497,8 @@ fn normalize_provider_prediction(
         expires_at: now + horizon_minutes * 60,
         match_score: None,
         user_feedback: None,
+        goal: None,
+        workflow_id: None,
     })
 }
 
@@ -427,7 +511,7 @@ fn event_label(event: &ActivityEvent) -> String {
         .map_or(app.clone(), |domain| format!("{app} ({domain})"))
 }
 
-pub(super) fn safe_domain(value: &str) -> Option<String> {
+pub(crate) fn safe_domain(value: &str) -> Option<String> {
     let parsed = Url::parse(value).ok()?;
     matches!(parsed.scheme(), "http" | "https")
         .then(|| {
@@ -438,7 +522,7 @@ pub(super) fn safe_domain(value: &str) -> Option<String> {
         .flatten()
 }
 
-fn safe_locator(value: &str) -> Option<String> {
+pub(crate) fn safe_locator(value: &str) -> Option<String> {
     let parsed = Url::parse(value.trim()).ok()?;
     if !matches!(parsed.scheme(), "http" | "https")
         || !parsed.username().is_empty()
@@ -450,7 +534,7 @@ fn safe_locator(value: &str) -> Option<String> {
     Some(format!("{}://{}{}", parsed.scheme(), host, parsed.path()))
 }
 
-fn sanitize_text(value: &str, max_chars: usize) -> String {
+pub(crate) fn sanitize_text(value: &str, max_chars: usize) -> String {
     let credential_markers = [
         "authorization:",
         "bearer",
@@ -515,7 +599,7 @@ fn sanitize_text(value: &str, max_chars: usize) -> String {
         .collect()
 }
 
-pub(super) fn stable_thread_id(value: &str) -> String {
+pub(crate) fn stable_thread_id(value: &str) -> String {
     let normalized = value
         .to_ascii_lowercase()
         .chars()
@@ -684,6 +768,8 @@ mod tests {
             expires_at: created_at + DEFAULT_HORIZON_MINUTES * 60,
             match_score: None,
             user_feedback: None,
+            goal: None,
+            workflow_id: None,
         }
     }
 
@@ -739,6 +825,65 @@ mod tests {
         assert_eq!(statuses["correct"], "matched");
         assert_eq!(statuses["incorrect"], "missed");
         assert_eq!(statuses["silent"], "expired");
+    }
+
+    #[test]
+    fn workflow_candidates_are_grounded_visible_and_calibrated() {
+        let db = Database::in_memory().unwrap();
+        let context = crate::agent::PredictionContext {
+            goal: Some("Build Knov".into()),
+            progress: Some(crate::agent::WorkflowProgress {
+                workflow_id: "wf-1".into(),
+                title: "Build and test · Knov".into(),
+                matched_steps: 2,
+                total_steps: 3,
+                next_step: crate::agent::WorkflowStep {
+                    key: "app:terminal".into(),
+                    kind: "app".into(),
+                    category: "terminal".into(),
+                    label: "Terminal".into(),
+                    title: "Run commands in Terminal".into(),
+                    resource: Some("Terminal".into()),
+                    average_seconds: 120,
+                },
+                confidence: 0.8,
+                skill_id: None,
+            }),
+            workflow_thread: Some("Knov".into()),
+        };
+        let candidate = workflow_candidate(&context, context.goal.clone(), 1_000).unwrap();
+        assert_eq!(candidate.source, "workflow");
+        assert_eq!(candidate.goal.as_deref(), Some("Build Knov"));
+        assert_eq!(candidate.thread_id.as_deref(), Some("knov"));
+        let resource = candidate.next_resource.clone().unwrap();
+        assert_eq!(
+            (resource.resource_type.as_str(), resource.label.as_str()),
+            ("application", "Terminal")
+        );
+
+        db.insert_prediction(&candidate, "batch", 1, "{}").unwrap();
+        let visible = db.visible_predictions(1_001, 0.65).unwrap();
+        assert_eq!(visible[0].workflow_id.as_deref(), Some("wf-1"));
+
+        let (score, _) = evaluate_prediction(
+            &candidate,
+            &[event(1_100, "Terminal", "Run commands", None)],
+        );
+        assert!(score >= MATCHED_THRESHOLD);
+        db.finish_prediction_evaluation(&candidate.id, "matched", score, "observed", 2_000)
+            .unwrap();
+        let stats = db.prediction_stats().unwrap();
+        assert_eq!(stats.workflow_top1_accuracy, Some(1.0));
+        let top_bin = stats
+            .calibration
+            .iter()
+            .find(|bin| bin.label == "80% and above")
+            .unwrap();
+        assert_eq!((top_bin.count, top_bin.observed_accuracy), (1, Some(1.0)));
+        assert_eq!(
+            stats.calibration.iter().map(|bin| bin.count).sum::<i64>(),
+            1
+        );
     }
 
     #[test]

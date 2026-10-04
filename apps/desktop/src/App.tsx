@@ -8,9 +8,11 @@ import {
   ChevronRight,
   CircleUserRound,
   Clock3,
+  Command,
   Copy,
   Eye,
   FileCode2,
+  Inbox,
   KeyRound,
   Layers3,
   LayoutDashboard,
@@ -26,20 +28,40 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  Workflow as WorkflowIcon,
   X,
 } from "lucide-react";
 import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useState } from "react";
 import "./App.css";
+import { AgentInbox } from "./components/agent/AgentInbox";
+import { CommandPalette, PaletteCommand } from "./components/CommandPalette";
 import { MarkdownMessage } from "./components/MarkdownMessage";
+import {
+  EmptyState,
+  errorMessage,
+  Modal,
+  PageHeader,
+  PanelHeader,
+  RangePicker,
+  ResourceState,
+  SettingsHeading,
+  Toggle,
+} from "./components/ui";
 import { useResource } from "./hooks/useResource";
 import { api, isDesktopRuntime } from "./lib/api";
+import { percent } from "./lib/agentFormat";
 import { domainFromUrl, formatDuration, formatPercentage, formatTime } from "./lib/format";
+import { AgentPage } from "./pages/AgentPage";
+import { WorkflowsPage } from "./pages/WorkflowsPage";
+import { AppStatusProvider, useAppStatus } from "./state/AppStatus";
 import type {
   ActivityEvent,
+  BrowserProfile,
   ChatMessage,
   ContextEconomics,
   DashboardData,
   MemoryRecord,
+  ProfileData,
   Provider,
   PredictionDashboard,
   PredictionFeedback,
@@ -53,11 +75,13 @@ import type {
 } from "./types";
 
 const navigation = [
-  { to: "/dashboard", label: "Now", icon: LayoutDashboard },
-  { to: "/threads", label: "Threads", icon: Layers3 },
-  { to: "/profile", label: "Memory", icon: Brain },
-  { to: "/activity", label: "Activity", icon: Activity },
-  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/dashboard", label: "Now", icon: LayoutDashboard, group: "Work" },
+  { to: "/threads", label: "Threads", icon: Layers3, group: "Work" },
+  { to: "/workflows", label: "Workflows", icon: WorkflowIcon, group: "Work" },
+  { to: "/agent", label: "Agent", icon: Inbox, group: "Work" },
+  { to: "/profile", label: "Memory", icon: Brain, group: "Context" },
+  { to: "/activity", label: "Activity", icon: Activity, group: "Context" },
+  { to: "/settings", label: "Settings", icon: Settings, group: "System" },
 ];
 
 const providers: Provider[] = ["openai", "anthropic", "bedrock"];
@@ -92,9 +116,40 @@ function App() {
     );
   }
 
+  return (
+    <AppStatusProvider>
+      <AppShell route={route} />
+    </AppStatusProvider>
+  );
+}
+
+function AppShell({ route }: { route: string }) {
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const commands = useCommands();
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      if (event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+        return;
+      }
+      const index = Number(event.key) - 1;
+      if (Number.isInteger(index) && navigation[index]) {
+        event.preventDefault();
+        window.location.hash = navigation[index].to;
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   const page = {
     "/dashboard": <DashboardPage />,
     "/threads": <ThreadsPage />,
+    "/workflows": <WorkflowsPage />,
+    "/agent": <AgentPage />,
     "/activity": <ActivityPage />,
     "/profile": <ProfilePage />,
     "/assistant": <AssistantPage />,
@@ -103,13 +158,61 @@ function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar route={route} />
-      <main className="main-stage">
+      <Sidebar route={route} onOpenPalette={() => setPaletteOpen(true)} />
+      <main className="main-stage" id="main">
         {!isDesktopRuntime() && <div className="demo-banner">Browser preview · sample data · controls do not change your Mac</div>}
         {page}
       </main>
+      {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
     </div>
   );
+}
+
+function useCommands(): PaletteCommand[] {
+  const { settings, agent, setCollectionEnabled, setAgentPaused, refreshAgent } = useAppStatus();
+  const collecting = settings.data?.collectionStatus.enabled ?? false;
+  const paused = agent.data?.paused ?? settings.data?.agentPaused ?? false;
+  return useMemo(() => [
+    ...navigation.map((item, index) => ({
+      id: `go-${item.label.toLowerCase()}`,
+      label: `Go to ${item.label}`,
+      group: "Navigate",
+      hint: `⌘${index + 1}`,
+      run: () => { window.location.hash = item.to; },
+    })),
+    {
+      id: "ask",
+      label: "Ask with current context",
+      group: "Assistant",
+      keywords: "chat question ai",
+      run: () => { window.location.hash = "/assistant"; },
+    },
+    {
+      id: "collection",
+      label: collecting ? "Pause collection" : "Resume collection",
+      group: "Privacy",
+      keywords: "capture recording stop start",
+      run: () => setCollectionEnabled(!collecting),
+    },
+    {
+      id: "agent",
+      label: paused ? "Resume agent" : "Pause agent",
+      group: "Agent",
+      keywords: "kill switch stop autonomy",
+      run: () => setAgentPaused(!paused),
+    },
+    {
+      id: "rescan",
+      label: "Rescan workflows",
+      group: "Agent",
+      keywords: "mine discover patterns",
+      run: async () => {
+        await api.rescanWorkflows();
+        await refreshAgent();
+        window.location.hash = "/workflows";
+      },
+    },
+  ], [collecting, paused, setCollectionEnabled, setAgentPaused, refreshAgent]);
 }
 
 const validRoutes = new Set([...navigation.map(({ to }) => to), "/assistant"]);
@@ -141,19 +244,27 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
   const [selectedProfiles, setSelectedProfiles] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [progress, setProgress] = useState("");
   const browsers = useResource(() => api.browserProfiles(), []);
 
   const steps = ["Welcome", "Permissions", "Browser profiles", "AI provider"];
 
-  const finish = async () => {
+  const finish = async (withProvider: boolean) => {
     setBusy(true);
     setMessage("");
     try {
-      if (providerKey.trim()) {
+      if (withProvider && providerKey.trim()) {
+        setProgress("Saving your key to macOS Keychain…");
         await api.saveProviderKey(provider, providerKey.trim());
       }
       await api.setBrowserProfiles(selectedProfiles);
-      await api.startBootstrap();
+      if (withProvider) {
+        setProgress("Importing selected history and building your first profile. This can take a minute…");
+        await api.startBootstrap();
+      } else {
+        setProgress("Importing the last 30 days of selected history…");
+        await api.startLocalBootstrap();
+      }
       await api.setCollectionEnabled(true);
       void api.recordProductEvent("setup_completed").catch(() => undefined);
       onComplete();
@@ -161,6 +272,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
       setMessage(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(false);
+      setProgress("");
     }
   };
 
@@ -187,6 +299,7 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
               <article><LockKeyhole size={18} /><strong>Local raw data</strong><span>SQLite on this Mac, detailed history retained for 30 days.</span></article>
               <article><Eye size={18} /><strong>Visible collection</strong><span>Pause, exclude, inspect, edit, or delete at any time.</span></article>
               <article><KeyRound size={18} /><strong>Your API key</strong><span>Stored in macOS Keychain and sent only to your provider.</span></article>
+              <article><ShieldCheck size={18} /><strong>Acts only with permission</strong><span>Learns repeated work locally and asks before doing anything for you.</span></article>
             </div>
           </div>
         )}
@@ -233,12 +346,13 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
             <div className="setup-icon"><KeyRound size={30} /></div>
             <div className="eyebrow">Bring your own key</div>
             <h1>Connect an AI provider.</h1>
-            <p>Your key is stored in macOS Keychain. Provider calls originate in the native core, never the browser extension or React interface.</p>
+            <p>Your key is stored in macOS Keychain. Provider calls originate in the native core, never the browser extension or React interface. You can also skip this: threads, workflows, and the work agent run entirely on this Mac. Profiles and chat wait until you add a key.</p>
             <div className="provider-tabs">
               {providers.map((item) => <button className={provider === item ? "selected" : ""} key={item} onClick={() => setProvider(item)}>{providerLabel(item)}</button>)}
             </div>
             <label className="secret-field">API key<input type="password" value={providerKey} onChange={(event) => setProviderKey(event.target.value)} placeholder={providerKeyPlaceholder(provider)} /></label>
-            {message && <p className="error-message">{message}</p>}
+            {progress && <p className="setup-progress-note" role="status"><LoaderCircle size={14} className="spin" /> {progress}</p>}
+            {message && <p className="error-message" role="alert">{message}</p>}
           </div>
         )}
 
@@ -247,20 +361,32 @@ function SetupWizard({ onComplete }: { onComplete: () => void }) {
           <span>{step + 1} of {steps.length}</span>
           {step < steps.length - 1
             ? <button className="primary-button" disabled={step === 2 && selectedProfiles.length === 0} onClick={() => setStep((value) => value + 1)}>Continue <ChevronRight size={15} /></button>
-            : <button className="primary-button" disabled={busy || !providerKey.trim() || selectedProfiles.length === 0} onClick={() => void finish()}>{busy ? <LoaderCircle size={15} className="spin" /> : <Sparkles size={15} />} Build my first profile</button>}
+            : (
+              <span className="setup-finish">
+                <button className="ghost-button" disabled={busy || selectedProfiles.length === 0} onClick={() => void finish(false)}>Skip AI for now</button>
+                <button className="primary-button" disabled={busy || !providerKey.trim() || selectedProfiles.length === 0} onClick={() => void finish(true)}>{busy ? <LoaderCircle size={15} className="spin" /> : <Sparkles size={15} />} Build my first profile</button>
+              </span>
+            )}
         </footer>
       </section>
     </div>
   );
 }
 
-function Sidebar({ route }: { route: string }) {
-  const { data: settings, setData } = useResource(() => api.settings(), []);
-  const enabled = settings?.collectionStatus.enabled ?? false;
+function Sidebar({ route, onOpenPalette }: { route: string; onOpenPalette: () => void }) {
+  const { settings, agent, setCollectionEnabled, setAgentPaused } = useAppStatus();
+  const [error, setError] = useState("");
+  const collecting = settings.data?.collectionStatus.enabled ?? false;
+  const agentPaused = agent.data?.paused ?? settings.data?.agentPaused ?? false;
+  const badges: Record<string, number | undefined> = {
+    "/agent": agent.data?.awaitingCount || undefined,
+    "/workflows": agent.data?.opportunityCount || undefined,
+  };
+  const groups = [...new Set(navigation.map((item) => item.group))];
 
-  const toggle = async () => {
-    const next = await api.setCollectionEnabled(!enabled);
-    setData(next);
+  const guarded = (work: () => Promise<void>) => {
+    setError("");
+    void work().catch((cause) => setError(errorMessage(cause)));
   };
 
   return (
@@ -274,26 +400,41 @@ function Sidebar({ route }: { route: string }) {
       </div>
 
       <nav className="sidebar-nav" aria-label="Primary navigation">
-        {navigation.map(({ to, label, icon: Icon }) => (
-          <a key={to} href={`#${to}`} className={`nav-link${route === to ? " active" : ""}`}>
-            <Icon size={18} />
-            <span>{label}</span>
-          </a>
+        {groups.map((group) => (
+          <div className="nav-group" key={group}>
+            {group !== "System" && <span className="nav-group-label">{group}</span>}
+            {navigation.filter((item) => item.group === group).map(({ to, label, icon: Icon }) => (
+              <a key={to} href={`#${to}`} className={`nav-link${route === to ? " active" : ""}`} aria-current={route === to ? "page" : undefined}>
+                <Icon size={18} aria-hidden="true" />
+                <span>{label}</span>
+                {badges[to] !== undefined && <span className="nav-badge" title={to === "/agent" ? "Runs waiting for your decision" : "New automation opportunities without a skill"}>{badges[to]}</span>}
+              </a>
+            ))}
+          </div>
         ))}
       </nav>
 
       <div className="sidebar-spacer" />
 
-      <div className={`capture-card ${enabled ? "live" : "paused"}`}>
+      <button type="button" className="palette-hint" onClick={onOpenPalette}>
+        <Command size={14} aria-hidden="true" /> <span>Command menu</span> <kbd>⌘K</kbd>
+      </button>
+
+      <div className={`capture-card ${collecting ? "live" : "paused"}`}>
         <div className="capture-status">
           <span className="pulse-dot" />
-          <span>{enabled ? "Collection active" : "Collection paused"}</span>
+          <span>{collecting ? "Collection active" : "Collection paused"}</span>
         </div>
-        <p>{enabled ? "Activity stays on this Mac." : "No new activity is being stored."}</p>
-        <button className="ghost-button full" onClick={() => void toggle()}>
-          {enabled ? <Pause size={15} /> : <Play size={15} />}
-          {enabled ? "Pause" : "Resume"}
+        <p>{collecting ? "Activity stays on this Mac." : "No new activity is being stored."}</p>
+        <button className="ghost-button full" onClick={() => guarded(() => setCollectionEnabled(!collecting))}>
+          {collecting ? <Pause size={15} /> : <Play size={15} />}
+          {collecting ? "Pause" : "Resume"}
         </button>
+        <div className={`agent-switch ${agentPaused ? "paused" : "live"}`}>
+          <span><i aria-hidden="true" />{agentPaused ? "Agent paused" : "Agent ready"}</span>
+          <button type="button" onClick={() => guarded(() => setAgentPaused(!agentPaused))}>{agentPaused ? "Resume" : "Pause"}</button>
+        </div>
+        {error && <small className="sidebar-error" role="alert">{error}</small>}
       </div>
 
       <div className="privacy-note">
@@ -306,41 +447,6 @@ function Sidebar({ route }: { route: string }) {
 
 function LogoMark() {
   return <img className="brand-mark" src="/knov-icon.svg" alt="" aria-hidden="true" />;
-}
-
-function PageHeader({
-  eyebrow,
-  title,
-  description,
-  actions,
-}: {
-  eyebrow: string;
-  title: string;
-  description: string;
-  actions?: React.ReactNode;
-}) {
-  return (
-    <header className="page-header">
-      <div>
-        <div className="eyebrow">{eyebrow}</div>
-        <h1>{title}</h1>
-        <p>{description}</p>
-      </div>
-      {actions && <div className="header-actions">{actions}</div>}
-    </header>
-  );
-}
-
-function RangePicker({ value, onChange }: { value: RangeKey; onChange: (range: RangeKey) => void }) {
-  return (
-    <div className="segmented">
-      {(["today", "7d", "30d"] as RangeKey[]).map((range) => (
-        <button key={range} className={value === range ? "selected" : ""} onClick={() => onChange(range)}>
-          {range === "today" ? "Today" : range === "7d" ? "7 days" : "30 days"}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function DashboardPage() {
@@ -563,6 +669,7 @@ function DashboardContent({ data }: { data: DashboardData }) {
   if (!selected) {
     return (
       <>
+        <AgentInbox />
         <EmptyState title="No work threads yet" detail="Keep collection on while you work. Knov will group recent activity into reviewable threads." />
         <RecommendationSection recommendations={data.recommendations} />
       </>
@@ -645,6 +752,7 @@ function DashboardContent({ data }: { data: DashboardData }) {
   return (
     <>
       <PredictionSection resource={predictions} threads={threads} onSelectThread={selectThread} />
+      <AgentInbox />
       <section className="now-status" aria-label="Current context status">
         <span><i className="status-light" /> {threads.length} active thread{threads.length === 1 ? "" : "s"}</span>
         <span>{formatDuration(data.trackedSeconds)} observed</span>
@@ -808,12 +916,13 @@ function PredictionSection({
     <section className="prediction-section" aria-label="Likely next">
       <div className="prediction-heading">
         <span><Sparkles size={15} /> Likely next</span>
-        <small>{Math.round(prediction.confidence * 100)}% confidence</small>
+        <small>{prediction.source === "workflow" ? "From a workflow you repeat · " : ""}{Math.round(prediction.confidence * 100)}% confidence</small>
       </div>
       <div className="prediction-layout">
         <div className="prediction-copy">
           <h2>{prediction.intent}</h2>
           <p>{prediction.reasoningSummary}</p>
+          {prediction.goal && <p className="prediction-goal">Toward your goal: <strong>{prediction.goal}</strong></p>}
           <div className="prediction-action"><small>Likely next</small><strong>{prediction.nextAction}</strong></div>
           <div className="prediction-controls">
             {(prediction.nextResource || prediction.threadId) && (
@@ -882,15 +991,6 @@ function RecommendationSection({ recommendations }: { recommendations: Recommend
       </div>
       {message && <p className="action-message" role="status">{message}</p>}
     </section>
-  );
-}
-
-function PanelHeader({ title, subtitle, link }: { title: string; subtitle: string; link?: string }) {
-  return (
-    <div className="panel-header">
-      <div><h2>{title}</h2><p>{subtitle}</p></div>
-      {link && <a href={link}>View all <ChevronRight size={14} /></a>}
-    </div>
   );
 }
 
@@ -1317,17 +1417,33 @@ function ProfilePage() {
   const [editingId, setEditingId] = useState<string>();
   const [summaryDraft, setSummaryDraft] = useState("");
   const [showSummaryForm, setShowSummaryForm] = useState(false);
+  const [error, setError] = useState("");
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const mutate = (work: Promise<ProfileData>) => {
+    setError("");
+    void work.then(resource.setData).catch((cause) => setError(errorMessage(cause)));
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    const profile = editingId
-      ? await api.saveCorrection(label, description || undefined, editingId)
-      : await api.saveCorrection(label, description || undefined);
-    resource.setData(profile);
-    setLabel("");
-    setDescription("");
-    setEditingId(undefined);
-    setShowForm(false);
+    setSaving(true);
+    setFormError("");
+    try {
+      const profile = editingId
+        ? await api.saveCorrection(label, description || undefined, editingId)
+        : await api.saveCorrection(label, description || undefined);
+      resource.setData(profile);
+      setLabel("");
+      setDescription("");
+      setEditingId(undefined);
+      setShowForm(false);
+    } catch (cause) {
+      setFormError(errorMessage(cause));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -1338,6 +1454,7 @@ function ProfilePage() {
         description="Profile facts and authoritative corrections are stored and retrieved locally. Raw activity stays on this Mac."
         actions={<button className="primary-button" onClick={() => { setEditingId(undefined); setLabel(""); setDescription(""); setShowForm(true); }}><Plus size={16} /> Add correction</button>}
       />
+      {error && <p className="notice error" role="alert">{error}</p>}
       <ResourceState {...resource}>
         {(profile) => (
           <div className="profile-layout">
@@ -1346,7 +1463,7 @@ function ProfilePage() {
               <div><span>Current understanding</span><p>{profile.summary || "No generated summary is currently saved."}</p></div>
               <div className="inline-actions">
                 <button className="ghost-button" onClick={() => { setSummaryDraft(profile.summary); setShowSummaryForm(true); }}>Edit summary</button>
-                {profile.summary && <button className="ghost-button" onClick={() => api.saveProfileSummary("").then(resource.setData)}>Clear</button>}
+                {profile.summary && <button className="ghost-button" onClick={() => mutate(api.saveProfileSummary(""))}>Clear</button>}
               </div>
             </section>
             <div className="profile-sections">
@@ -1367,11 +1484,11 @@ function ProfilePage() {
                         {item.provenance === "user" && (
                           <div className="row-actions">
                             <button className="row-action" aria-label="Edit correction" onClick={() => { setEditingId(item.id); setLabel(item.label); setDescription(item.description ?? ""); setShowForm(true); }}><Settings size={15} /></button>
-                            <button className="row-action" aria-label="Remove correction" onClick={() => api.removeCorrection(item.id).then(resource.setData)}><Trash2 size={15} /></button>
+                            <button className="row-action" aria-label="Remove correction" onClick={() => mutate(api.removeCorrection(item.id))}><Trash2 size={15} /></button>
                           </div>
                         )}
                         {item.provenance === "inferred" && (
-                          <button className="row-action" aria-label="Hide inference" onClick={() => api.dismissInference(item.id).then(resource.setData)}>
+                          <button className="row-action" aria-label="Hide inference" onClick={() => mutate(api.dismissInference(item.id))}>
                             <X size={15} />
                           </button>
                         )}
@@ -1389,7 +1506,8 @@ function ProfilePage() {
           <form className="stack-form" onSubmit={(event) => void submit(event)}>
             <label>What should Knov know?<input required value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Privacy is more important to me than adding features" /></label>
             <label>Optional context<textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="This will always override automatic inference." /></label>
-            <div className="modal-actions"><button type="button" className="ghost-button" onClick={() => setShowForm(false)}>Cancel</button><button className="primary-button">Save as truth</button></div>
+            {formError && <p className="error-message" role="alert">{formError}</p>}
+            <div className="modal-actions"><button type="button" className="ghost-button" onClick={() => setShowForm(false)}>Cancel</button><button className="primary-button" disabled={saving}>Save as truth</button></div>
           </form>
         </Modal>
       )}
@@ -1397,12 +1515,14 @@ function ProfilePage() {
         <Modal title="Edit profile summary" onClose={() => setShowSummaryForm(false)}>
           <form className="stack-form" onSubmit={(event) => {
             event.preventDefault();
+            setFormError("");
             void api.saveProfileSummary(summaryDraft).then((profile) => {
               resource.setData(profile);
               setShowSummaryForm(false);
-            });
+            }).catch((cause) => setFormError(errorMessage(cause)));
           }}>
             <label>Summary<textarea maxLength={600} value={summaryDraft} onChange={(event) => setSummaryDraft(event.target.value)} /></label>
+            {formError && <p className="error-message" role="alert">{formError}</p>}
             <div className="modal-actions"><button type="button" className="ghost-button" onClick={() => setShowSummaryForm(false)}>Cancel</button><button className="primary-button">Save summary</button></div>
           </form>
         </Modal>
@@ -1565,17 +1685,58 @@ function formatTokenCount(value: number): string {
 }
 
 function SettingsPage() {
-  const resource = useResource(() => api.settings(), []);
+  const { settings: resource, setCollectionEnabled, setAgentPaused } = useAppStatus();
   const browsers = useResource(() => api.browserProfiles(), []);
   const [key, setKey] = useState("");
-  const [providerMessage, setProviderMessage] = useState("");
+  const [providerMessage, setProviderMessage] = useState<{ tone: "ok" | "error"; text: string }>();
+  const [providerBusy, setProviderBusy] = useState(false);
+  const [settingsError, setSettingsError] = useState("");
   const [historyImportMessage, setHistoryImportMessage] = useState("");
   const [historyImportError, setHistoryImportError] = useState(false);
   const [historyImporting, setHistoryImporting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
-  const patch = async (settings: Partial<SettingsData>) => {
+  const guard = async (work: () => Promise<void>) => {
+    setSettingsError("");
+    try {
+      await work();
+    } catch (cause) {
+      setSettingsError(errorMessage(cause));
+    }
+  };
+
+  const patch = (settings: Partial<SettingsData>) => guard(async () => {
     resource.setData(await api.saveSettings(settings));
+  });
+
+  const providerAction = async (work: () => Promise<string>, reload = false) => {
+    setProviderBusy(true);
+    setProviderMessage(undefined);
+    try {
+      const text = await work();
+      setProviderMessage({ tone: "ok", text });
+      if (reload) await resource.reload();
+    } catch (cause) {
+      setProviderMessage({ tone: "error", text: errorMessage(cause) });
+    } finally {
+      setProviderBusy(false);
+    }
+  };
+
+  const deleteEverything = async () => {
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await api.deleteAllData();
+      localStorage.removeItem("knov.setup-complete");
+      window.location.hash = "";
+      window.location.reload();
+    } catch (cause) {
+      setDeleteError(errorMessage(cause));
+      setDeleting(false);
+    }
   };
 
   const reimportHistory = async () => {
@@ -1611,16 +1772,27 @@ function SettingsPage() {
               </div>
               <label className="secret-field">API key<input type="password" value={key} onChange={(event) => setKey(event.target.value)} placeholder={settings.hasProviderKey ? "Key stored in macOS Keychain" : "Paste your key"} /></label>
               <div className="inline-actions">
-                <button className="primary-button" disabled={!key} onClick={() => api.saveProviderKey(settings.provider, key).then(() => { setKey(""); setProviderMessage("Saved securely in Keychain."); void resource.reload(); })}>Save key</button>
-                <button className="ghost-button" onClick={() => api.testProvider(settings.provider).then(setProviderMessage)}>Test connection</button>
-                {settings.hasProviderKey && <button className="ghost-button" onClick={() => api.removeProviderKey(settings.provider).then(() => { setProviderMessage("Key removed from Keychain."); void resource.reload(); })}>Remove key</button>}
+                <button className="primary-button" disabled={!key.trim() || providerBusy} onClick={() => void providerAction(async () => {
+                  await api.saveProviderKey(settings.provider, key.trim());
+                  setKey("");
+                  return "Saved securely in Keychain.";
+                }, true)}>Save key</button>
+                <button className="ghost-button" disabled={providerBusy} onClick={() => void providerAction(() => api.testProvider(settings.provider))}>
+                  {providerBusy && <LoaderCircle size={14} className="spin" />} Test connection
+                </button>
+                {settings.hasProviderKey && <button className="ghost-button" disabled={providerBusy} onClick={() => void providerAction(async () => {
+                  await api.removeProviderKey(settings.provider);
+                  return "Key removed from Keychain.";
+                }, true)}>Remove key</button>}
               </div>
-              {providerMessage && <p className="success-message"><Check size={14} />{providerMessage}</p>}
+              {providerMessage && (providerMessage.tone === "ok"
+                ? <p className="success-message"><Check size={14} />{providerMessage.text}</p>
+                : <p className="error-message" role="alert">{providerMessage.text}</p>)}
             </section>
 
             <section className="panel settings-card">
               <SettingsHeading icon={<Eye />} title="Collection" detail="Foreground app, window title, selected Chrome history, and editor workspace-change metadata." />
-              <Toggle label="Collection active" detail="Collect local foreground activity and backfill selected browser and editor metadata." checked={settings.collectionStatus.enabled} onChange={(enabled) => api.setCollectionEnabled(enabled).then(resource.setData)} />
+              <Toggle label="Collection active" detail="Collect local foreground activity and backfill selected browser and editor metadata." checked={settings.collectionStatus.enabled} onChange={(enabled) => void guard(() => setCollectionEnabled(enabled))} />
               <Toggle label="Behavioral guidance" detail="Break and focus suggestions; work-continuity guidance stays on." checked={settings.behavioralGuidanceEnabled} onChange={(behavioralGuidanceEnabled) => void patch({ behavioralGuidanceEnabled })} />
               <Toggle label="Launch at login" detail="Resume local collection after you sign in." checked={settings.launchAtLogin} onChange={(launchAtLogin) => void patch({ launchAtLogin })} />
               <div className="permission-row">
@@ -1631,6 +1803,18 @@ function SettingsPage() {
               {settings.collectionStatus.degradedReasons.map((reason) => <p className="status-detail" key={reason}>{reason}</p>)}
               <p className="status-detail">While collection is active, Knov backfills new Chrome visits and reads metadata-only Local History indexes and Git working-tree paths from VS Code, Cursor, and Cortex Code workspaces. It never opens saved code snapshots or source contents.</p>
               {settings.collectionStatus.dataPath && <p className="status-detail">Local database: {settings.collectionStatus.dataPath}</p>}
+            </section>
+
+            <section className="panel settings-card">
+              <SettingsHeading icon={<Inbox />} title="Work agent" detail="Learns repeated workflows locally and acts only with your approval or explicit permission." />
+              <Toggle
+                label="Agent execution"
+                detail="The kill switch: off stops everything the agent would run, immediately. Collection is separate."
+                checked={!settings.agentPaused}
+                onChange={(on) => void guard(() => setAgentPaused(!on))}
+              />
+              <p className="status-detail">Workflow discovery, goals, and the action journal are computed and stored on this Mac and are never sent to a provider. The agent cannot send messages, delete data, or change repositories.</p>
+              <a className="ghost-button" href="#/agent">Permissions and history <ChevronRight size={14} /></a>
             </section>
 
             <PredictionSettings
@@ -1644,25 +1828,11 @@ function SettingsPage() {
               <ResourceState {...browsers}>
                 {(profiles) => (
                   <>
-                    <div className="browser-list">
-                      {profiles.map((profile) => (
-                        <label key={profile.id}>
-                          <input
-                            type="checkbox"
-                            checked={settings.selectedBrowserProfileIds.includes(profile.id)}
-                            onChange={(event) => {
-                              const profileIds = event.target.checked
-                                ? [...settings.selectedBrowserProfileIds, profile.id]
-                                : settings.selectedBrowserProfileIds.filter((id) => id !== profile.id);
-                              void api.setBrowserProfiles(profileIds).then(() => patch({ selectedBrowserProfileIds: profileIds }));
-                            }}
-                          />
-                          <div className="browser-icon">{profile.browser.slice(0, 1).toUpperCase()}</div>
-                          <div><strong>{profile.name}</strong><p>{profile.browser} · {profile.path}</p><code className="profile-id">ID: {profile.id}</code></div>
-                          <span className={`support-badge ${profile.support}`}>{profile.support}</span>
-                        </label>
-                      ))}
-                    </div>
+                    <BrowserProfileList
+                      profiles={profiles}
+                      savedIds={settings.selectedBrowserProfileIds}
+                      onSaved={(selectedBrowserProfileIds) => resource.setData({ ...settings, selectedBrowserProfileIds })}
+                    />
                     <div className="inline-actions">
                       <button
                         className="ghost-button"
@@ -1689,7 +1859,9 @@ function SettingsPage() {
               <SettingsHeading icon={<ShieldCheck />} title="Exclusions" detail="Excluded applications and domains are dropped locally before they can affect your profile." />
               <ExclusionEditor
                 settings={settings}
-                onSave={(excludedApps, excludedDomains) => patch({ excludedApps, excludedDomains })}
+                onSave={async (excludedApps, excludedDomains) => {
+                  resource.setData(await api.saveSettings({ excludedApps, excludedDomains }));
+                }}
               />
             </section>
 
@@ -1697,17 +1869,15 @@ function SettingsPage() {
               <SettingsHeading icon={<Trash2 />} title="Delete local Knov data" detail="Permanently removes local activity, profiles, corrections, recommendations, telemetry, settings, and provider credentials." />
               <button className="danger-button" onClick={() => setConfirmDelete(true)}>Delete everything</button>
             </section>
+            {settingsError && <p className="notice error full-width" role="alert">{settingsError}</p>}
           </div>
         )}
       </ResourceState>
       {confirmDelete && (
         <Modal title="Delete everything?" onClose={() => setConfirmDelete(false)}>
-          <p className="modal-copy">This cannot be undone from within Knov. Local app data and provider credentials stored in Keychain will be removed.</p>
-          <div className="modal-actions"><button className="ghost-button" onClick={() => setConfirmDelete(false)}>Cancel</button><button className="danger-button" onClick={() => api.deleteAllData().then(() => {
-            localStorage.removeItem("knov.setup-complete");
-            window.location.hash = "";
-            window.location.reload();
-          })}>Delete permanently</button></div>
+          <p className="modal-copy">This cannot be undone from within Knov. Local app data, learned workflows, skills, permissions, the action journal, agent drafts, and provider credentials stored in Keychain will be removed.</p>
+          {deleteError && <p className="error-message" role="alert">{deleteError}</p>}
+          <div className="modal-actions"><button className="ghost-button" disabled={deleting} onClick={() => setConfirmDelete(false)}>Cancel</button><button className="danger-button" disabled={deleting} onClick={() => void deleteEverything()}>{deleting && <LoaderCircle size={14} className="spin" />} Delete permanently</button></div>
         </Modal>
       )}
     </div>
@@ -1793,9 +1963,28 @@ function PredictionSettings({
             <span><small>Missed</small><strong>{dashboard.data.stats.missed}</strong></span>
             <span><small>Provider top-1</small><strong>{formatAccuracy(dashboard.data.stats.providerTop1Accuracy)}</strong></span>
             <span><small>Baseline top-1</small><strong>{formatAccuracy(dashboard.data.stats.baselineTop1Accuracy)}</strong></span>
+            <span><small>Workflow top-1</small><strong>{formatAccuracy(dashboard.data.stats.workflowTop1Accuracy)}</strong></span>
             <span><small>High-confidence</small><strong>{formatAccuracy(dashboard.data.stats.highConfidenceAccuracy)}</strong></span>
             <span><small>Positive feedback</small><strong>{formatAccuracy(dashboard.data.stats.userPositiveFeedbackRate)}</strong></span>
           </div>
+          {dashboard.data.stats.calibration?.some((bin) => bin.count > 0) && (
+            <div className="calibration" aria-label="Confidence calibration">
+              <strong>Calibration</strong>
+              <small>Stated confidence compared with how often predictions actually matched.</small>
+              <div className="calibration-rows">
+                {dashboard.data.stats.calibration.map((bin) => (
+                  <div key={bin.label} className="calibration-row">
+                    <span>{bin.label}</span>
+                    <span className="calibration-bar" aria-hidden="true">
+                      <i className="stated" style={{ width: `${Math.round((bin.meanConfidence ?? 0) * 100)}%` }} />
+                      <i className="observed" style={{ width: `${Math.round((bin.observedAccuracy ?? 0) * 100)}%` }} />
+                    </span>
+                    <span>{bin.count ? `${percent(bin.observedAccuracy)} matched · ${bin.count} evaluated` : "No data"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {history.data.length ? (
             <div className="prediction-history" role="table" aria-label="Prediction history">
               <div className="prediction-history-row heading" role="row">
@@ -1820,6 +2009,79 @@ function PredictionSettings({
   );
 }
 
+function BrowserProfileList({
+  profiles,
+  savedIds,
+  onSaved,
+}: {
+  profiles: BrowserProfile[];
+  savedIds: string[];
+  onSaved: (ids: string[]) => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<{ tone: "ok" | "error"; text: string }>();
+  const available = new Set(profiles.map((profile) => profile.id));
+  // Only profiles Chrome still has: one deleted in Chrome must not block changes.
+  const selected = savedIds.filter((id) => available.has(id));
+  const missing = savedIds.filter((id) => !available.has(id));
+
+  const save = async (next: string[], success: string) => {
+    if (!next.length) {
+      setStatus({ tone: "error", text: "Keep at least one Chrome profile selected. To stop importing history, pause collection instead." });
+      return;
+    }
+    setSaving(true);
+    setStatus(undefined);
+    try {
+      await api.setBrowserProfiles(next);
+      onSaved(next);
+      setStatus({ tone: "ok", text: success });
+    } catch (cause) {
+      setStatus({ tone: "error", text: errorMessage(cause) });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggle = (profile: BrowserProfile, checked: boolean) => void save(
+    checked ? [...selected, profile.id] : selected.filter((id) => id !== profile.id),
+    checked
+      ? `Added ${profile.name}. New visits are imported within a minute while collection is on; choose Re-import to load its last 30 days.`
+      : `Removed ${profile.name}. Knov stops importing its history; visits already imported expire with the rest of your activity.`,
+  );
+
+  return (
+    <>
+      <div className="browser-list" aria-busy={saving}>
+        {profiles.map((profile) => (
+          <label key={profile.id} className={saving ? "saving" : ""}>
+            <input
+              type="checkbox"
+              checked={selected.includes(profile.id)}
+              disabled={saving}
+              onChange={(event) => toggle(profile, event.target.checked)}
+            />
+            <div className="browser-icon">{profile.browser.slice(0, 1).toUpperCase()}</div>
+            <div><strong>{profile.name}</strong><p>{profile.browser} · {profile.path}</p><code className="profile-id">ID: {profile.id}</code></div>
+            <span className={`support-badge ${profile.support}`}>{profile.support}</span>
+          </label>
+        ))}
+      </div>
+      {missing.length > 0 && (
+        <div className="missing-profiles" role="note">
+          <span>{missing.length === 1 ? "A previously selected profile" : `${missing.length} previously selected profiles`} no longer exist{missing.length === 1 ? "s" : ""} in Chrome ({missing.join(", ")}). Knov skips {missing.length === 1 ? "it" : "them"}.</span>
+          {selected.length > 0 && (
+            <button type="button" className="ghost-button" disabled={saving} onClick={() => void save(selected, "Removed profiles that no longer exist in Chrome.")}>Clear missing</button>
+          )}
+        </div>
+      )}
+      {status && (status.tone === "ok"
+        ? <p className="success-message" role="status"><Check size={14} />{status.text}</p>
+        : <p className="error-message" role="alert">{status.text}</p>)}
+    </>
+  );
+}
+
 function ExclusionEditor({
   settings,
   onSave,
@@ -1829,66 +2091,27 @@ function ExclusionEditor({
 }) {
   const [apps, setApps] = useState(settings.excludedApps.join(", "));
   const [domains, setDomains] = useState(settings.excludedDomains.join(", "));
+  const [status, setStatus] = useState<{ tone: "ok" | "error"; text: string }>();
   const split = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
+  const save = async () => {
+    setStatus(undefined);
+    try {
+      await onSave(split(apps), split(domains));
+      setStatus({ tone: "ok", text: "Exclusions saved. They apply to new activity, workflows, and predictions." });
+    } catch (cause) {
+      setStatus({ tone: "error", text: errorMessage(cause) });
+    }
+  };
   return (
     <div className="stack-form">
-      <label>Applications<input value={apps} onChange={(event) => setApps(event.target.value)} placeholder="Mail, Messages" /></label>
-      <label>Domains<input value={domains} onChange={(event) => setDomains(event.target.value)} placeholder="bank.example, health.example" /></label>
-      <button className="ghost-button" onClick={() => void onSave(split(apps), split(domains))}>Save exclusions</button>
+      <label>Applications<input value={apps} onChange={(event) => { setApps(event.target.value); setStatus(undefined); }} placeholder="Mail, Messages" /></label>
+      <label>Domains<input value={domains} onChange={(event) => { setDomains(event.target.value); setStatus(undefined); }} placeholder="bank.example, health.example" /></label>
+      <button className="ghost-button" onClick={() => void save()}>Save exclusions</button>
+      {status && (status.tone === "ok"
+        ? <p className="success-message"><Check size={14} />{status.text}</p>
+        : <p className="error-message" role="alert">{status.text}</p>)}
     </div>
   );
-}
-
-function SettingsHeading({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }) {
-  return <div className="settings-heading"><div>{icon}</div><span><strong>{title}</strong><p>{detail}</p></span></div>;
-}
-
-function Toggle({ label, detail, checked, onChange }: { label: string; detail: string; checked: boolean; onChange: (checked: boolean) => void }) {
-  return (
-    <label className="toggle-row">
-      <span><strong>{label}</strong><p>{detail}</p></span>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-      <i />
-    </label>
-  );
-}
-
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [onClose]);
-  return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="modal" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
-        <div className="modal-header"><h2>{title}</h2><button autoFocus aria-label="Close dialog" onClick={onClose}><X size={18} /></button></div>
-        {children}
-      </section>
-    </div>
-  );
-}
-
-function ResourceState<T>({
-  data,
-  error,
-  loading,
-  children,
-}: {
-  data?: T;
-  error?: string;
-  loading: boolean;
-  children: (data: T) => React.ReactNode;
-}) {
-  if (loading && !data) return <div className="loading-state"><LoaderCircle className="spin" /><span>Loading local context…</span></div>;
-  if (error && !data) return <EmptyState title="Couldn’t load this view" detail={error} />;
-  return data ? children(data) : <EmptyState title="Nothing here yet" detail="Complete setup to begin collecting local context." />;
-}
-
-function EmptyState({ title, detail }: { title: string; detail: string }) {
-  return <div className="empty-state"><div><Brain size={22} /></div><h3>{title}</h3><p>{detail}</p></div>;
 }
 
 export default App;

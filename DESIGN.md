@@ -87,7 +87,7 @@ Historical note: Rewind/Limitless defined the “perfect memory” category, but
 | Cross-provider context handoff | Highest | Creates a defensible role outside any single assistant |
 | Profile/memory inspection and correction | Highest | Essential for trust and better than opaque personalization |
 | Time tracking reports and billing | Low / non-goal | Mature competitors already own this use case |
-| Autonomous actions | Later | Requires stronger trust, intent, and permission architecture |
+| Autonomous actions | Bounded, permissioned | Implemented as four local adapters with per-action approval, revocable grants, verification, undo, and a kill switch; external, destructive, and repository-changing actions remain unavailable |
 
 ## Brand
 
@@ -169,6 +169,8 @@ Historical note: Rewind/Limitless defined the “perfect memory” category, but
 - Primary navigation:
   - **Now** — the daily continuity surface and universal ask box
   - **Threads** — active projects/work streams reconstructed from behavior
+  - **Workflows** — repeated work Knov noticed, automation opportunities, and Skills
+  - **Agent** — delegated work, permissions, action history, goals, and outcomes
   - **Memory** — durable profile, corrections, and provenance
   - **Activity** — raw local timeline and search for auditability
   - **Settings** — capture, privacy, provider, extension, retention, deletion
@@ -178,6 +180,7 @@ Historical note: Rewind/Limitless defined the “perfect memory” category, but
   - Rename **Profile** to **Memory** and organize it by projects, preferences, working style, and user-authored truths.
   - Keep Activity as the factual ledger rather than the home experience.
 - Content hierarchy on Now:
+  0. Likely next and **Ready for you** (current goal, decisions waiting, an in-progress workflow, permission suggestions) appear only when they have content
   1. Continue where you left off
   2. Ask using current context
   3. Active threads

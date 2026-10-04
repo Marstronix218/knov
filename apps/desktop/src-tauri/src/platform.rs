@@ -53,6 +53,7 @@ pub fn discover_chrome_profiles(db: &Database) -> AppResult<Vec<ChromeProfile>> 
     let settings = db.settings()?;
     let mut persisted = Vec::new();
     let mut result = Vec::new();
+    let info_was_empty = info.is_empty();
     for (directory, metadata) in info {
         let path = root.join(&directory);
         if !path.join("History").exists() {
@@ -97,7 +98,9 @@ pub fn discover_chrome_profiles(db: &Database) -> AppResult<Vec<ChromeProfile>> 
             });
         }
     }
-    db.save_chrome_profiles(&persisted)?;
+    // Prune only when Chrome's profile list was read; the Default-only fallback
+    // must not forget other profiles because of a momentarily unreadable file.
+    db.save_chrome_profiles(&persisted, !info_was_empty)?;
     Ok(result)
 }
 
@@ -450,6 +453,97 @@ pub fn recent_editor_workspace_changes(app_name: &str, since: i64, limit: usize)
             (!changes.is_empty()).then_some(changes)
         })
         .unwrap_or_default()
+}
+
+/// Workspace folders that supported editors already know about. They are only
+/// suggestions for folders the user may explicitly approve for agent checks;
+/// nothing inside them is read here.
+pub fn detected_editor_workspaces(limit: usize) -> Vec<(String, PathBuf)> {
+    let mut seen = HashSet::new();
+    editor_installations()
+        .into_iter()
+        .flat_map(|installation| discover_editor_workspaces(&installation.user_data))
+        .filter(|workspace| seen.insert(workspace.path.clone()))
+        .take(limit)
+        .map(|workspace| (workspace.name, workspace.path))
+        .collect()
+}
+
+pub(crate) fn reopenable_web_url(value: &str) -> AppResult<Url> {
+    let parsed = Url::parse(value.trim())
+        .map_err(|_| AppError::InvalidInput("The resource URL is invalid.".into()))?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+    {
+        return Err(AppError::InvalidInput(
+            "Only HTTP and HTTPS resources without credentials can be reopened.".into(),
+        ));
+    }
+    Ok(parsed)
+}
+
+pub(crate) fn normalized_application_name(value: &str) -> AppResult<String> {
+    let app_name = value.trim();
+    if app_name.is_empty()
+        || app_name.chars().count() > 128
+        || value.chars().any(char::is_control)
+        || app_name.contains(['/', '\\'])
+        || app_name.starts_with('-')
+        || matches!(app_name, "." | "..")
+    {
+        return Err(AppError::InvalidInput(
+            "The application name is invalid.".into(),
+        ));
+    }
+    Ok(match app_name {
+        "Code" => "Visual Studio Code".into(),
+        _ => app_name.into(),
+    })
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn open_native_application(app_name: &str) -> AppResult<std::process::ExitStatus> {
+    Ok(Command::new("/usr/bin/open")
+        .args(["-a", app_name])
+        .status()?)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn open_native_application(_app_name: &str) -> AppResult<std::process::ExitStatus> {
+    Err(AppError::InvalidInput(
+        "Opening native applications is currently supported only on macOS.".into(),
+    ))
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn open_external_url(url: &str) -> std::io::Result<std::process::ExitStatus> {
+    Command::new("/usr/bin/open").arg(url).status()
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn open_external_url(url: &str) -> std::io::Result<std::process::ExitStatus> {
+    Command::new("rundll32")
+        .args(["url.dll,FileProtocolHandler", url])
+        .status()
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+pub(crate) fn open_external_url(url: &str) -> std::io::Result<std::process::ExitStatus> {
+    Command::new("xdg-open").arg(url).status()
+}
+
+/// Opens a file that Knov itself wrote (agent drafts) with the default app.
+/// Callers must confine `path` to an app-owned directory first.
+#[cfg(target_os = "macos")]
+pub(crate) fn open_local_file(path: &Path) -> std::io::Result<std::process::ExitStatus> {
+    Command::new("/usr/bin/open").arg(path).status()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn open_local_file(path: &Path) -> std::io::Result<std::process::ExitStatus> {
+    open_external_url(&path.to_string_lossy())
 }
 
 fn git_workspace_changes(workspace: &Path, since: i64, limit: usize) -> Vec<String> {

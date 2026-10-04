@@ -14,7 +14,8 @@ There is no Knov-hosted backend in the alpha.
 | --- | --- | --- |
 | React/Vite interface | `apps/desktop/src` | Onboarding, dashboard, history, profile, assistant, and settings |
 | Tauri/Rust core | `apps/desktop/src-tauri/src` | IPC commands, collection, Chrome import, retention, SQLite, Keychain, scheduling, and provider calls |
-| SQLite store | Tauri application-data directory | Activity, settings, profiles, corrections, recommendations, predictions and evaluations, local inference metrics, and extension pairing state |
+| Work agent | `apps/desktop/src-tauri/src/agent` | Event normalization, workflow mining, goals and state, skills, permission policy, bounded action runtime, verification, rollback, and the action journal |
+| SQLite store | Tauri application-data directory | Activity, settings, profiles, corrections, recommendations, predictions and evaluations, local inference metrics, agent workflows/skills/runs/permissions/snapshots, and extension pairing state |
 | Optional Chrome extension | `apps/extension` | Experimental active-tab URL/title timing, exclusions, pause, and local transport |
 | Optional Native Messaging helper | `apps/desktop/src-tauri/src/bin/knov-native-host.rs` | Chrome stdio framing and forwarding to the running Rust core |
 | OpenAI, Anthropic, or Amazon Bedrock | external | Profile generation, recommendations, prediction candidates, and assistant responses |
@@ -115,8 +116,19 @@ Main stored records:
 - separately stored authoritative user corrections
 - pairing token, first authenticated extension ID, and last-seen timestamp
 - local context-economics records for completed assistant queries
-- prediction candidates, sanitized state summaries, outcomes, evaluation
-  scores, and optional user feedback
+- prediction candidates, sanitized state summaries, inferred goals, matched
+  workflows, outcomes, evaluation scores, and optional user feedback
+- learned workflows and user reviews, skills, agent runs and the action
+  journal, autonomy grants and declined suggestions, approved workspaces, goal
+  reviews, and 10-minute state snapshots
+
+Agent drafts are Markdown files in `drafts/` next to the database (mode 0700).
+
+Migrations are re-applied defensively: after the numbered migrations run, the
+idempotent agent schema and the current `predictions` schema are created if
+missing. This keeps databases whose `user_version` diverged (for example from
+another branch sharing the app-data directory) usable instead of failing to
+open.
 
 Chat messages are held in frontend memory for the current session and are not
 persisted by Knov.
@@ -139,6 +151,21 @@ The scheduler checks once per minute and attempts one refresh per local calendar
 day when a provider and credential are available. This also provides catch-up
 after sleep or restart. Manual refresh uses the same provider path. A successful
 first refresh deletes bootstrap activity older than 30 days.
+
+## Work agent
+
+The same scheduler tick runs the agent: it re-mines workflows from the last 30
+days at most every 30 minutes when new activity exists, records a state
+snapshot every 10 minutes while collecting, fires due skill triggers (schedule
+or "when I start this workflow"), and wakes the single background executor.
+Manual runs are planned and persisted first, shown for review, and executed
+only after approval. Actions run through four bounded adapters (open URL, open
+application, write a draft, run an allow-listed test command in an approved
+folder), each with its own verification and, for drafts, undo. Authorization
+is evaluated per action from explicit user grants, the agent kill switch, an
+hourly budget for automatic actions, and a rule that unattended runs never open
+windows. The agent makes no provider requests. See
+[Autonomous Work Agent](autonomous-agent.md).
 
 ## Prediction Engine
 
@@ -179,8 +206,11 @@ Engine](prediction-engine.md) for the detailed flow and schema.
 - Behavioral guidance is suppressed during generation and dashboard display
   when disabled.
 - The Prediction Experiment is disabled by default. It prepares only safe
-  existing Knov threads/resources for user-initiated resumption; it does not
-  execute arbitrary actions.
+  existing Knov threads/resources for user-initiated resumption.
+- The work agent executes only the four bounded adapters above, under explicit
+  approval or user grants. It cannot send messages, submit forms, delete user
+  data, pay, change credentials, or modify repositories. Multi-step goal
+  delegation and an external context API (MCP) are not implemented.
 - Provider-key removal is available in Settings.
 - Profile summary editing, inferred-item suppression, and editable authoritative
   corrections are available locally.

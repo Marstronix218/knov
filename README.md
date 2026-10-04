@@ -29,8 +29,15 @@ Implemented and usable from source:
 - OpenAI, Anthropic, and Amazon Bedrock BYOK credentials through macOS Keychain
 - direct provider-backed profile refresh, recommendations, and chat
 - opt-in Prediction Experiment with local history retrieval, a deterministic
-  baseline, provider candidates, and local outcome evaluation
+  baseline, a workflow-based next-step source, provider candidates, local
+  outcome evaluation, and confidence calibration
+- local work agent: workflow discovery, automation-opportunity scoring,
+  inferred goals, editable Skills, permissioned and verified actions (open a
+  page or app, write a local draft, run allow-listed tests in an approved
+  folder), an action journal with undo, a kill switch, and permission
+  suggestions earned from repeated approval
 - dashboard, activity history, profile corrections, pause, and delete controls
+- command menu (⌘K) and page shortcuts (⌘1–⌘7)
 
 Important alpha limitations:
 
@@ -143,7 +150,10 @@ Knov opens a four-step setup wizard on its first native launch:
 4. **AI provider:** select OpenAI, Anthropic, or Amazon Bedrock, paste an API key, and choose
    **Build my first profile**. The key is stored in macOS Keychain. Building the
    initial profile requires a working key and an internet connection to the
-   selected provider.
+   selected provider. Choose **Skip AI for now** to start with local features
+   only: Knov imports the last 30 days of selected history, and threads,
+   workflows, and the work agent work immediately. Add a key later in
+   **Settings** and refresh from **Now** to build a profile.
 
 When setup finishes, confirm that the sidebar says **Collection active**. Use
 **Resume** if collection is paused.
@@ -233,13 +243,83 @@ details** when you want supporting app, web, timeline, and pattern analytics.
 Use **Today**, **7 days**, or **30 days** to change the reporting period, and
 the refresh icon to rebuild the profile and recommendations.
 
+### Act on what's ready
+
+When the work agent has something for you, **Now** shows a **Ready for you**
+panel above the resume card. It holds at most a few items:
+
+- your **current goal**, inferred from threads that recur across days, with
+  **Why?** evidence and **Confirm goal** / **Not a goal**;
+- runs **waiting for your decision**, and recent background runs that finished
+  or need a look;
+- the **next step of a workflow** you are part-way through, with **Stage next
+  steps** when it has a skill;
+- a **permission suggestion** once you have approved the same action in the
+  same place five times without declining or undoing it.
+
+Choose **Review** to see exactly what Knov plans to do, why, which permission
+applies, and its risk class. Untick anything you do not want, optionally allow
+an action automatically for that skill or workspace from now on, and choose
+**Approve and run**. Results show verification checks, local command output,
+**Open draft**, and **Undo** where possible.
+
+### Teach Knov your workflows
+
+Open **Workflows** to review repeated work Knov found locally: the same three
+or more steps in order, at least three times on two or more days. Each card
+shows the steps, how often and when they happen, how often you finish once
+you start, recent occurrences (apps, sites, and page paths only), and an
+opportunity score with its breakdown.
+
+- **Yes, this is a workflow** or **Not a workflow** records your review.
+- **Confirm and create skill** turns it into a **Skill**: Knov opens the pages
+  and apps the workflow uses, can save a resume brief to its Drafts folder, and
+  can run your tests if you approve the project folder. Searches, sensitive
+  sites, and editing stay with you.
+- In **Skills**, choose **Run now**, or **Edit** to rename, toggle steps, pick
+  a check for terminal steps, choose whether to stop or continue when a step
+  needs attention, and set a trigger: only when you run it, when you start the
+  workflow, or on a schedule.
+- **Rescan** re-mines the last 30 days immediately; Knov otherwise rescans at
+  most every 30 minutes when there is new activity.
+
+### Control what the agent may do
+
+Open **Agent** (Delegated work):
+
+- **Work** lists runs waiting for you and the full history. Opening a run shows
+  what Knov believed at the time, each action's permission, verification, and
+  output, and **Undo** for drafts you have not edited.
+- **Permissions** holds the hourly budget for automatic actions, permission
+  suggestions, active permissions with **Revoke**, a form to allow, always ask,
+  or never allow an action everywhere, for one skill, or for one workspace
+  (optionally for 7 or 30 days), the approved project folders for checks, and
+  the risk table that explains the defaults.
+- **Insights** lists goals to confirm, rename, complete, or dismiss, outcome
+  metrics such as completion, verification, approval, and undo rates, and the
+  preferences Knov has learned from your decisions.
+
+**Pause agent** (also in the sidebar, Settings, and the command menu) is the
+kill switch: nothing runs while it is paused, including actions already
+approved. It is separate from collection. Knov never sends messages, deletes
+data, pays, or changes repositories, and background runs never open windows or
+apps on their own. See [Autonomous Work Agent](docs/autonomous-agent.md).
+
+### Move quickly
+
+Press **⌘K** for the command menu to jump to any page, ask with context,
+pause or resume collection or the agent, or rescan workflows. **⌘1**–**⌘7**
+switch pages directly.
+
 ### Try the Prediction Experiment
 
 The Prediction Experiment is off by default. Enable it in **Settings** to let
 Knov estimate likely next work intents, actions, and resources from recent
-activity, semantic threads, and similar local history. Knov records both a
-deterministic baseline and up to three provider candidates so their outcomes
-can be compared. The provider receives only minimized, sanitized context; the
+activity, semantic threads, and similar local history. Knov records a
+deterministic baseline, a workflow-based next step when you are part-way
+through a known workflow, and, when a provider key is configured, up to three
+provider candidates so their outcomes can be compared. Each prediction also
+records your inferred goal at the time. The provider receives only minimized, sanitized context; the
 prediction records, observed outcomes, match scores, and optional feedback stay
 in local SQLite.
 
@@ -301,8 +381,10 @@ Use **Settings** to:
   Keychain credential, and run **Test connection**;
 - enable or disable collection, behavioral break/focus guidance, and launch at
   login;
-- enable or disable the Prediction Experiment and inspect its local history
-  and evaluation metrics;
+- enable or disable the Prediction Experiment and inspect its local history,
+  evaluation metrics, and confidence calibration;
+- pause or resume agent execution (the kill switch) and jump to agent
+  permissions and history;
 - inspect Accessibility and Chrome connection diagnostics and the local
   database path;
 - approve or remove Chrome profiles;
@@ -319,9 +401,11 @@ excludes its subdomains.
 
 To reset Knov, use **Settings → Delete Knov data → Delete everything**.
 This permanently removes app-owned activity, profiles, corrections,
-recommendations, predictions, prediction feedback and evaluations, settings,
-provider credentials, and the Native Messaging manifest, then rotates the
-pairing token. It does not remove the unpacked Chrome extension or clear the
+recommendations, predictions, prediction feedback and evaluations, learned
+workflows, skills, agent runs and the action journal, permissions, approved
+workspaces, goal reviews, state snapshots, agent drafts, settings, provider
+credentials, and the Native Messaging manifest, then rotates the pairing
+token. It does not remove the unpacked Chrome extension or clear the
 extension's local settings; remove the extension from `chrome://extensions` to
 clear those.
 
@@ -341,6 +425,14 @@ clear those.
   selected provider has the correct key, and choose **Test connection**.
 - **No new activity appears:** confirm the sidebar and extension both show
   collection on, then check the desktop and extension exclusion lists.
+- **No workflows appear:** workflows need the same three or more steps in order
+  at least three times on two or more days. Keep collection on and choose
+  **Rescan** later.
+- **A check cannot start:** Knov looks for `cargo`, `npm`, and similar tools
+  in your `PATH`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.cargo/bin`, and
+  `~/.local/bin`. Version managers that only modify an interactive shell (for
+  example nvm) may not be visible to the app.
+- **Nothing runs:** check that the agent is not paused in the sidebar.
 
 ## Verification
 
@@ -367,6 +459,7 @@ unsigned technical-alpha build; code signing and notarization are not included.
 - [Architecture](docs/architecture.md)
 - [Privacy model](docs/privacy-model.md)
 - [Prediction Engine](docs/prediction-engine.md)
+- [Autonomous Work Agent](docs/autonomous-agent.md)
 - [Threat model](docs/threat-model.md)
 - [Testing](docs/testing.md)
 - [Product requirements](knov_prd.md)

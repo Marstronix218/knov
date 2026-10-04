@@ -21,10 +21,22 @@ npm run test:rust
 These commands cover:
 
 - desktop TypeScript and React type checking
-- desktop component and browser-preview API tests
+- desktop component and browser-preview API tests, including the Ready for you
+  inbox, run review and approval, Workflows and Skills, Delegated work,
+  the command menu, settings error handling, and setup without a provider
 - the production desktop Vite build
-- Rust compilation, database migration/retention tests, prediction state,
-  persistence/evaluation, digest handling, and collector helper tests
+- Rust compilation, database migration/retention tests (including databases
+  with a divergent `user_version`), prediction state, persistence/evaluation,
+  workflow candidates and calibration, digest handling, and collector helper
+  tests
+- work-agent tests: event normalization, workflow mining and quality filters,
+  opportunity scoring, goal inference, skill generation and validated edits,
+  permission precedence, unattended rules, budgets, the kill switch,
+  plan → approve → execute → verify → journal, stop-on-exception, rollback,
+  interrupted-action recovery, proposals, and Delete everything
+
+Agent execution tests use an in-memory action host; the automated suite never
+opens windows or runs project commands.
 
 Prediction tests use mocked provider responses. The automated suite must not
 require a provider credential or make a live provider request.
@@ -114,8 +126,27 @@ Chrome profile, or live provider accounts. Before an alpha handoff:
     the existing Now fallback, profile refresh, and chat remain independently
     usable. Provider-dependent actions may still report their own connection
     error when the provider itself is unavailable.
-18. Invoke **Delete everything**, then verify app-owned rows are gone, default
-    settings return, and provider keys are unavailable.
+18. With a few days of repeated activity, open **Workflows**, choose
+    **Rescan**, and confirm workflows show evidence with app names, domains,
+    and paths only. Dismiss one and confirm it stays dismissed after another
+    rescan.
+19. Create a skill, approve a project folder under **Agent → Permissions**, and
+    point the skill's terminal step at it. Choose **Run now**, untick one
+    action, and approve the rest; confirm only approved actions run, checks
+    report output and exit code, and the declined step is journaled.
+20. Undo the resume-brief draft; then run again, edit the draft in another
+    app, and confirm **Undo** refuses to delete your edited version.
+21. Approve the same action five times and confirm a permission suggestion
+    appears; accept it and confirm the next scheduled or context-triggered run
+    executes only non-window actions automatically and leaves page/app opens
+    in **Ready for you**.
+22. Pause the agent, approve a pending run, and confirm nothing executes and
+    the actions are skipped. Quit Knov during a long check and confirm the
+    action is marked failed on the next launch.
+23. Invoke **Delete everything**, then verify app-owned rows (including agent
+    workflows, skills, runs, permissions, folders, goal reviews, and
+    snapshots) and the agent `drafts` folder are gone, default settings
+    return, and provider keys are unavailable.
 
 ## Optional extension manual checklist
 
@@ -146,6 +177,10 @@ sqlite3 "$KNOV_DB" \
   'SELECT event_type, COUNT(*) FROM product_events GROUP BY event_type;'
 sqlite3 "$KNOV_DB" \
   'SELECT prediction_source, evaluation_status, COUNT(*) FROM predictions GROUP BY prediction_source, evaluation_status;'
+sqlite3 "$KNOV_DB" \
+  'SELECT status, COUNT(*) FROM workflows GROUP BY status;'
+sqlite3 "$KNOV_DB" \
+  'SELECT action_type, decision, status, COUNT(*) FROM agent_actions GROUP BY 1, 2, 3;'
 ```
 
 Stop the app before direct inspection to avoid mistaking an uncheckpointed WAL
@@ -158,7 +193,9 @@ owned by the Rust core.
 - no real Chrome Native Messaging end-to-end test
 - no provider contract test against live OpenAI, Anthropic, or Amazon Bedrock APIs
 - no long-running real-activity validation of prediction accuracy or personal
-  historical-pattern quality
+  historical-pattern quality; workflow-mining thresholds were checked once
+  against a copy of one real 30-day database
+- no automated test that runs real project test commands or opens real windows
 - no packaged-app, code-signing, notarization, update, or installer test
 - no secure-deletion claim or forensic-erasure test
 - no independent security assessment

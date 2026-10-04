@@ -19,6 +19,7 @@ Architecture: native Apple Silicon macOS collector + chat interface; optional ex
 8. [Assumptions, dependencies, and risks](#8-assumptions-dependencies-and-risks)
 9. [Success criteria](#9-success-criteria)
 10. [Future directions (post-MVP)](#10-future-directions-post-mvp)
+11. [Post-MVP: Autonomous work agent](#11-post-mvp-autonomous-work-agent)
 
 ---
 
@@ -492,3 +493,33 @@ These are recorded to show direction. None are part of the MVP and none should i
 - **Additional platforms and sync.** Adding Intel Mac support if justified, extending to Windows or Linux, and later synchronizing across a user's devices.
 
 **Deliberately excluded.** Capturing in-app content from social media platforms is not a viable direction: their APIs are closed and provide no access to what the user sees or does inside them. The roadmap must not depend on it.
+
+---
+
+## 11. Post-MVP: Autonomous work agent
+
+This section extends Knov from remembering and predicting work to learning repeated workflows and progressively completing safe work with explicit permission and verifiable outcomes. It is separate from the MVP scope above: the MVP exclusion of autonomous actions still describes the MVP, and this section describes the post-MVP layer built on top of it. IDs are intentionally separate from FR-1…FR-81. Design and current behavior are documented in [Autonomous Work Agent](docs/autonomous-agent.md).
+
+**Principles.** Prediction is infrastructure, not the headline. Model confidence never grants authority; only the user does. Raw behavior, policy, permissions, and the action journal stay local. Each layer must earn the next with measured value.
+
+| ID | Area | Requirement | Status |
+|---|---|---|---|
+| AR-1 | State model | Maintain a local semantic representation of the active thread, recent actions, resources, inferred goal, and unresolved work. | Implemented |
+| AR-2 | Prediction | Generate calibrated predictions for next intent, next workflow step, and useful resources. | Partial: workflow next-step source, goal tagging, calibration reporting |
+| AR-3 | Outcome labeling | Record prediction-to-outcome pairs locally for evaluation and learning. | Implemented |
+| AR-4 | Workflow discovery | Identify recurring semantic workflows and show the evidence supporting each. | Implemented |
+| AR-5 | Automation scoring | Rank workflows by frequency, time, stability, tool availability, reversibility, and risk. | Implemented |
+| AR-6 | Learned Skill | Let a confirmed workflow become an inspectable, editable Skill with steps, tools, triggers, verification, and exception rules. | Implemented |
+| AR-7 | Execution runtime | Execute explicitly permitted actions through bounded tool adapters. | Implemented (open page, open app, write draft, run allow-listed checks) |
+| AR-8 | Permission scopes | Grant and revoke authority by action type, scope, and duration. | Implemented for everywhere, skill, and workspace scopes |
+| AR-9 | Risk policy | Require stronger approval for irreversible, external, destructive, financial, credential, or security-sensitive actions. | Implemented: such actions have no adapter |
+| AR-10 | Verification | Verify every executed action against a defined success condition before marking it complete. | Implemented |
+| AR-11 | Rollback | Preserve a rollback path for reversible persistent changes where practical. | Implemented for drafts |
+| AR-12 | Action journal | Store a human-readable local audit record of plan, evidence, permission, execution, result, and verification. | Implemented |
+| AR-13 | Progressive autonomy | Suggest broader permission only after repeated successful approvals; never broaden authority silently. | Implemented |
+| AR-14 | Background work | Permit background continuation only for explicitly authorized goals and action scopes. | Partial: scheduled and context-triggered skills; no multi-step goal delegation |
+| AR-15 | Personal policy | Learn user-specific action preferences without letting confidence override permission. | Partial: deterministic preference summary |
+| AR-16 | Privacy | Keep raw behavioral, policy, permission, and action-history data local by default. | Implemented |
+| AR-17 | Interoperability | Expose selected context to external AI tools without transferring execution permissions. | Not implemented |
+
+**Evidence gates.** Workflow-based automation is suggested only for workflows seen at least four times that Knov can prepare safely. Permission suggestions require five clean approvals of the same action in the same scope. Success is measured by task completion, verification, approval acceptance, undo rate, verified time saved, and a high-risk action count that must remain zero.

@@ -1,13 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  ActionDecision,
   ActivityEvent,
   ActivityPreview,
+  AgentOverview,
+  AgentRun,
+  AutonomyOverview,
   BootstrapStatus,
   BrowserProfile,
   ChatMode,
   ChatMessage,
   ChatRunResult,
   DashboardData,
+  GrantRequest,
   ProfileData,
   Provider,
   PredictionDashboard,
@@ -15,10 +20,18 @@ import type {
   PredictionHistoryItem,
   RangeKey,
   SettingsData,
+  Skill,
+  SkillUpdate,
   ThreadContext,
+  Workflow,
 } from "../types";
 import {
   mockActivity,
+  mockAgentOverview,
+  mockAutonomy,
+  mockRuns,
+  mockSkills,
+  mockWorkflows,
   mockBrowsers,
   mockDashboard,
   mockProfile,
@@ -178,4 +191,178 @@ export const api = {
       },
     ),
   deleteAllData: () => call<void>("delete_all_data", undefined, undefined),
+  startLocalBootstrap: () =>
+    call<BootstrapStatus>("start_local_bootstrap", undefined, {
+      phase: "complete",
+      importedEvents: 0,
+      progress: 100,
+      message: "Local context is ready.",
+    }),
+
+  agentOverview: () => call<AgentOverview>("get_agent_overview", undefined, mockAgentOverview),
+  reviewGoal: (goalId: string, status: "confirmed" | "dismissed" | "completed" | "inferred", title?: string) =>
+    call<AgentOverview>("review_goal", { goalId, status, title }, previewGoalReview(goalId, status, title)),
+  workflows: () => call<Workflow[]>("get_workflows", undefined, mockWorkflows),
+  rescanWorkflows: () => call<Workflow[]>("rescan_workflows", undefined, mockWorkflows),
+  reviewWorkflow: (workflowId: string, status: Workflow["status"], title?: string) =>
+    call<Workflow>("review_workflow", { workflowId, status, title }, previewWorkflowReview(workflowId, status, title)),
+  skills: () => call<Skill[]>("get_skills", undefined, mockSkills),
+  createSkill: (workflowId: string) =>
+    call<Skill>("create_skill", { workflowId }, previewSkillFromWorkflow(workflowId)),
+  updateSkill: (skill: SkillUpdate) => call<Skill>("update_skill", { skill }, previewSkillUpdate(skill)),
+  deleteSkill: (skillId: string) => call<void>("delete_skill", { skillId }, undefined),
+  previewSkillRun: (skillId: string) =>
+    call<AgentRun>("preview_skill_run", { skillId }, previewRunFor(skillId)),
+  decideRun: (runId: string, decisions: ActionDecision[]) =>
+    call<AgentRun>("decide_agent_run", { runId, decisions }, previewDecidedRun(runId, decisions)),
+  cancelRun: (runId: string) => call<AgentRun>("cancel_agent_run", { runId }, previewCancelledRun(runId)),
+  acknowledgeRun: (runId: string) => call<void>("acknowledge_agent_run", { runId }, undefined),
+  agentRuns: (limit = 30) => call<AgentRun[]>("get_agent_runs", { limit }, mockRuns),
+  agentRun: (runId: string) => call<AgentRun>("get_agent_run", { runId }, previewRunById(runId)),
+  rollbackAction: (actionId: string) =>
+    call<AgentRun>("rollback_agent_action", { actionId }, previewRolledBack(actionId)),
+  openDraft: async (actionId: string) => {
+    if (!isTauri()) throw new Error("Drafts open in the desktop app.");
+    await invoke<void>("open_agent_draft", { actionId });
+  },
+  autonomy: () => call<AutonomyOverview>("get_autonomy", undefined, mockAutonomy),
+  setAgentPaused: (paused: boolean) =>
+    call<AutonomyOverview>("set_agent_paused", { paused }, { ...mockAutonomy, paused }),
+  saveGrant: (grant: GrantRequest) =>
+    call<AutonomyOverview>("save_autonomy_grant", { grant }, mockAutonomy),
+  revokeGrant: (grantId: string) =>
+    call<AutonomyOverview>("revoke_autonomy_grant", { grantId }, {
+      ...mockAutonomy,
+      grants: mockAutonomy.grants.filter((grant) => grant.id !== grantId),
+    }),
+  respondProposal: (response: { actionType: string; scopeKind: string; scopeValue?: string; accept: boolean }) =>
+    call<AutonomyOverview>("respond_autonomy_proposal", { response }, { ...mockAutonomy, proposals: [] }),
+  approveWorkspace: (path: string) =>
+    call<AutonomyOverview>("approve_agent_workspace", { path }, mockAutonomy),
+  removeWorkspace: (workspaceId: string) =>
+    call<AutonomyOverview>("remove_agent_workspace", { workspaceId }, {
+      ...mockAutonomy,
+      workspaces: mockAutonomy.workspaces.filter((workspace) => workspace.id !== workspaceId),
+    }),
 };
+
+/* Browser-preview fallbacks: deterministic sample transitions so the
+   preview can demonstrate approval, execution, and rollback states. */
+
+function previewGoalReview(goalId: string, status: string, title?: string): AgentOverview {
+  const overview = structuredClone(mockAgentOverview);
+  const goals = overview.state.goals
+    .filter((goal) => !(goal.id === goalId && (status === "dismissed" || status === "completed")))
+    .map((goal) => goal.id === goalId
+      ? { ...goal, status: status === "confirmed" ? "confirmed" as const : "inferred" as const, title: title || goal.title, confidence: status === "confirmed" ? 1 : goal.confidence }
+      : goal);
+  overview.state.goals = goals;
+  overview.state.goal = goals.find((goal) => goal.id === overview.state.goal?.id) ?? goals[0];
+  return overview;
+}
+
+function previewWorkflowReview(workflowId: string, status: Workflow["status"], title?: string): Workflow {
+  const workflow = structuredClone(mockWorkflows.find((item) => item.id === workflowId) ?? mockWorkflows[0]);
+  return { ...workflow, status, title: title?.trim() || workflow.title };
+}
+
+function previewSkillFromWorkflow(workflowId: string): Skill {
+  const existing = mockSkills.find((skill) => skill.workflowId === workflowId);
+  if (existing) return structuredClone(existing);
+  const workflow = mockWorkflows.find((item) => item.id === workflowId) ?? mockWorkflows[0];
+  return {
+    ...structuredClone(mockSkills[0]),
+    id: `skill-${workflowId}`,
+    name: workflow.title,
+    workflowId,
+    thread: workflow.stats.thread,
+    trigger: { kind: "manual" },
+    stats: { runs: 0, completed: 0, needsAttention: 0, failed: 0, rolledBack: 0 },
+    steps: workflow.steps.map((step, index) => ({
+      id: `step-${index + 1}`,
+      title: step.title,
+      category: step.category,
+      enabled: true,
+      action: step.kind === "app"
+        ? { type: "open_application" as const, app: step.label }
+        : step.resource ? { type: "open_url" as const, url: step.resource } : undefined,
+    })),
+  };
+}
+
+function previewSkillUpdate(update: SkillUpdate): Skill {
+  const skill = structuredClone(mockSkills.find((item) => item.id === update.id) ?? mockSkills[0]);
+  return {
+    ...skill,
+    name: update.name.trim() || skill.name,
+    trigger: update.trigger,
+    onException: update.onException,
+    enabled: update.enabled,
+    steps: skill.steps.map((step) => ({
+      ...step,
+      enabled: update.steps.find((candidate) => candidate.id === step.id)?.enabled ?? step.enabled,
+    })),
+  };
+}
+
+function previewRunFor(skillId: string): AgentRun {
+  const run = structuredClone(mockRuns[0]);
+  return {
+    ...run,
+    id: `run-preview-${skillId}`,
+    skillId,
+    origin: "manual",
+    status: "awaiting_approval",
+    actions: run.actions.map((action) => ({
+      ...action,
+      runId: `run-preview-${skillId}`,
+      status: "awaiting_approval",
+      decision: action.decision === "auto" ? "auto" : "pending",
+      resultSummary: undefined,
+      outputExcerpt: undefined,
+      verification: undefined,
+      rollbackAvailable: false,
+      canOpen: false,
+    })),
+  };
+}
+
+function previewRunById(runId: string): AgentRun {
+  return structuredClone(mockRuns.find((run) => run.id === runId) ?? mockRuns[0]);
+}
+
+function previewDecidedRun(runId: string, decisions: ActionDecision[]): AgentRun {
+  const run = previewRunById(runId);
+  run.id = runId;
+  run.actions = run.actions.map((action) => {
+    const choice = decisions.find((decision) => decision.actionId === action.id);
+    if (!choice || action.status !== "awaiting_approval") return action;
+    return choice.approved
+      ? {
+        ...action,
+        status: "succeeded",
+        decision: action.decision === "auto" ? "auto" : "approved",
+        resultSummary: `Preview: ${action.title}`,
+        verification: { passed: true, checks: ["Browser preview: no action was taken on your Mac"] },
+      }
+      : { ...action, status: "rejected", decision: "rejected" };
+  });
+  run.status = run.actions.some((action) => action.status === "needs_attention") ? "completed_with_exceptions" : "completed";
+  run.summary = "Preview run finished";
+  return run;
+}
+
+function previewCancelledRun(runId: string): AgentRun {
+  const run = previewRunById(runId);
+  run.actions = run.actions.map((action) => action.status === "awaiting_approval" ? { ...action, status: "skipped", decision: "cancelled" } : action);
+  run.status = "cancelled";
+  return run;
+}
+
+function previewRolledBack(actionId: string): AgentRun {
+  const run = structuredClone(mockRuns.find((candidate) => candidate.actions.some((action) => action.id === actionId)) ?? mockRuns[0]);
+  run.actions = run.actions.map((action) => action.id === actionId
+    ? { ...action, status: "rolled_back", rollbackAvailable: false, canOpen: false, resultSummary: "Draft deleted." }
+    : action);
+  return run;
+}

@@ -74,10 +74,17 @@ clicks, lower confidence when evidence is weak, and avoid unsupported resources.
 Malformed structured output cannot create provider candidates; the local
 baseline remains available and other Knov features continue unaffected.
 
-Every provider batch is paired with a deterministic heuristic candidate based
-on existing thread continuity and recent resource/app evidence. Both sources
-use the same persistence and evaluation path so their top-ranked accuracy can
-be compared.
+Every batch includes a deterministic heuristic candidate based on existing
+thread continuity and recent resource/app evidence. When the user is part-way
+through a workflow the [work agent](autonomous-agent.md) has learned, the batch
+also includes a `workflow` candidate: the workflow's next step, with confidence
+grounded in how often that workflow is finished once started and how far along
+the user is. All sources use the same persistence and evaluation path so their
+top-ranked accuracy can be compared.
+
+Each candidate also records the user's inferred goal at prediction time
+(`predicted_goal`) and, for workflow candidates, the workflow ID, giving the
+goal → workflow → next step → resource hierarchy a local record.
 
 ## Triggering and display
 
@@ -89,13 +96,15 @@ requires:
 - no prediction generation already in flight.
 
 Scheduled generation additionally requires useful activity since the preceding
-batch and the configured cooldown, initially 15 minutes, to have elapsed.
+batch and the configured cooldown, initially 15 minutes, to have elapsed. A
+provider key is optional: without one, batches contain only the local baseline
+and workflow candidates.
 
 The scheduler accepts cooldown values from 10–120 minutes. Manual generation
 uses the same in-flight guard and state/persistence path.
 
-The initial display threshold is 0.65. Unexpired provider candidates at or above
-the threshold can appear under **Likely next** on Now. Lower-confidence results
+The initial display threshold is 0.65. Unexpired provider and workflow
+candidates at or above the threshold can appear under **Likely next** on Now. Lower-confidence results
 remain in Shadow Mode for local evaluation. Visible cards use short evidence,
 not chain-of-thought, and allow optional correct, wrong, or dismiss feedback.
 Candidates marked wrong or dismissed are excluded from **Likely next** on every
@@ -113,7 +122,8 @@ The `predictions` table stores one row per candidate. Its concepts are:
 | Group | Stored fields |
 | --- | --- |
 | Identity | prediction ID, batch ID, rank, creation time |
-| Source | `heuristic` or `provider` |
+| Source | `heuristic`, `workflow`, or `provider` |
+| Hierarchy | inferred goal at prediction time; workflow ID for workflow candidates |
 | Candidate | intent, action, optional resource type/label/safe locator, optional thread ID |
 | Scoring | confidence, horizon minutes, reasoning summary, evidence |
 | Context | sanitized state summary, not the raw provider prompt |
@@ -143,9 +153,10 @@ constants, not scientifically validated boundaries:
 
 Prediction History exposes candidate time, text, confidence, source, outcome,
 match score, and feedback. Aggregate local metrics include evaluated counts,
-matched/partial/missed totals, provider and baseline top-1 accuracy,
-high-confidence accuracy for candidates at 0.75 or above, and positive-feedback
-rate.
+matched/partial/missed totals, provider, baseline, and workflow top-1 accuracy,
+high-confidence accuracy for candidates at 0.75 or above, positive-feedback
+rate, and a calibration table comparing mean stated confidence with the
+observed match rate in four confidence bands.
 
 ## Privacy and failure isolation
 

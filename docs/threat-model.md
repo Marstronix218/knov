@@ -16,8 +16,10 @@ provider.
 - detailed browsing and foreground-application history
 - window and page titles, URLs, and extracted search queries
 - generated profile, recommendations, and user corrections
-- OpenAI or Anthropic API key
+- OpenAI, Anthropic, or Amazon Bedrock API key
 - extension pairing token and unfinished active-tab session
+- agent authority: autonomy grants, approved project folders, and the action
+  journal (including trimmed command output)
 
 ## Trust boundaries
 
@@ -29,6 +31,7 @@ provider.
 | Extension to native host | Chrome `allowed_origins`, protocol version, token, extension-ID binding | Registration is manual; pairing token is stored in plaintext local stores |
 | Native host to Rust core | Mode-0600 per-user Unix socket and bounded message size | Same-user compromise remains in scope |
 | Rust core to provider | HTTPS with direct provider authentication | Provider receives and may retain the disclosed digest/chat data |
+| Agent to the operating system | Four bounded adapters; per-action authorization; targets produced and re-validated in Rust; fixed test argument lists without a shell; approved folders inside the home folder; process-group timeout | Approved test suites execute project code with the user's privileges |
 
 ## Controls implemented
 
@@ -44,6 +47,15 @@ provider.
 - Provider status errors are converted to safe user-facing messages without
   echoing credentials or response bodies.
 - User corrections are stored separately and supplied as authoritative context.
+- Agent actions are authorized individually: explicit user grants only, a
+  kill switch, an hourly budget for automatic actions, "never" grants that
+  override everything, and no unattended window-opening. Messaging, form
+  submission, deletion, payment, credential, and repository-changing actions
+  have no adapter.
+- Every agent run is persisted before execution, so the approved plan is what
+  runs; actions interrupted by a quit fail closed on the next launch.
+- Drafts are written only inside Knov's Drafts folder, never overwrite files,
+  and are deleted on undo only if unedited.
 
 ## Material residual risks
 
@@ -82,6 +94,23 @@ them or return valid structured data. Provider compromise, account retention,
 abuse monitoring, and legal disclosure are outside the local application's
 control.
 
+### Agent execution
+
+The IPC layer cannot inject arbitrary targets: skills are generated from
+mined workflows in Rust, edits can only toggle steps or choose an approved
+folder and preset, and every target is re-validated at plan time and again
+immediately before execution. Residual risks:
+
+- An approved project's test command runs that project's own code. Approve only
+  folders whose tests you would run yourself; a malicious repository's test
+  script has your user privileges.
+- Opening a page or application is visible but not reversible by Knov; a stale
+  but still credential-free URL from local history could be reopened.
+- A compromised bundled frontend could approve pending actions or add grants
+  through the exposed commands, within the same adapter limits.
+- The journal stores URL paths and trimmed command output locally; redaction is
+  pattern-based, not a general secret detector.
+
 ### Deletion limits
 
 Row deletion and Keychain deletion are logical application operations, not
@@ -103,6 +132,8 @@ pages, remove backups, or delete provider-held data.
 ## Recommended operating posture
 
 - Use a non-production provider key with a strict spending limit.
+- Approve only project folders you trust, and pause the agent when you do not
+  want anything to run.
 - Enable FileVault and a strong macOS login password.
 - Exclude sensitive applications and domains in both the app and extension.
 - Prefer Native Messaging over loopback HTTP.

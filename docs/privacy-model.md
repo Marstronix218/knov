@@ -39,8 +39,15 @@ copies it outside Knov:
 - detailed activity events and dashboard history
 - complete imported URLs, titles, and extracted search queries
 - generated profile versions, recommendations, and corrections
-- prediction candidates, sanitized state summaries, observed outcomes,
-  evaluation scores, and optional feedback
+- prediction candidates, sanitized state summaries, inferred goals, observed
+  outcomes, evaluation scores, and optional feedback
+- work-agent data: learned workflows (step labels such as app names and
+  domains, timing statistics, and recent occurrences with URL paths but no
+  queries or titles), your workflow and goal reviews, skills, permissions,
+  approved project folders, 10-minute state snapshots, and the action journal
+  (plans, targets, rationale, decisions, verification results, and trimmed
+  command output)
+- agent drafts, written as Markdown files in Knov's own `drafts` folder
 - settings and Chrome pairing state
 - allowlisted alpha outcome events such as setup completion, thread resume/copy,
   and useful/wrong/not-now feedback; these contain only an event type, local
@@ -58,7 +65,8 @@ provider credential.
 | Anthropic connection test | API key plus a minimal `Reply OK` message |
 | Amazon Bedrock connection test | API key plus a minimal model-specific token-count request |
 | Profile refresh | Aggregated activity digest and all authoritative corrections |
-| Prediction generation | Minimized current-work features and a small set of sanitized historical patterns needed to produce candidates |
+| Prediction generation (only with a provider key) | Minimized current-work features and a small set of sanitized historical patterns needed to produce candidates |
+| Work agent | Nothing. Workflow mining, goals, planning, permissions, verification, and the journal are local |
 | Chat | Locally retrieved profile facts, query-specific aggregates, bounded conversation, new message, and sanitized evidence from the explicitly selected thread |
 
 The profiling digest includes app names, domain-only website identifiers,
@@ -83,6 +91,15 @@ events. The raw provider prompt is not stored. Historical retrieval, the
 heuristic baseline, outcome evaluation, aggregate accuracy metrics, and user
 feedback remain local. Disabling the experiment stops new prediction requests;
 pausing collection also suppresses prediction generation.
+
+The work agent has no network path of its own. Its actions run on this Mac:
+it can open a credential-free web page or an application you have used in the
+workflow, save a draft to its own folder, or run one of eight fixed test
+commands (no shell, no custom arguments) inside a project folder you approved.
+Test commands are your project's own code and may themselves contact the
+network, as they would when you run them. Their output is trimmed, has the home
+path and credential-looking lines removed, and stays in SQLite. Pausing the
+agent stops all of this independently of collection.
 
 Rendering activity history does not contact recorded websites. Knov uses local
 application icons or letter placeholders, and resource previews remain
@@ -110,6 +127,12 @@ and should not be used for a distributed alpha build.
 - Profiles and corrections remain until removed through the app's controls.
 - Predictions, evaluations, and feedback remain local until removed through
   **Delete everything**.
+- Agent state snapshots follow the 30-day activity window. Agent runs and the
+  action journal are kept for 90 days as an audit trail. Workflow evidence is
+  recomputed from the 30-day window; workflows you confirmed or dismissed keep
+  your decision but lose evidence once they stop recurring. Skills,
+  permissions, approved folders, goal reviews, and drafts remain until you
+  remove them or use **Delete everything**.
 - If installed, the extension does not persist completed activity events. An
   unfinished active session may exist in Chrome session storage.
 
@@ -131,7 +154,9 @@ testing the extension.
 
 `Delete everything`:
 
-- removes app-owned SQLite rows
+- removes app-owned SQLite rows, including agent workflows, skills, runs,
+  permissions, approved folders, goal reviews, and snapshots
+- deletes Knov's agent `drafts` folder
 - resets settings to defaults
 - removes all configured provider credentials from Keychain or reports failure
 - creates a new pairing token

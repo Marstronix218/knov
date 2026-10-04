@@ -153,6 +153,10 @@ pub struct Settings {
     pub prediction_experiment_enabled: bool,
     pub prediction_display_threshold: f64,
     pub prediction_cooldown_minutes: i64,
+    /// Kill switch for agent execution; independent of activity collection.
+    pub agent_paused: bool,
+    /// Budget for actions that run under an automatic grant.
+    pub agent_max_actions_per_hour: i64,
 }
 
 impl Default for Settings {
@@ -172,6 +176,8 @@ impl Default for Settings {
             prediction_experiment_enabled: false,
             prediction_display_threshold: 0.65,
             prediction_cooldown_minutes: 15,
+            agent_paused: false,
+            agent_max_actions_per_hour: 30,
         }
     }
 }

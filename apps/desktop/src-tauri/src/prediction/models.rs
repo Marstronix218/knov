@@ -34,6 +34,24 @@ pub struct WorkPrediction {
     pub match_score: Option<f64>,
     #[serde(default)]
     pub user_feedback: Option<String>,
+    /// Inferred goal at prediction time: the top of the prediction hierarchy.
+    #[serde(default)]
+    pub goal: Option<String>,
+    #[serde(default)]
+    pub workflow_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CalibrationBin {
+    pub label: String,
+    pub min_confidence: f64,
+    pub max_confidence: f64,
+    pub count: i64,
+    #[serde(default)]
+    pub mean_confidence: Option<f64>,
+    #[serde(default)]
+    pub observed_accuracy: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -46,8 +64,12 @@ pub struct PredictionStats {
     pub missed: i64,
     pub provider_top1_accuracy: Option<f64>,
     pub baseline_top1_accuracy: Option<f64>,
+    #[serde(default)]
+    pub workflow_top1_accuracy: Option<f64>,
     pub high_confidence_accuracy: Option<f64>,
     pub user_positive_feedback_rate: Option<f64>,
+    #[serde(default)]
+    pub calibration: Vec<CalibrationBin>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
