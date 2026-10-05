@@ -346,7 +346,7 @@ impl ProviderClient {
                     json!({"role": if m.role == "assistant" {"assistant"} else {"user"}, "content":m.content})
                 }));
                 let mut request = json!({
-                    "model":"gpt-5-mini",
+                    "model":"gpt-6-luna",
                     "input":input,
                     "max_output_tokens":max_tokens,
                     "store":false
@@ -381,7 +381,7 @@ impl ProviderClient {
                     .ok_or_else(|| AppError::Provider("The provider returned no text.".into()))?;
                 Ok(CompletionResult {
                     text,
-                    model: body["model"].as_str().unwrap_or("gpt-5-mini").into(),
+                    model: body["model"].as_str().unwrap_or("gpt-6-luna").into(),
                     input_tokens: body["usage"]["input_tokens"].as_i64(),
                     output_tokens: body["usage"]["output_tokens"].as_i64(),
                     preflight_input_tokens: None,

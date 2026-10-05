@@ -116,10 +116,15 @@ const MAX_CHAT_HISTORY_MESSAGE_CHARS: usize = 4_000;
 const MAX_CHAT_HISTORY_TOKENS: i64 = 2_000;
 
 #[tauri::command]
-pub fn get_dashboard(range: String, state: State<'_, AppState>) -> AppResult<Value> {
+pub async fn get_dashboard(range: String, state: State<'_, AppState>) -> AppResult<Value> {
+    let db = state.db.clone();
+    blocking(move || dashboard_to_ui(&db, range)).await
+}
+
+fn dashboard_to_ui(db: &Database, range: String) -> AppResult<Value> {
     let (start_at, end_at) = range_bounds(&range)?;
-    let dashboard = state.db.dashboard(&DashboardRequest { start_at, end_at })?;
-    let history = state.db.history(&HistoryRequest {
+    let dashboard = db.dashboard(&DashboardRequest { start_at, end_at })?;
+    let history = db.history(&HistoryRequest {
         start_at,
         end_at,
         search: None,
@@ -130,7 +135,7 @@ pub fn get_dashboard(range: String, state: State<'_, AppState>) -> AppResult<Val
     let semantic_topics = semantic_topics(&history);
     let editor_workspace_changes = editor_workspace_changes_by_app(&history, start_at);
     let palette = ["#4968a6", "#7c5c9e", "#399279", "#c07a3e", "#7e8798"];
-    let behavioral_guidance_enabled = state.db.settings()?.behavioral_guidance_enabled;
+    let behavioral_guidance_enabled = db.settings()?.behavioral_guidance_enabled;
     let usage = |values: Vec<crate::models::UsageItem>| {
         values
             .into_iter()
@@ -348,13 +353,22 @@ fn inferred_topic(event: &crate::models::ActivityEvent) -> Option<&'static str> 
 }
 
 #[tauri::command]
-pub fn get_activity_history(
+pub async fn get_activity_history(
     range: String,
     query: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<Vec<Value>> {
+    let db = state.db.clone();
+    blocking(move || activity_history_to_ui(&db, range, query)).await
+}
+
+fn activity_history_to_ui(
+    db: &Database,
+    range: String,
+    query: Option<String>,
+) -> AppResult<Vec<Value>> {
     let (start_at, end_at) = range_bounds(&range)?;
-    let history = state.db.history(&HistoryRequest {
+    let history = db.history(&HistoryRequest {
         start_at,
         end_at,
         search: query,
@@ -578,18 +592,21 @@ fn native_application_icon(_app_name: &str) -> Option<String> {
 }
 
 #[tauri::command]
-pub fn get_profile(state: State<'_, AppState>) -> AppResult<Value> {
-    profile_to_ui(&state.db)
+pub async fn get_profile(state: State<'_, AppState>) -> AppResult<Value> {
+    let db = state.db.clone();
+    blocking(move || profile_to_ui(&db)).await
 }
 
 #[tauri::command]
-pub fn get_settings(state: State<'_, AppState>) -> AppResult<Value> {
+pub async fn get_settings(state: State<'_, AppState>) -> AppResult<Value> {
     settings_to_ui(&state)
 }
 
 #[tauri::command]
-pub fn get_browser_profiles(state: State<'_, AppState>) -> AppResult<Vec<Value>> {
-    Ok(discover_chrome_profiles(&state.db)?
+pub async fn get_browser_profiles(state: State<'_, AppState>) -> AppResult<Vec<Value>> {
+    let db = state.db.clone();
+    let profiles = blocking(move || discover_chrome_profiles(&db)).await?;
+    Ok(profiles
         .into_iter()
         .map(|profile| {
             json!({
@@ -960,14 +977,23 @@ pub fn record_product_event(
 }
 
 #[tauri::command]
-pub fn get_predictions_dashboard(state: State<'_, AppState>) -> AppResult<PredictionDashboard> {
-    let settings = state.db.settings()?;
-    prediction::dashboard(&state.db, &settings, Utc::now().timestamp())
+pub async fn get_predictions_dashboard(
+    state: State<'_, AppState>,
+) -> AppResult<PredictionDashboard> {
+    let db = state.db.clone();
+    blocking(move || {
+        let settings = db.settings()?;
+        prediction::dashboard(&db, &settings, Utc::now().timestamp())
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn get_prediction_history(state: State<'_, AppState>) -> AppResult<Vec<PredictionHistoryItem>> {
-    state.db.prediction_history(250)
+pub async fn get_prediction_history(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<PredictionHistoryItem>> {
+    let db = state.db.clone();
+    blocking(move || db.prediction_history(250)).await
 }
 
 #[tauri::command]
@@ -1044,8 +1070,9 @@ pub async fn review_goal(
 }
 
 #[tauri::command]
-pub fn get_workflows(state: State<'_, AppState>) -> AppResult<Vec<Workflow>> {
-    agent::workflows(&state.db)
+pub async fn get_workflows(state: State<'_, AppState>) -> AppResult<Vec<Workflow>> {
+    let db = state.db.clone();
+    blocking(move || agent::workflows(&db)).await
 }
 
 #[tauri::command]
@@ -1075,8 +1102,9 @@ pub fn review_workflow(
 }
 
 #[tauri::command]
-pub fn get_skills(state: State<'_, AppState>) -> AppResult<Vec<Skill>> {
-    agent::skills(&state.db)
+pub async fn get_skills(state: State<'_, AppState>) -> AppResult<Vec<Skill>> {
+    let db = state.db.clone();
+    blocking(move || agent::skills(&db)).await
 }
 
 #[tauri::command]
@@ -1131,13 +1159,18 @@ pub fn acknowledge_agent_run(run_id: String, state: State<'_, AppState>) -> AppR
 }
 
 #[tauri::command]
-pub fn get_agent_runs(limit: Option<i64>, state: State<'_, AppState>) -> AppResult<Vec<AgentRun>> {
-    agent::runs(&state.db, limit.unwrap_or(30))
+pub async fn get_agent_runs(
+    limit: Option<i64>,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<AgentRun>> {
+    let db = state.db.clone();
+    blocking(move || agent::runs(&db, limit.unwrap_or(30))).await
 }
 
 #[tauri::command]
-pub fn get_agent_run(run_id: String, state: State<'_, AppState>) -> AppResult<AgentRun> {
-    agent::run(&state.db, &run_id)
+pub async fn get_agent_run(run_id: String, state: State<'_, AppState>) -> AppResult<AgentRun> {
+    let db = state.db.clone();
+    blocking(move || agent::run(&db, &run_id)).await
 }
 
 #[tauri::command]
@@ -1151,9 +1184,13 @@ pub fn open_agent_draft(action_id: String, state: State<'_, AppState>) -> AppRes
 }
 
 #[tauri::command]
-pub fn get_autonomy(state: State<'_, AppState>) -> AppResult<AutonomyOverview> {
-    let settings = state.db.settings()?;
-    agent::autonomy(&state.db, &settings, unix_now())
+pub async fn get_autonomy(state: State<'_, AppState>) -> AppResult<AutonomyOverview> {
+    let db = state.db.clone();
+    blocking(move || {
+        let settings = db.settings()?;
+        agent::autonomy(&db, &settings, unix_now())
+    })
+    .await
 }
 
 /// The agent kill switch. Pausing also stops anything already approved but
@@ -1665,12 +1702,39 @@ fn editor_workspace_changes_by_app(
         {
             continue;
         }
-        let paths = recent_editor_workspace_changes(&event.app_name, since, 8);
+        let paths = cached_editor_workspace_changes(&key, &event.app_name, since);
         if !paths.is_empty() {
             changes.insert(key, paths);
         }
     }
     changes
+}
+
+type EditorChangesCache = HashMap<(String, i64), (Instant, Vec<String>)>;
+
+static EDITOR_CHANGES_CACHE: OnceLock<Mutex<EditorChangesCache>> = OnceLock::new();
+const EDITOR_CHANGES_TTL: Duration = Duration::from_secs(60);
+
+/// Scanning editor workspaces spawns several `git` processes, so results are
+/// reused briefly instead of being recomputed on every page load.
+fn cached_editor_workspace_changes(key: &str, app_name: &str, since: i64) -> Vec<String> {
+    let cache = EDITOR_CHANGES_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    // Rolling 7d/30d ranges move `since` every second; bucket it so they can hit.
+    let cache_key = (key.to_string(), since.div_euclid(60));
+    if let Some((computed_at, paths)) = cache
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&cache_key)
+    {
+        if computed_at.elapsed() < EDITOR_CHANGES_TTL {
+            return paths.clone();
+        }
+    }
+    let paths = recent_editor_workspace_changes(app_name, since, 8);
+    let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
+    cache.retain(|_, (computed_at, _)| computed_at.elapsed() < EDITOR_CHANGES_TTL);
+    cache.insert(cache_key, (Instant::now(), paths.clone()));
+    paths
 }
 
 fn activity_to_ui_with_topic(
