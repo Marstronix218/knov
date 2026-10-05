@@ -295,6 +295,7 @@ CREATE INDEX predictions_created_idx ON predictions(created_at DESC);
 CREATE INDEX predictions_pending_idx ON predictions(evaluation_status, created_at);
 "#
     ),
+    r#"ALTER TABLE recommendations ADD COLUMN title TEXT NOT NULL DEFAULT '';"#,
 ];
 
 /// Index of the idempotent agent-schema migration, re-applied after
@@ -662,8 +663,8 @@ impl Database {
         for item in recommendations {
             tx.execute(
                 "INSERT OR REPLACE INTO recommendations
-                 (id,kind,text,evidence,dismissed,feedback,created_at)
-                 VALUES(?1,?2,?3,?4,?5,?6,?7)",
+                 (id,kind,text,evidence,dismissed,feedback,created_at,title)
+                 VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
                 params![
                     item.id,
                     item.kind,
@@ -671,7 +672,8 @@ impl Database {
                     item.evidence,
                     item.dismissed,
                     item.feedback,
-                    item.created_at
+                    item.created_at,
+                    item.title
                 ],
             )?;
         }
@@ -693,7 +695,7 @@ impl Database {
     pub fn recommendations(&self, include_dismissed: bool) -> AppResult<Vec<Recommendation>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT id,kind,text,evidence,dismissed,feedback,created_at FROM recommendations
+            "SELECT id,kind,text,evidence,dismissed,feedback,created_at,title FROM recommendations
              WHERE ?1 OR dismissed=0 ORDER BY created_at DESC",
         )?;
         let values = stmt
@@ -706,6 +708,7 @@ impl Database {
                     dismissed: r.get(4)?,
                     feedback: r.get(5)?,
                     created_at: r.get(6)?,
+                    title: r.get(7)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;

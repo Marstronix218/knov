@@ -92,6 +92,8 @@ pub struct UserCorrection {
 pub struct Recommendation {
     pub id: String,
     pub kind: String,
+    #[serde(default)]
+    pub title: String,
     pub text: String,
     pub evidence: String,
     pub dismissed: bool,

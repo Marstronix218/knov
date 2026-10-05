@@ -972,14 +972,14 @@ function RecommendationSection({ recommendations }: { recommendations: Recommend
   return (
     <section className="recommendation-section" aria-label="Recommendations">
       <div className="section-title-row">
-        <div><div className="eyebrow">Optional guidance</div><h2>Review, don’t obey</h2></div>
-        <small>Inferences with visible evidence</small>
+        <div><div className="eyebrow">Suggestions</div><h2>From your recent activity</h2></div>
+        <small>Dismiss anything that doesn’t fit</small>
       </div>
       <div className="recommendation-grid">
         {visible.map((recommendation) => (
           <article className={`recommendation-card ${recommendation.kind}`} key={recommendation.id}>
             <div className="recommendation-top">
-              <span><Sparkles size={13} />{recommendation.kind === "continuity" ? "Work continuity" : "Behavioral"}</span>
+              <span><Sparkles size={13} />{recommendation.kind === "continuity" ? "Next step" : "Break & focus"}</span>
               <button disabled={pendingId === recommendation.id} aria-label={`Dismiss ${recommendation.title}`} title="Dismiss" onClick={() => void dismiss(recommendation)}><X size={15} /></button>
             </div>
             <h3>{recommendation.title}</h3>

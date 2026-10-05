@@ -151,7 +151,7 @@ pub fn get_dashboard(range: String, state: State<'_, AppState>) -> AppResult<Val
             json!({
                 "id":item.id,
                 "kind":item.kind,
-                "title": if item.kind=="behavioral" {"Activity suggestion"} else {"Suggested next step"},
+                "title":recommendation_headline(&item.title, &item.text),
                 "body":item.text,
                 "evidence":item.evidence,
                 "createdAt":timestamp(item.created_at)
@@ -1940,6 +1940,25 @@ fn bounded_chat_history(messages: &[UiChatMessage], token_budget: i64) -> Vec<Ch
     selected
 }
 
+/// Recommendations stored before titles existed fall back to the opening clause of their text,
+/// so every card still leads with what it is about rather than a generic label.
+fn recommendation_headline(title: &str, text: &str) -> String {
+    if !title.trim().is_empty() {
+        return title.trim().to_string();
+    }
+    let clause = text
+        .split(['.', ';', ':', '\n'])
+        .map(str::trim)
+        .find(|part| !part.is_empty())
+        .unwrap_or_default();
+    let words = clause.split_whitespace().collect::<Vec<_>>();
+    if words.len() <= 10 {
+        words.join(" ")
+    } else {
+        format!("{}…", words[..10].join(" "))
+    }
+}
+
 fn timestamp(value: i64) -> String {
     Utc.timestamp_opt(value, 0)
         .single()
@@ -1985,6 +2004,28 @@ fn format_duration(seconds: i64) -> String {
 mod tests {
     use super::*;
     use crate::models::{ActivityEvent, ActivitySource};
+
+    #[test]
+    fn recommendation_headline_prefers_title_and_falls_back_to_opening_clause() {
+        assert_eq!(
+            recommendation_headline(" Validate the permission bridge ", "Ignored."),
+            "Validate the permission bridge"
+        );
+        assert_eq!(
+            recommendation_headline(
+                "",
+                "Review the Tauri capability file. It changed yesterday."
+            ),
+            "Review the Tauri capability file"
+        );
+        assert_eq!(
+            recommendation_headline(
+                "",
+                "one two three four five six seven eight nine ten eleven twelve"
+            ),
+            "one two three four five six seven eight nine ten…"
+        );
+    }
 
     #[test]
     fn profile_selection_drops_profiles_deleted_in_chrome_but_rejects_unknown_ones() {

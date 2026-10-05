@@ -217,7 +217,9 @@ impl ProviderClient {
         let system = "Generate a conservative personal context profile and in-app recommendations from an aggregated digest. \
             Never diagnose health or mental state, never score productivity, never claim content was completed, and do not infer sensitive topics. \
             User truth is absolute and must be preserved. Return JSON only with keys profile and recommendations. \
-            profile has summary, interests, skills, activeProjects, patterns. Each recommendation has kind, text, evidence; \
+            profile has summary, interests, skills, activeProjects, patterns. Each recommendation has kind, title, text, evidence. \
+            kind is \"continuity\" for resuming or advancing work, or \"behavioral\" for breaks and focus. \
+            title is a specific headline of at most eight words naming the concrete action or project, never a generic label. \
             evidence must clearly distinguish observation from inference.";
         let prompt = format!(
             "AGGREGATED ACTIVITY DIGEST:\n{}\nAUTHORITATIVE USER TRUTH:\n{}",
@@ -275,13 +277,27 @@ impl ProviderClient {
                 if unsafe_guidance(&text) || unsafe_guidance(&evidence) {
                     return None;
                 }
-                let kind = object.get("kind")?.as_str()?.to_string();
+                let title = object
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|title| !unsafe_guidance(title))
+                    .unwrap_or_default()
+                    .to_string();
+                // Anything the model labels other than continuity is treated as behavioral so the
+                // UI badge, the headline fallback, and the behavioral opt-out always agree.
+                let kind = match object.get("kind")?.as_str()? {
+                    "continuity" => "continuity",
+                    _ => "behavioral",
+                }
+                .to_string();
                 if kind == "behavioral" && !settings.behavioral_guidance_enabled {
                     return None;
                 }
                 Some(Recommendation {
                     id: Uuid::new_v4().to_string(),
                     kind,
+                    title,
                     text,
                     evidence,
                     dismissed: false,
@@ -701,11 +717,12 @@ fn profile_response_format() -> Value {
                     "items":{
                         "type":"object",
                         "properties":{
-                            "kind":{"type":"string"},
+                            "kind":{"type":"string","enum":["continuity","behavioral"]},
+                            "title":{"type":"string"},
                             "text":{"type":"string"},
                             "evidence":{"type":"string"}
                         },
-                        "required":["kind","text","evidence"],
+                        "required":["kind","title","text","evidence"],
                         "additionalProperties":false
                     }
                 }
