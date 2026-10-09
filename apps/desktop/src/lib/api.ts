@@ -1,5 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  GraphRevision,
+  InterviewGraph,
+  InterviewSession,
+  WorkflowDocument,
   ActionDecision,
   ActivityEvent,
   ActivityPreview,
@@ -71,7 +75,21 @@ async function call<T>(command: string, args?: Record<string, unknown>, fallback
   return invoke<T>(command, args);
 }
 
+async function discoveryCall<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  if (!isTauri()) throw new Error("Workflow Discovery requires the desktop app. Browser preview cannot save interviews or call your provider.");
+  return invoke<T>(command, args);
+}
+
 export const api = {
+  interviewGraphHistory: (sessionId: string) => discoveryCall<GraphRevision[]>("get_discovery_graph_history", { sessionId }),
+  interviewGraph: (sessionId: string, revision?: number) => discoveryCall<InterviewGraph>("get_discovery_graph", { sessionId, revision }),
+  deleteDiscovery: (sessionId: string) => discoveryCall<void>("delete_discovery_interview", { sessionId }),
+  discoverySessions: () => discoveryCall<InterviewSession[]>("get_discovery_sessions"),
+  startDiscovery: (description: string, threadContext?: ThreadContext) => discoveryCall<InterviewSession>("start_discovery_interview", { description, threadContext }),
+  advanceDiscovery: (sessionId: string, action: "answer" | "skip" | "end", answer?: string) => discoveryCall<InterviewSession>("advance_discovery_interview", { sessionId, action, answer }),
+  setDiscoveryStatus: (sessionId: string, status: "paused" | "active") => discoveryCall<InterviewSession>("set_discovery_interview_status", { sessionId, status }),
+  discoveredWorkflows: () => discoveryCall<WorkflowDocument[]>("get_discovered_workflows"),
+  saveDiscoveredWorkflow: (workflow: WorkflowDocument) => discoveryCall<WorkflowDocument>("save_discovered_workflow", { workflow }),
   openResource: async (url: string) => {
     if (!isTauri()) {
       const opened = window.open(url, "_blank");

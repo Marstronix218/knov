@@ -24,6 +24,8 @@ Implemented and usable from source:
 - optional experimental Chrome Manifest V3 companion extension with active-tab timing
 - metadata-only Local History and recent Git-path signals from supported editors
 - semantic work threads across app, browser, document, and editor evidence
+- saved adaptive workflow interviews and editable, evidence-backed workflow
+  documents with a local revisioned knowledge graph
 - privacy-safe link-only resource previews and one-click thread resumption
 - deterministic, sanitized context packing with local context-economics metrics
 - OpenAI, Anthropic, and Amazon Bedrock BYOK credentials through macOS Keychain
@@ -37,7 +39,7 @@ Implemented and usable from source:
   folder), an action journal with undo, a kill switch, and permission
   suggestions earned from repeated approval
 - dashboard, activity history, profile corrections, pause, and delete controls
-- command menu (⌘K) and page shortcuts (⌘1–⌘7)
+- command menu (⌘K) and page shortcuts (⌘1–⌘9)
 
 Important alpha limitations:
 
@@ -283,6 +285,28 @@ opportunity score with its breakdown.
 - **Rescan** re-mines the last 30 days immediately; Knov otherwise rescans at
   most every 30 minutes when there is new activity.
 
+### Interview and correct a workflow
+
+Open **Workflow Discovery** (⌘8) and describe a task or select an existing work
+thread. Starting saves the interview locally. With a provider key configured in
+Settings, answer a question to reconstruct the process and receive a focused
+follow-up. You can skip, pause, resume a saved session, or finish locally even
+without a provider key. Answers and bounded interview context go directly to
+your selected provider only when you answer or skip.
+
+Choose **Review & edit workflow** to correct the business goal, trigger, actors,
+ordered steps, decisions, resources, exceptions, and outcomes. Confirmation is
+an explicit checkbox; saving a draft does not confirm it. Open **Knowledge**
+(⌘9) to inspect your interview workflows, interactive step diagrams, graph
+relationships, evidence, and previous revisions. **Delete** in an interview
+removes its transcript, workflow, and graph history after confirmation.
+
+This extends the existing activity-based workflow experience.
+See [Workflow intelligence](docs/workflow-discovery.md) for its
+implementation scope, privacy boundaries, and remaining milestones. Interview
+confirmation does not authorize an agent action. Gmail and Slack connectors and
+interview-to-Skill generation are not implemented in this slice.
+
 ### Control what the agent may do
 
 Open **Agent** (Delegated work):
@@ -308,7 +332,7 @@ apps on their own. See [Autonomous Work Agent](docs/autonomous-agent.md).
 ### Move quickly
 
 Press **⌘K** for the command menu to jump to any page, ask with context,
-pause or resume collection or the agent, or rescan workflows. **⌘1**–**⌘7**
+pause or resume collection or the agent, or rescan workflows. **⌘1**–**⌘9**
 switch pages directly.
 
 ### Try the Prediction Experiment
@@ -402,7 +426,8 @@ excludes its subdomains.
 To reset Knov, use **Settings → Delete Knov data → Delete everything**.
 This permanently removes app-owned activity, profiles, corrections,
 recommendations, predictions, prediction feedback and evaluations, learned
-workflows, skills, agent runs and the action journal, permissions, approved
+workflows, discovery interviews and their workflow/graph revisions, skills,
+agent runs and the action journal, permissions, approved
 workspaces, goal reviews, state snapshots, agent drafts, settings, provider
 credentials, and the Native Messaging manifest, then rotates the pairing
 token. It does not remove the unpacked Chrome extension or clear the
@@ -460,6 +485,7 @@ unsigned technical-alpha build; code signing and notarization are not included.
 - [Privacy model](docs/privacy-model.md)
 - [Prediction Engine](docs/prediction-engine.md)
 - [Autonomous Work Agent](docs/autonomous-agent.md)
+- [Workflow intelligence](docs/workflow-discovery.md)
 - [Threat model](docs/threat-model.md)
 - [Testing](docs/testing.md)
 - [Product requirements](knov_prd.md)

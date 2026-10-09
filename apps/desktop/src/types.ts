@@ -635,3 +635,78 @@ export interface AgentOverview {
   opportunityCount: number;
   workflowCount: number;
 }
+
+/* Interview-derived workflow memory ------------------------------------- */
+export interface WorkflowEvidence {
+  source: "observed" | "user_reported" | "hypothesis" | "user_confirmed";
+  detail: string;
+}
+export interface DiscoveredStep {
+  id: string;
+  name: string;
+  description: string;
+  actor: string;
+  application: string;
+  inputs: string[];
+  outputs: string[];
+  dependsOn: string[];
+  decision: string | null;
+  requiresApproval: boolean;
+  evidence: string[];
+  confidence: number;
+}
+export interface WorkflowDocument {
+  id: string;
+  sessionId: string;
+  name: string;
+  description: string;
+  businessGoal: string;
+  trigger: string;
+  actors: string[];
+  steps: DiscoveredStep[];
+  applications: string[];
+  resources: string[];
+  inputs: string[];
+  outputs: string[];
+  decisions: string[];
+  dependencies: string[];
+  approvals: string[];
+  exceptions: string[];
+  bottlenecks: string[];
+  frequency: string;
+  estimatedMinutes: number | null;
+  desiredOutcome: string;
+  automationOpportunities: string[];
+  evidence: WorkflowEvidence[];
+  confidence: number;
+  confirmed: boolean;
+  updatedAt: number;
+}
+export interface InterviewSession {
+  id: string;
+  status: "active" | "paused" | "completed";
+  threadContext: ThreadContext | null;
+  messages: { role: "user" | "assistant"; content: string; createdAt: number }[];
+  workflow: WorkflowDocument;
+  missingInformation: string[];
+  createdAt: number;
+  updatedAt: number;
+  revision: number;
+}
+export interface GraphEvidence {
+  sourceType: string;
+  sourceRef: string;
+  timestamp: string;
+  confidence: number;
+  status: string;
+  userConfirmed: boolean;
+  detail: string;
+}
+export interface InterviewGraph {
+  sessionId: string;
+  revision: number;
+  nodes: { id: string; kind: string; label: string; description: string; evidence: GraphEvidence[] }[];
+  edges: { id: string; source: string; target: string; relationship: string; evidence: GraphEvidence[] }[];
+}
+
+export interface GraphRevision { revision: number; timestamp: string; nodes: number; edges: number; }

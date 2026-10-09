@@ -2462,3 +2462,88 @@ mod tests {
         assert!(selected.len() > RECENT_ACTIVITY_LIMIT);
     }
 }
+
+#[tauri::command]
+pub fn get_discovery_sessions(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<crate::discovery::InterviewSession>> {
+    crate::discovery::sessions(&state.db)
+}
+#[tauri::command]
+pub fn start_discovery_interview(
+    description: String,
+    thread_context: Option<ThreadContext>,
+    state: State<'_, AppState>,
+) -> AppResult<crate::discovery::InterviewSession> {
+    crate::discovery::start(
+        &state.db,
+        description,
+        validated_thread_context(thread_context)?,
+    )
+}
+#[tauri::command]
+pub async fn advance_discovery_interview(
+    session_id: String,
+    action: String,
+    answer: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<crate::discovery::InterviewSession> {
+    let provider = if action == "end" {
+        String::new()
+    } else {
+        selected_provider(&state.db)?
+    };
+    crate::discovery::advance(
+        &state.db,
+        &state.providers,
+        &provider,
+        &session_id,
+        &action,
+        answer,
+    )
+    .await
+}
+#[tauri::command]
+pub fn set_discovery_interview_status(
+    session_id: String,
+    status: String,
+    state: State<'_, AppState>,
+) -> AppResult<crate::discovery::InterviewSession> {
+    crate::discovery::set_status(&state.db, &session_id, &status)
+}
+#[tauri::command]
+pub fn get_discovered_workflows(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<crate::discovery::WorkflowDocument>> {
+    crate::discovery::workflows(&state.db)
+}
+#[tauri::command]
+pub fn save_discovered_workflow(
+    workflow: crate::discovery::WorkflowDocument,
+    state: State<'_, AppState>,
+) -> AppResult<crate::discovery::WorkflowDocument> {
+    crate::discovery::save_workflow(&state.db, workflow)
+}
+#[tauri::command]
+pub fn get_discovery_graph(
+    session_id: String,
+    revision: Option<i64>,
+    state: State<'_, AppState>,
+) -> AppResult<crate::discovery::graph::WorkflowGraph> {
+    match revision {
+        Some(r) => crate::discovery::graph::get_graph_revision(&state.db.conn(), &session_id, r),
+        None => crate::discovery::graph::get_graph(&state.db.conn(), &session_id),
+    }
+}
+#[tauri::command]
+pub fn get_discovery_graph_history(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<crate::discovery::graph::GraphRevision>> {
+    crate::discovery::graph::get_history(&state.db.conn(), &session_id)
+}
+
+#[tauri::command]
+pub fn delete_discovery_interview(session_id: String, state: State<'_, AppState>) -> AppResult<()> {
+    crate::discovery::delete_session(&state.db, &session_id)
+}

@@ -15,6 +15,7 @@ There is no Knov-hosted backend in the alpha.
 | React/Vite interface | `apps/desktop/src` | Onboarding, dashboard, history, profile, assistant, and settings |
 | Tauri/Rust core | `apps/desktop/src-tauri/src` | IPC commands, collection, Chrome import, retention, SQLite, Keychain, scheduling, and provider calls |
 | Work agent | `apps/desktop/src-tauri/src/agent` | Event normalization, workflow mining, goals and state, skills, permission policy, bounded action runtime, verification, rollback, and the action journal |
+| Workflow interviews | `apps/desktop/src-tauri/src/discovery` | Persisted adaptive interviews, validated workflow documents, revisioned knowledge graph, and provenance |
 | SQLite store | Tauri application-data directory | Activity, settings, profiles, corrections, recommendations, predictions and evaluations, local inference metrics, agent workflows/skills/runs/permissions/snapshots, and extension pairing state |
 | Optional Chrome extension | `apps/extension` | Experimental active-tab URL/title timing, exclusions, pause, and local transport |
 | Optional Native Messaging helper | `apps/desktop/src-tauri/src/bin/knov-native-host.rs` | Chrome stdio framing and forwarding to the running Rust core |
@@ -132,6 +133,12 @@ open.
 
 Chat messages are held in frontend memory for the current session and are not
 persisted by Knov.
+
+Workflow interviews are a separate, explicitly persisted conversation type.
+Their answers, structured workflow documents, and graph revisions are local
+memory. They use the configured provider only when the user requests analysis.
+The interview graph does not alter the agent permission policy or grant
+authority to execute a Skill. See [Workflow intelligence](workflow-discovery.md).
 
 ## Profiling and scheduling
 

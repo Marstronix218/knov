@@ -189,6 +189,13 @@ owned by the Rust core.
 
 ## Known coverage gaps
 
+Workflow Discovery adds synthetic structured-response and native persistence
+tests, graph provenance/revision/deletion tests, frontend interview/editor tests,
+and deferred-response tests protecting historical graph inspection. A disk-backed
+test closes and reopens SQLite to verify saved interviews and graph revisions
+survive restart. See [Workflow intelligence](workflow-discovery.md) for scope and
+the remaining connector-to-Skill end-to-end milestone.
+
 - no automated real-macOS Accessibility test
 - no real Chrome Native Messaging end-to-end test
 - no provider contract test against live OpenAI, Anthropic, or Amazon Bedrock APIs

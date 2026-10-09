@@ -372,6 +372,7 @@ impl Database {
         let transaction = conn.transaction()?;
         transaction.execute_batch(MIGRATIONS[AGENT_SCHEMA_MIGRATION])?;
         transaction.execute_batch(SCHEMA_REPAIR)?;
+        crate::discovery::initialize_schema(&transaction)?;
         transaction.commit()?;
         Ok(())
     }
@@ -1060,6 +1061,12 @@ impl Database {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
         for table in [
+            "discovery_graph_evidence",
+            "discovery_graph_edges",
+            "discovery_graph_nodes",
+            "discovery_graph_revisions",
+            "discovered_workflows",
+            "discovery_sessions",
             "activity_events",
             "chrome_profiles",
             "profile_versions",

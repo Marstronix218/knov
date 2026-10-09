@@ -68,6 +68,7 @@ provider credential.
 | Prediction generation (only with a provider key) | Minimized current-work features and a small set of sanitized historical patterns needed to produce candidates |
 | Work agent | Nothing. Workflow mining, goals, planning, permissions, verification, and the journal are local |
 | Chat | Locally retrieved profile facts, query-specific aggregates, bounded conversation, new message, and sanitized evidence from the explicitly selected thread |
+| Workflow interview analysis | Bounded interview answers and workflow state, plus minimized metadata from the explicitly selected thread |
 
 The profiling digest includes app names, domain-only website identifiers,
 durations, counts, and window/page-title strings truncated to 180 characters.
@@ -84,6 +85,15 @@ Requests go from the Rust core directly to the selected provider; there is no
 Knov proxy or analytics service. OpenAI requests set `store: false`.
 Provider-side processing and retention remain governed by the selected
 provider's API terms and account settings.
+
+Workflow Discovery persists its interview transcript, reviewed workflow, and
+graph revision history locally, unlike ordinary chat. Answers may contain
+business information: submitting an answer for AI analysis sends bounded
+interview context directly to the selected provider. Skip, pause, review, and
+local corrections do not grant execution permissions. Model-derived facts
+remain hypotheses until explicitly reviewed. Removing an interview and
+**Delete everything** remove its app-owned workflow and graph history;
+this does not erase copies already processed by a provider.
 
 Prediction requests do not contain complete browsing history, full URLs,
 absolute local paths, credentials, excluded activity, or unrelated historical

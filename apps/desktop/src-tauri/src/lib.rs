@@ -3,6 +3,7 @@ mod analytics;
 mod commands;
 mod context;
 mod db;
+mod discovery;
 mod error;
 mod memory;
 mod models;
@@ -94,6 +95,15 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::delete_discovery_interview,
+            commands::get_discovery_sessions,
+            commands::start_discovery_interview,
+            commands::advance_discovery_interview,
+            commands::set_discovery_interview_status,
+            commands::get_discovered_workflows,
+            commands::save_discovered_workflow,
+            commands::get_discovery_graph,
+            commands::get_discovery_graph_history,
             commands::get_dashboard,
             commands::get_activity_history,
             commands::get_activity_icon,

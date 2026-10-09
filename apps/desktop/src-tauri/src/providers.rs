@@ -329,7 +329,7 @@ impl ProviderClient {
         })
     }
 
-    async fn complete(
+    pub(crate) async fn complete(
         &self,
         provider: &str,
         system: &str,
@@ -645,7 +645,7 @@ fn strip_json_fence(value: &str) -> &str {
         .trim()
 }
 
-fn parse_json_response(value: &str) -> AppResult<Value> {
+pub(crate) fn parse_json_response(value: &str) -> AppResult<Value> {
     let trimmed = strip_json_fence(value);
     if let Ok(parsed) = serde_json::from_str(trimmed) {
         return Ok(parsed);

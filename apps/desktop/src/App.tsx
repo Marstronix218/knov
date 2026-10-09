@@ -52,6 +52,8 @@ import { api, isDesktopRuntime } from "./lib/api";
 import { percent } from "./lib/agentFormat";
 import { domainFromUrl, formatDuration, formatPercentage, formatTime } from "./lib/format";
 import { AgentPage } from "./pages/AgentPage";
+import { DiscoveryPage } from "./pages/DiscoveryPage";
+import { KnowledgePage } from "./pages/KnowledgePage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
 import { AppStatusProvider, useAppStatus } from "./state/AppStatus";
 import type {
@@ -82,6 +84,8 @@ const navigation = [
   { to: "/profile", label: "Memory", icon: Brain, group: "Context" },
   { to: "/activity", label: "Activity", icon: Activity, group: "Context" },
   { to: "/settings", label: "Settings", icon: Settings, group: "System" },
+  { to: "/discovery", label: "Workflow Discovery", icon: MessageSquareText, group: "Work" },
+  { to: "/knowledge", label: "Knowledge", icon: Brain, group: "Context" },
 ];
 
 const providers: Provider[] = ["openai", "anthropic", "bedrock"];
@@ -149,6 +153,8 @@ function AppShell({ route }: { route: string }) {
     "/dashboard": <DashboardPage />,
     "/threads": <ThreadsPage />,
     "/workflows": <WorkflowsPage />,
+    "/discovery": <DiscoveryPage threadContexts={(dashboard) => deriveThreads(dashboard).map(makeThreadContext)} />,
+    "/knowledge": <KnowledgePage />,
     "/agent": <AgentPage />,
     "/activity": <ActivityPage />,
     "/profile": <ProfilePage />,
@@ -1813,7 +1819,7 @@ function SettingsPage() {
                 checked={!settings.agentPaused}
                 onChange={(on) => void guard(() => setAgentPaused(!on))}
               />
-              <p className="status-detail">Workflow discovery, goals, and the action journal are computed and stored on this Mac and are never sent to a provider. The agent cannot send messages, delete data, or change repositories.</p>
+              <p className="status-detail">Activity-based workflow mining, goals, and the action journal stay local. Workflow Discovery sends bounded interview context only when you answer or skip. The agent cannot send messages, delete data, or change repositories.</p>
               <a className="ghost-button" href="#/agent">Permissions and history <ChevronRight size={14} /></a>
             </section>
 
