@@ -1,6 +1,6 @@
 export type RangeKey = "today" | "7d" | "30d";
 
-export type Provider = "openai" | "anthropic" | "bedrock";
+export type Provider = "local" | "openai" | "anthropic" | "bedrock";
 
 export interface UsageSlice {
   name: string;
@@ -90,7 +90,8 @@ export interface ProfileData {
 
 export interface BrowserProfile {
   id: string;
-  browser: "chrome" | "firefox" | "safari";
+  /** Display name of the Chromium-family browser, e.g. "Chrome" or "Arc". */
+  browser: string;
   name: string;
   path: string;
   selected: boolean;
@@ -106,7 +107,15 @@ export interface CollectionStatus {
 
 export interface SettingsData {
   provider: Provider;
+  /** True once a provider is chosen and usable (local, or a cloud key is stored). */
+  aiConfigured: boolean;
   hasProviderKey: boolean;
+  localBaseUrl: string;
+  localModel?: string | null;
+  labsEnabled: boolean;
+  /** Whether the first AI-built profile exists. */
+  profileReady: boolean;
+  appVersion: string;
   behavioralGuidanceEnabled: boolean;
   predictionExperimentEnabled: boolean;
   predictionDisplayThreshold: number;
@@ -681,6 +690,12 @@ export interface WorkflowDocument {
   confidence: number;
   confirmed: boolean;
   updatedAt: number;
+  commercialContext?: {
+    opportunityId: string;
+    projectId: string;
+    demo: boolean;
+    answer?: string;
+  } | null;
 }
 export interface InterviewSession {
   id: string;
@@ -710,3 +725,28 @@ export interface InterviewGraph {
 }
 
 export interface GraphRevision { revision: number; timestamp: string; nodes: number; edges: number; }
+
+export interface LocalModelDetection {
+  baseUrl: string;
+  reachable: boolean;
+  models: string[];
+  error?: string;
+}
+
+export interface PermissionProbe {
+  foregroundApps: boolean;
+  windowTitles: boolean;
+  message?: string | null;
+}
+
+export interface TesterSummary {
+  appVersion: string;
+  macOS: string;
+  aiProvider: string;
+  browserProfiles: number;
+  labsEnabled: boolean;
+  daysWithActivity: number;
+  daysSinceFirstActivity?: number | null;
+  questionsAsked: number;
+  events: Record<string, number>;
+}

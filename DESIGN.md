@@ -169,6 +169,7 @@ Historical note: Rewind/Limitless defined the “perfect memory” category, but
 - Primary navigation:
   - **Now** — the daily continuity surface and universal ask box
   - **Threads** — active projects/work streams reconstructed from behavior
+  - **Revenue** — evidence-backed commercial discrepancies, clarification, internal drafts, and recorded outcomes
   - **Workflows** — repeated work Knov noticed, automation opportunities, and Skills
   - **Agent** — delegated work, permissions, action history, goals, and outcomes
   - **Memory** — durable profile, corrections, and provenance
@@ -276,6 +277,15 @@ Historical note: Rewind/Limitless defined the “perfect memory” category, but
   - Prefer action language: “Resume this thread” over “Recommendation.”
 
 ## Implementation constraints
+
+### Revenue intelligence extension
+
+- Revenue is a top-level destination alongside the existing work and context surfaces.
+- Commercial documents and selected communication sources are deliberately imported; this does not broaden desktop capture.
+- Keep demo fixtures in a visibly labeled, isolated data scope. Source timestamps and provenance remain inspectable.
+- Separate supported potential amounts, self-reported payments, and independently verified recovery. Unknown amounts read “Unknown”.
+- Present missing billing or approval evidence as uncertainty. Preparing or approving a draft does not send it or complete a commercial action.
+- Reuse persisted workflow interview sessions for short commercial clarification and retain user answers as user-confirmed context, never independent financial verification.
 
 - Framework/styling system: Tauri 2, React, TypeScript, Rust, SQLite, plain CSS variables, Lucide icons
 - Design-token constraints: evolve the current variables and component classes before introducing a token framework.

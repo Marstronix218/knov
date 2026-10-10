@@ -9,9 +9,13 @@ context directly to a user-selected AI provider.
 This repository implements the alpha described in
 [`knov_prd.md`](knov_prd.md). It is not a production-ready release.
 
+**Testing Knov?** Download the app and follow [TESTERS.md](TESTERS.md); you
+don't need to build anything. To publish a tester build, see
+[Shipping a tester build](docs/release.md).
+
 ## Screenshot
 
-![Knov dashboard showing tracked time, application usage, web attention, and recent activity](docs/screenshots/dashboard.jpg)
+![Knov's Now page showing the current work thread, a suggested next step, and the apps and files behind it](apps/web/assets/now.jpg)
 
 ## Alpha status
 
@@ -26,6 +30,9 @@ Implemented and usable from source:
 - semantic work threads across app, browser, document, and editor evidence
 - saved adaptive workflow interviews and editable, evidence-backed workflow
   documents with a local revisioned knowledge graph
+- Revenue review: persisted commercial context, evidence-backed scope and
+  commitment candidates, contextual interview clarification, internal drafts,
+  and separately tracked potential and verified financial outcomes
 - privacy-safe link-only resource previews and one-click thread resumption
 - deterministic, sanitized context packing with local context-economics metrics
 - OpenAI, Anthropic, and Amazon Bedrock BYOK credentials through macOS Keychain
@@ -58,6 +65,20 @@ Important alpha limitations:
 
 See [Alpha setup](docs/alpha-setup.md) for the complete setup and limitation
 notes.
+
+### Revenue intelligence demo
+
+Run `npm install` and `npm run dev:desktop`, then open **Revenue** and load the
+explicitly labeled demo. It uses isolated fictional agency records and requires
+no connector credentials. Review the Acme third-dashboard candidate, answer its
+clarification, prepare and approve an internal change-order draft, and record
+outcomes separately. Approval never sends a message or issues an invoice.
+
+See the [engineering report](docs/revenue-engineering-report.md) for delivered
+features and validation, [Revenue intelligence](docs/revenue-intelligence.md) for the demo and evidence
+boundaries, and [connector configuration](docs/revenue-connectors.md) for live
+source setup and limitations. Commercial context is deliberately imported; the
+existing desktop capture boundaries remain in place.
 
 ## Install the app
 
@@ -140,25 +161,25 @@ a substitute for the native app.
 
 Knov opens a four-step setup wizard on its first native launch:
 
-1. **Welcome:** review what Knov collects and how the data is handled.
-2. **Permissions:** choose **Open macOS permission prompt** if you want active
-   window titles. In **System Settings → Privacy & Security → Accessibility**,
-   enable the running Knov development process. App-duration tracking still
-   works without this permission, but window-title context is unavailable. If
-   the permission does not take effect immediately, restart the app.
-3. **Browser profiles:** select at least one detected Chrome profile. Knov
-   temporarily imports up to 90 days of history to build the initial profile;
-   history older than 30 days is removed after that profile succeeds.
-4. **AI provider:** select OpenAI, Anthropic, or Amazon Bedrock, paste an API key, and choose
-   **Build my first profile**. The key is stored in macOS Keychain. Building the
-   initial profile requires a working key and an internet connection to the
-   selected provider. Choose **Skip AI for now** to start with local features
-   only: Knov imports the last 30 days of selected history, and threads,
-   workflows, and the work agent work immediately. Add a key later in
-   **Settings** and refresh from **Now** to build a profile.
+1. **Welcome:** review what Knov records and never records.
+2. **Permissions:** choose **Allow** to let Knov ask System Events which app is
+   in front, then **Open settings** to enable Accessibility for window titles.
+   Each row shows On or Off and updates automatically. App-duration tracking
+   works without Accessibility, but window titles are unavailable. If the
+   permission does not take effect, quit Knov from the menu bar icon and reopen.
+3. **Browser history (optional):** select detected Chrome, Arc, Brave, Edge, or
+   Vivaldi profiles, or skip. Knov temporarily imports up to 90 days of
+   selected history to build the first profile; history older than 30 days is
+   removed after that profile succeeds.
+4. **AI:** choose **On this Mac** to use a local Ollama or LM Studio model (no
+   key, nothing leaves the Mac), or **Cloud API key** for OpenAI, Anthropic, or
+   Amazon Bedrock (stored in macOS Keychain). Choose **Finish setup**; history
+   import and the first profile build continue in the background, and **Now**
+   shows their progress. Choose **Skip AI and finish** to start with local
+   features only and connect an AI later in **Settings**.
 
-When setup finishes, confirm that the sidebar says **Collection active**. Use
-**Resume** if collection is paused.
+Closing the window keeps Knov running in the menu bar; use the menu bar icon to
+reopen it, pause collection, or quit.
 
 For later source-development sessions, the native provider client can override
 the Keychain credential with `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or
@@ -245,6 +266,9 @@ details** when you want supporting app, web, timeline, and pattern analytics.
 Use **Today**, **7 days**, or **30 days** to change the reporting period, and
 the refresh icon to rebuild the profile and recommendations.
 
+The next sections, through **Try the Prediction Experiment**, describe
+**Labs** features. Turn on **Settings → Labs** to show them.
+
 ### Act on what's ready
 
 When the work agent has something for you, **Now** shows a **Ready for you**
@@ -287,7 +311,7 @@ opportunity score with its breakdown.
 
 ### Interview and correct a workflow
 
-Open **Workflow Discovery** (⌘8) and describe a task or select an existing work
+Open **Interviews** and describe a task or select an existing work
 thread. Starting saves the interview locally. With a provider key configured in
 Settings, answer a question to reconstruct the process and receive a focused
 follow-up. You can skip, pause, resume a saved session, or finish locally even
@@ -297,7 +321,7 @@ your selected provider only when you answer or skip.
 Choose **Review & edit workflow** to correct the business goal, trigger, actors,
 ordered steps, decisions, resources, exceptions, and outcomes. Confirmation is
 an explicit checkbox; saving a draft does not confirm it. Open **Knowledge**
-(⌘9) to inspect your interview workflows, interactive step diagrams, graph
+to inspect your interview workflows, interactive step diagrams, graph
 relationships, evidence, and previous revisions. **Delete** in an interview
 removes its transcript, workflow, and graph history after confirmation.
 
@@ -332,8 +356,8 @@ apps on their own. See [Autonomous Work Agent](docs/autonomous-agent.md).
 ### Move quickly
 
 Press **⌘K** for the command menu to jump to any page, ask with context,
-pause or resume collection or the agent, or rescan workflows. **⌘1**–**⌘9**
-switch pages directly.
+send feedback, pause or resume collection or the agent, or rescan workflows.
+**⌘1** and up switch directly to the pages in sidebar order.
 
 ### Try the Prediction Experiment
 
@@ -356,13 +380,14 @@ send messages, submit forms, or otherwise execute work autonomously.
 See [Prediction Engine](docs/prediction-engine.md) for the architecture,
 triggering, local schema, evaluator, and privacy boundaries.
 
-### Review Threads
+### Review threads
 
-Open **Threads** to inspect the provisional work streams Knov reconstructs from
-activity. Selecting a thread shows its summary, suggested next move, and exact
-available evidence. Repeated subjects can join one thread across searches,
-videos, sites, documents, and supported editor metadata. Thread groupings are
-inferences rather than confirmed user intent.
+**Now** lists the provisional work streams Knov reconstructs from activity;
+choose **Show all** to see every thread for the selected range. Selecting a
+thread shows its summary, suggested next move, and exact available evidence.
+Repeated subjects can join one thread across searches, videos, sites,
+documents, and supported editor metadata. Thread groupings are inferences
+rather than confirmed user intent.
 
 ### Inspect the Activity timeline
 
@@ -390,8 +415,8 @@ saved summary.
 
 ### Ask with context
 
-Choose **Ask with context** from Now to review the candidate context, enter a
-question, and choose **Send**. Knov retrieves relevant profile facts locally,
+Open **Ask** (or choose **Ask with context** from Now to focus on one thread),
+pick a suggested question or type your own, and choose **Send**. Knov retrieves relevant profile facts locally,
 adds query-specific activity aggregates, and deterministically packs sanitized
 selected-thread evidence under the configured token budget. The assistant shows
 the sent context, the larger local comparison baseline, token savings, provider
@@ -401,8 +426,13 @@ usage, and locally stored run metrics. Chat history is not persisted.
 
 Use **Settings** to:
 
-- switch between OpenAI, Anthropic, and Amazon Bedrock, save or remove the selected provider's
-  Keychain credential, and run **Test connection**;
+- connect a local model (Ollama, LM Studio, or another OpenAI-compatible
+  server on this Mac) or switch between OpenAI, Anthropic, and Amazon Bedrock,
+  save or remove the selected provider's Keychain credential, and run
+  **Test connection**;
+- turn on **Labs** to show experimental surfaces: Workflows, the work agent,
+  workflow interviews, Knowledge, and the Prediction Experiment;
+- send feedback and open the latest release page;
 - enable or disable collection, behavioral break/focus guidance, and launch at
   login;
 - enable or disable the Prediction Experiment and inspect its local history,
@@ -440,13 +470,17 @@ clear those.
   `npm run dev:desktop`; `npm run dev` is a frontend-only preview.
 - **Window titles are missing:** grant Accessibility access in macOS System
   Settings, then restart the Tauri app.
-- **No Chrome profiles appear:** install and open Chrome at least once, make
-  sure the desired profile exists locally, and relaunch Knov.
+- **No browser profiles appear:** Knov supports Chrome, Arc, Brave, Edge, and
+  Vivaldi. Open the browser at least once so its profile exists, then relaunch
+  Knov. Browser history is optional.
+- **Local AI is not found:** open Ollama (or start LM Studio's local server),
+  make sure at least one model is installed (`ollama pull llama3.2`), and choose
+  **Check again**. Only `localhost` addresses are accepted.
 - **The extension is disconnected:** keep the desktop app running, confirm the
   pairing token and approved profile ID, re-register the current 32-character
   extension ID, restart Chrome, and choose **Test connection** in extension
   settings.
-- **Provider actions fail:** open **Settings → AI provider**, confirm the
+- **Provider actions fail:** open **Settings → AI**, confirm the
   selected provider has the correct key, and choose **Test connection**.
 - **No new activity appears:** confirm the sidebar and extension both show
   collection on, then check the desktop and extension exclusion lists.
@@ -475,11 +509,15 @@ lane is documented in [Testing](docs/testing.md#optional-extension-compatibility
 Its build is written to `apps/extension/dist`; load that directory unpacked only
 after following [Chrome extension setup](docs/alpha-setup.md#optional-chrome-extension-setup).
 The desktop bundle is written to
-`apps/desktop/src-tauri/target/release/bundle/macos/Knov.app`. It is an
-unsigned technical-alpha build; code signing and notarization are not included.
+`apps/desktop/src-tauri/target/release/bundle/macos/Knov.app` and a DMG to
+`apps/desktop/src-tauri/target/release/bundle/dmg/`. Local builds are ad-hoc
+signed; the release workflow signs and notarizes when Developer ID secrets are
+configured (see [Shipping a tester build](docs/release.md)).
 
 ## Documentation
 
+- [Tester guide](TESTERS.md)
+- [Shipping a tester build](docs/release.md)
 - [Alpha setup](docs/alpha-setup.md)
 - [Architecture](docs/architecture.md)
 - [Privacy model](docs/privacy-model.md)

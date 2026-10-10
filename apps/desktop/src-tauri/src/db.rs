@@ -373,6 +373,7 @@ impl Database {
         transaction.execute_batch(MIGRATIONS[AGENT_SCHEMA_MIGRATION])?;
         transaction.execute_batch(SCHEMA_REPAIR)?;
         crate::discovery::initialize_schema(&transaction)?;
+        crate::revenue::init(&transaction)?;
         transaction.commit()?;
         Ok(())
     }
@@ -564,6 +565,7 @@ impl Database {
             "DELETE FROM agent_runs WHERE created_at < ?1",
             [journal_cutoff],
         )?;
+        crate::revenue::prune(&conn, cutoff)?;
         Ok(purged)
     }
 
@@ -1044,6 +1046,38 @@ impl Database {
         Ok(())
     }
 
+    /// Aggregate counts for opt-in tester feedback. Never includes titles,
+    /// URLs, application names, or chat content.
+    pub fn tester_summary(&self) -> AppResult<serde_json::Value> {
+        let conn = self.conn();
+        let (active_days, first_seen): (i64, Option<i64>) = conn.query_row(
+            "SELECT COUNT(DISTINCT date(occurred_at,'unixepoch','localtime')),MIN(occurred_at)
+             FROM activity_events WHERE source='app_focus'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let chats: i64 =
+            conn.query_row("SELECT COUNT(*) FROM inference_runs", [], |row| row.get(0))?;
+        let mut statement = conn.prepare(
+            "SELECT event_type,COUNT(*) FROM product_events GROUP BY event_type ORDER BY event_type",
+        )?;
+        let events = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    serde_json::Value::from(row.get::<_, i64>(1)?),
+                ))
+            })?
+            .collect::<Result<serde_json::Map<_, _>, _>>()?;
+        Ok(serde_json::json!({
+            "daysWithActivity":active_days,
+            "daysSinceFirstActivity":first_seen
+                .map(|first| (chrono::Utc::now().timestamp() - first).max(0) / 86_400),
+            "questionsAsked":chats,
+            "events":events
+        }))
+    }
+
     pub fn record_product_event(
         &self,
         event_type: &str,
@@ -1060,6 +1094,7 @@ impl Database {
     pub fn delete_all_local_data(&self) -> AppResult<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
+        crate::revenue::delete_all(&tx)?;
         for table in [
             "discovery_graph_evidence",
             "discovery_graph_edges",
@@ -1568,6 +1603,7 @@ mod tests {
             "agent_runs",
             "agent_actions",
             "business_records",
+            "revenue_records",
         ] {
             let exists: bool = db
                 .conn()

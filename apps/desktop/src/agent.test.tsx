@@ -36,7 +36,8 @@ function stubApi() {
   localStorage.clear();
   localStorage.setItem("knov.setup-complete", "true");
   vi.restoreAllMocks();
-  vi.spyOn(api, "settings").mockResolvedValue(clone(mockSettings));
+  // The work agent and workflow pages are Labs features.
+  vi.spyOn(api, "settings").mockResolvedValue({ ...clone(mockSettings), labsEnabled: true });
   vi.spyOn(api, "dashboard").mockResolvedValue(clone(mockDashboard));
   vi.spyOn(api, "activity").mockResolvedValue(clone(mockDashboard.recentActivity));
   vi.spyOn(api, "profile").mockResolvedValue(clone(mockProfile));
@@ -257,7 +258,8 @@ describe("app-wide experience", () => {
   });
 
   it("reports provider connection failures instead of failing silently", async () => {
-    vi.spyOn(api, "testProvider").mockRejectedValue(new Error("provider rejected the request: unauthorized"));
+    vi.mocked(api.settings).mockResolvedValue({ ...clone(mockSettings), provider: "openai", hasProviderKey: true, aiConfigured: true });
+    vi.spyOn(api, "testProvider").mockRejectedValue(new Error("The API key is invalid or revoked: unauthorized"));
     await renderRoute("#/settings");
 
     fireEvent.click(await screen.findByRole("button", { name: /Test connection/ }));
@@ -277,7 +279,7 @@ describe("app-wide experience", () => {
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
     fireEvent.click((await screen.findAllByRole("checkbox"))[0]);
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Skip AI for now" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Skip AI and finish/ }));
 
     await waitFor(() => expect(local).toHaveBeenCalledOnce());
     expect(bootstrap).not.toHaveBeenCalled();
@@ -315,16 +317,49 @@ describe("browser profiles in Settings", () => {
     expect(work).not.toBeChecked();
   });
 
-  it("explains instead of failing silently when the last profile is unchecked", async () => {
+  it("lets the last profile be unchecked because browser history is optional", async () => {
     vi.mocked(api.settings).mockResolvedValue({ ...clone(mockSettings), selectedBrowserProfileIds: ["chrome-default"] });
-    const setProfiles = vi.spyOn(api, "setBrowserProfiles");
+    const setProfiles = vi.spyOn(api, "setBrowserProfiles").mockResolvedValue(undefined);
     await renderRoute("#/settings");
 
     const defaultProfile = await screen.findByRole("checkbox", { name: /ID: chrome-default/ });
     fireEvent.click(defaultProfile);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Keep at least one Chrome profile selected");
-    expect(setProfiles).not.toHaveBeenCalled();
-    expect(defaultProfile).toBeChecked();
+    await waitFor(() => expect(setProfiles).toHaveBeenCalledWith([]));
+    await waitFor(() => expect(defaultProfile).not.toBeChecked());
+  });
+});
+
+describe("tester feedback", () => {
+  beforeEach(stubApi);
+
+  it("composes reviewable feedback with anonymous counts and opens it outside Knov", async () => {
+    vi.spyOn(api, "testerSummary").mockResolvedValue({
+      appVersion: "0.2.0",
+      macOS: "26.0",
+      aiProvider: "local",
+      browserProfiles: 1,
+      labsEnabled: false,
+      daysWithActivity: 4,
+      daysSinceFirstActivity: 6,
+      questionsAsked: 9,
+      events: { thread_resumed: 3 },
+    });
+    const open = vi.spyOn(api, "openResource").mockResolvedValue(undefined);
+    await renderRoute("#/dashboard");
+
+    fireEvent.click(screen.getByRole("button", { name: "Send feedback" }));
+    const dialog = await screen.findByRole("dialog", { name: "Share feedback" });
+    fireEvent.click(within(dialog).getByLabelText("Very disappointed"));
+    fireEvent.change(within(dialog).getByLabelText(/main benefit/), { target: { value: "No more re-explaining" } });
+    fireEvent.click(within(dialog).getByText("See exactly what’s included"));
+    expect(within(dialog).getByText(/Questions asked: 9/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: /Send feedback/ }));
+
+    await waitFor(() => expect(open).toHaveBeenCalledOnce());
+    const url = decodeURIComponent(open.mock.calls[0][0]);
+    expect(url).toContain("Very disappointed");
+    expect(url).toContain("No more re-explaining");
+    expect(url).toContain("thread resumed: 3");
   });
 });

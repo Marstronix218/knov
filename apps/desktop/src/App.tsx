@@ -7,18 +7,22 @@ import {
   Check,
   ChevronRight,
   CircleUserRound,
+  ClipboardList,
   Clock3,
   Command,
   Copy,
   Eye,
   FileCode2,
+  FlaskConical,
   Inbox,
+  Info,
   KeyRound,
-  Layers3,
   LayoutDashboard,
   LoaderCircle,
   LockKeyhole,
+  MessageCircleHeart,
   MessageSquareText,
+  Network,
   Pause,
   Play,
   Plus,
@@ -31,14 +35,18 @@ import {
   Workflow as WorkflowIcon,
   X,
 } from "lucide-react";
-import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import { AgentInbox } from "./components/agent/AgentInbox";
+import { AiProviderPicker } from "./components/AiProviderPicker";
+import { FeedbackDialog } from "./components/FeedbackDialog";
+import { SetupWizard } from "./components/SetupWizard";
 import { CommandPalette, PaletteCommand } from "./components/CommandPalette";
 import { MarkdownMessage } from "./components/MarkdownMessage";
 import {
   EmptyState,
   errorMessage,
+  LogoMark,
   Modal,
   PageHeader,
   PanelHeader,
@@ -51,9 +59,11 @@ import { useResource } from "./hooks/useResource";
 import { api, isDesktopRuntime } from "./lib/api";
 import { percent } from "./lib/agentFormat";
 import { domainFromUrl, formatDuration, formatPercentage, formatTime } from "./lib/format";
+import { RELEASES_URL } from "./config";
 import { AgentPage } from "./pages/AgentPage";
 import { DiscoveryPage } from "./pages/DiscoveryPage";
 import { KnowledgePage } from "./pages/KnowledgePage";
+import { RevenuePage } from "./pages/RevenuePage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
 import { AppStatusProvider, useAppStatus } from "./state/AppStatus";
 import type {
@@ -64,7 +74,6 @@ import type {
   DashboardData,
   MemoryRecord,
   ProfileData,
-  Provider,
   PredictionDashboard,
   PredictionFeedback,
   RangeKey,
@@ -76,32 +85,30 @@ import type {
   WorkPrediction,
 } from "./types";
 
+/**
+ * The core product is Now, Ask, Memory, and Activity. Experimental surfaces
+ * (the work agent, workflow mining and interviews) appear only with Labs on.
+ */
 const navigation = [
-  { to: "/dashboard", label: "Now", icon: LayoutDashboard, group: "Work" },
-  { to: "/threads", label: "Threads", icon: Layers3, group: "Work" },
-  { to: "/workflows", label: "Workflows", icon: WorkflowIcon, group: "Work" },
-  { to: "/agent", label: "Agent", icon: Inbox, group: "Work" },
-  { to: "/profile", label: "Memory", icon: Brain, group: "Context" },
-  { to: "/activity", label: "Activity", icon: Activity, group: "Context" },
-  { to: "/settings", label: "Settings", icon: Settings, group: "System" },
-  { to: "/discovery", label: "Workflow Discovery", icon: MessageSquareText, group: "Work" },
-  { to: "/knowledge", label: "Knowledge", icon: Brain, group: "Context" },
+  { to: "/dashboard", label: "Now", icon: LayoutDashboard, group: "Work", labs: false },
+  { to: "/assistant", label: "Ask", icon: MessageSquareText, group: "Work", labs: false },
+  { to: "/revenue", label: "Revenue", icon: BarChart3, group: "Work", labs: false },
+  { to: "/profile", label: "Memory", icon: Brain, group: "Context", labs: false },
+  { to: "/activity", label: "Activity", icon: Activity, group: "Context", labs: false },
+  { to: "/workflows", label: "Workflows", icon: WorkflowIcon, group: "Labs", labs: true },
+  { to: "/agent", label: "Agent", icon: Inbox, group: "Labs", labs: true },
+  { to: "/discovery", label: "Interviews", icon: ClipboardList, group: "Labs", labs: true },
+  { to: "/knowledge", label: "Knowledge", icon: Network, group: "Labs", labs: true },
+  { to: "/settings", label: "Settings", icon: Settings, group: "System", labs: false },
 ];
 
-const providers: Provider[] = ["openai", "anthropic", "bedrock"];
+function useNavigation() {
+  const { settings } = useAppStatus();
+  const labs = settings.data?.labsEnabled ?? false;
+  return useMemo(() => navigation.filter((item) => labs || !item.labs), [labs]);
+}
+
 const ACTIVITY_PAGE_SIZE = 100;
-
-function providerLabel(provider: Provider): string {
-  if (provider === "openai") return "OpenAI";
-  if (provider === "anthropic") return "Anthropic";
-  return "AWS Bedrock";
-}
-
-function providerKeyPlaceholder(provider: Provider): string {
-  if (provider === "openai") return "sk-…";
-  if (provider === "anthropic") return "sk-ant-…";
-  return "ABSK…";
-}
 
 function App() {
   const [setupComplete, setSetupComplete] = useState(
@@ -129,7 +136,9 @@ function App() {
 
 function AppShell({ route }: { route: string }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const commands = useCommands();
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const visibleNavigation = useNavigation();
+  const commands = useCommands(() => setFeedbackOpen(true));
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -140,18 +149,18 @@ function AppShell({ route }: { route: string }) {
         return;
       }
       const index = Number(event.key) - 1;
-      if (Number.isInteger(index) && navigation[index]) {
+      if (Number.isInteger(index) && visibleNavigation[index]) {
         event.preventDefault();
-        window.location.hash = navigation[index].to;
+        window.location.hash = visibleNavigation[index].to;
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [visibleNavigation]);
 
   const page = {
     "/dashboard": <DashboardPage />,
-    "/threads": <ThreadsPage />,
+    "/revenue": <RevenuePage />,
     "/workflows": <WorkflowsPage />,
     "/discovery": <DiscoveryPage threadContexts={(dashboard) => deriveThreads(dashboard).map(makeThreadContext)} />,
     "/knowledge": <KnowledgePage />,
@@ -164,22 +173,25 @@ function AppShell({ route }: { route: string }) {
 
   return (
     <div className="app-shell">
-      <Sidebar route={route} onOpenPalette={() => setPaletteOpen(true)} />
+      <Sidebar route={route} items={visibleNavigation} onOpenPalette={() => setPaletteOpen(true)} onOpenFeedback={() => setFeedbackOpen(true)} />
       <main className="main-stage" id="main">
         {!isDesktopRuntime() && <div className="demo-banner">Browser preview · sample data · controls do not change your Mac</div>}
         {page}
       </main>
       {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
+      {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
     </div>
   );
 }
 
-function useCommands(): PaletteCommand[] {
+function useCommands(openFeedback: () => void): PaletteCommand[] {
   const { settings, agent, setCollectionEnabled, setAgentPaused, refreshAgent } = useAppStatus();
+  const visibleNavigation = useNavigation();
+  const labs = settings.data?.labsEnabled ?? false;
   const collecting = settings.data?.collectionStatus.enabled ?? false;
   const paused = agent.data?.paused ?? settings.data?.agentPaused ?? false;
   return useMemo(() => [
-    ...navigation.map((item, index) => ({
+    ...visibleNavigation.map((item, index) => ({
       id: `go-${item.label.toLowerCase()}`,
       label: `Go to ${item.label}`,
       group: "Navigate",
@@ -187,11 +199,11 @@ function useCommands(): PaletteCommand[] {
       run: () => { window.location.hash = item.to; },
     })),
     {
-      id: "ask",
-      label: "Ask with current context",
-      group: "Assistant",
-      keywords: "chat question ai",
-      run: () => { window.location.hash = "/assistant"; },
+      id: "feedback",
+      label: "Send feedback",
+      group: "Help",
+      keywords: "bug report idea suggestion",
+      run: openFeedback,
     },
     {
       id: "collection",
@@ -200,7 +212,7 @@ function useCommands(): PaletteCommand[] {
       keywords: "capture recording stop start",
       run: () => setCollectionEnabled(!collecting),
     },
-    {
+    ...(labs ? [{
       id: "agent",
       label: paused ? "Resume agent" : "Pause agent",
       group: "Agent",
@@ -217,8 +229,8 @@ function useCommands(): PaletteCommand[] {
         await refreshAgent();
         window.location.hash = "/workflows";
       },
-    },
-  ], [collecting, paused, setCollectionEnabled, setAgentPaused, refreshAgent]);
+    }] : []),
+  ], [visibleNavigation, labs, collecting, paused, setCollectionEnabled, setAgentPaused, refreshAgent, openFeedback]);
 }
 
 const validRoutes = new Set([...navigation.map(({ to }) => to), "/assistant"]);
@@ -243,152 +255,27 @@ function useHashRoute(): string {
   return route;
 }
 
-function SetupWizard({ onComplete }: { onComplete: () => void }) {
-  const [step, setStep] = useState(0);
-  const [provider, setProvider] = useState<Provider>("openai");
-  const [providerKey, setProviderKey] = useState("");
-  const [selectedProfiles, setSelectedProfiles] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [progress, setProgress] = useState("");
-  const browsers = useResource(() => api.browserProfiles(), []);
-
-  const steps = ["Welcome", "Permissions", "Browser profiles", "AI provider"];
-
-  const finish = async (withProvider: boolean) => {
-    setBusy(true);
-    setMessage("");
-    try {
-      if (withProvider && providerKey.trim()) {
-        setProgress("Saving your key to macOS Keychain…");
-        await api.saveProviderKey(provider, providerKey.trim());
-      }
-      await api.setBrowserProfiles(selectedProfiles);
-      if (withProvider) {
-        setProgress("Importing selected history and building your first profile. This can take a minute…");
-        await api.startBootstrap();
-      } else {
-        setProgress("Importing the last 30 days of selected history…");
-        await api.startLocalBootstrap();
-      }
-      await api.setCollectionEnabled(true);
-      void api.recordProductEvent("setup_completed").catch(() => undefined);
-      onComplete();
-    } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-      setProgress("");
-    }
-  };
-
-  return (
-    <div className="setup-shell">
-      <section className="setup-panel">
-        <div className="setup-brand"><LogoMark /><strong>Knov</strong></div>
-        <div className="setup-progress">
-          {steps.map((label, index) => (
-            <div className={index <= step ? "active" : ""} key={label}>
-              <span>{index < step ? <Check size={12} /> : index + 1}</span>
-              <small>{label}</small>
-            </div>
-          ))}
-        </div>
-
-        {step === 0 && (
-          <div className="setup-content">
-            <div className="setup-icon"><ShieldCheck size={30} /></div>
-            <div className="eyebrow">Your context stays yours</div>
-            <h1>An assistant that learns from how you actually work.</h1>
-            <p>Knov observes foreground apps, permitted window titles, and selected browser activity. Raw history stays on this Mac. When you select a thread, a visible, sanitized detail packet is packed under a token budget for the AI provider.</p>
-            <div className="consent-grid">
-              <article><LockKeyhole size={18} /><strong>Local raw data</strong><span>SQLite on this Mac, detailed history retained for 30 days.</span></article>
-              <article><Eye size={18} /><strong>Visible collection</strong><span>Pause, exclude, inspect, edit, or delete at any time.</span></article>
-              <article><KeyRound size={18} /><strong>Your API key</strong><span>Stored in macOS Keychain and sent only to your provider.</span></article>
-              <article><ShieldCheck size={18} /><strong>Acts only with permission</strong><span>Learns repeated work locally and asks before doing anything for you.</span></article>
-            </div>
-          </div>
-        )}
-
-        {step === 1 && (
-          <div className="setup-content narrow">
-            <div className="setup-icon"><Eye size={30} /></div>
-            <div className="eyebrow">macOS permission</div>
-            <h1>Allow window titles—only if you want richer context.</h1>
-            <p>Accessibility permission lets Knov read the title of the focused window. It does not grant access to keystrokes, document bodies, screenshots, or the clipboard. Without it, app-duration tracking still works.</p>
-            <button className="primary-button setup-action" onClick={() => void api.requestAccessibility()}>Open macOS permission prompt</button>
-            <span className="setup-skip">You can grant or revoke this later in System Settings.</span>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="setup-content">
-            <div className="eyebrow">Cold-start context</div>
-            <h1>Select browser profiles.</h1>
-            <p>Knov can temporarily inspect up to 90 days of selected history to build the first profile. Days 31–90 are deleted after that first profile succeeds.</p>
-            <ResourceState {...browsers}>
-              {(profiles) => (
-                <div className="setup-browser-grid">
-                  {profiles.map((profile) => (
-                    <label className={selectedProfiles.includes(profile.id) ? "selected" : ""} key={profile.id}>
-                      <input
-                        type="checkbox"
-                        checked={selectedProfiles.includes(profile.id)}
-                        onChange={(event) => setSelectedProfiles(event.target.checked ? [...selectedProfiles, profile.id] : selectedProfiles.filter((id) => id !== profile.id))}
-                      />
-                      <div className="browser-icon">{profile.browser.slice(0, 1).toUpperCase()}</div>
-                      <span><strong>{profile.name}</strong><small>{profile.browser} · {profile.support}</small></span>
-                      {selectedProfiles.includes(profile.id) && <Check size={16} />}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </ResourceState>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="setup-content narrow">
-            <div className="setup-icon"><KeyRound size={30} /></div>
-            <div className="eyebrow">Bring your own key</div>
-            <h1>Connect an AI provider.</h1>
-            <p>Your key is stored in macOS Keychain. Provider calls originate in the native core, never the browser extension or React interface. You can also skip this: threads, workflows, and the work agent run entirely on this Mac. Profiles and chat wait until you add a key.</p>
-            <div className="provider-tabs">
-              {providers.map((item) => <button className={provider === item ? "selected" : ""} key={item} onClick={() => setProvider(item)}>{providerLabel(item)}</button>)}
-            </div>
-            <label className="secret-field">API key<input type="password" value={providerKey} onChange={(event) => setProviderKey(event.target.value)} placeholder={providerKeyPlaceholder(provider)} /></label>
-            {progress && <p className="setup-progress-note" role="status"><LoaderCircle size={14} className="spin" /> {progress}</p>}
-            {message && <p className="error-message" role="alert">{message}</p>}
-          </div>
-        )}
-
-        <footer className="setup-footer">
-          <button className="ghost-button" disabled={step === 0} onClick={() => setStep((value) => value - 1)}>Back</button>
-          <span>{step + 1} of {steps.length}</span>
-          {step < steps.length - 1
-            ? <button className="primary-button" disabled={step === 2 && selectedProfiles.length === 0} onClick={() => setStep((value) => value + 1)}>Continue <ChevronRight size={15} /></button>
-            : (
-              <span className="setup-finish">
-                <button className="ghost-button" disabled={busy || selectedProfiles.length === 0} onClick={() => void finish(false)}>Skip AI for now</button>
-                <button className="primary-button" disabled={busy || !providerKey.trim() || selectedProfiles.length === 0} onClick={() => void finish(true)}>{busy ? <LoaderCircle size={15} className="spin" /> : <Sparkles size={15} />} Build my first profile</button>
-              </span>
-            )}
-        </footer>
-      </section>
-    </div>
-  );
-}
-
-function Sidebar({ route, onOpenPalette }: { route: string; onOpenPalette: () => void }) {
+function Sidebar({
+  route,
+  items,
+  onOpenPalette,
+  onOpenFeedback,
+}: {
+  route: string;
+  items: typeof navigation;
+  onOpenPalette: () => void;
+  onOpenFeedback: () => void;
+}) {
   const { settings, agent, setCollectionEnabled, setAgentPaused } = useAppStatus();
   const [error, setError] = useState("");
+  const labs = settings.data?.labsEnabled ?? false;
   const collecting = settings.data?.collectionStatus.enabled ?? false;
   const agentPaused = agent.data?.paused ?? settings.data?.agentPaused ?? false;
   const badges: Record<string, number | undefined> = {
     "/agent": agent.data?.awaitingCount || undefined,
     "/workflows": agent.data?.opportunityCount || undefined,
   };
-  const groups = [...new Set(navigation.map((item) => item.group))];
+  const groups = [...new Set(items.map((item) => item.group))];
 
   const guarded = (work: () => Promise<void>) => {
     setError("");
@@ -409,7 +296,7 @@ function Sidebar({ route, onOpenPalette }: { route: string; onOpenPalette: () =>
         {groups.map((group) => (
           <div className="nav-group" key={group}>
             {group !== "System" && <span className="nav-group-label">{group}</span>}
-            {navigation.filter((item) => item.group === group).map(({ to, label, icon: Icon }) => (
+            {items.filter((item) => item.group === group).map(({ to, label, icon: Icon }) => (
               <a key={to} href={`#${to}`} className={`nav-link${route === to ? " active" : ""}`} aria-current={route === to ? "page" : undefined}>
                 <Icon size={18} aria-hidden="true" />
                 <span>{label}</span>
@@ -421,6 +308,10 @@ function Sidebar({ route, onOpenPalette }: { route: string; onOpenPalette: () =>
       </nav>
 
       <div className="sidebar-spacer" />
+
+      <button type="button" className="feedback-cta" onClick={onOpenFeedback}>
+        <MessageCircleHeart size={15} aria-hidden="true" /> <span>Send feedback</span>
+      </button>
 
       <button type="button" className="palette-hint" onClick={onOpenPalette}>
         <Command size={14} aria-hidden="true" /> <span>Command menu</span> <kbd>⌘K</kbd>
@@ -436,10 +327,12 @@ function Sidebar({ route, onOpenPalette }: { route: string; onOpenPalette: () =>
           {collecting ? <Pause size={15} /> : <Play size={15} />}
           {collecting ? "Pause" : "Resume"}
         </button>
-        <div className={`agent-switch ${agentPaused ? "paused" : "live"}`}>
-          <span><i aria-hidden="true" />{agentPaused ? "Agent paused" : "Agent ready"}</span>
-          <button type="button" onClick={() => guarded(() => setAgentPaused(!agentPaused))}>{agentPaused ? "Resume" : "Pause"}</button>
-        </div>
+        {labs && (
+          <div className={`agent-switch ${agentPaused ? "paused" : "live"}`}>
+            <span><i aria-hidden="true" />{agentPaused ? "Agent paused" : "Agent ready"}</span>
+            <button type="button" onClick={() => guarded(() => setAgentPaused(!agentPaused))}>{agentPaused ? "Resume" : "Pause"}</button>
+          </div>
+        )}
         {error && <small className="sidebar-error" role="alert">{error}</small>}
       </div>
 
@@ -451,17 +344,19 @@ function Sidebar({ route, onOpenPalette }: { route: string; onOpenPalette: () =>
   );
 }
 
-function LogoMark() {
-  return <img className="brand-mark" src="/knov-icon.svg" alt="" aria-hidden="true" />;
-}
-
 function DashboardPage() {
+  const { settings } = useAppStatus();
   const [range, setRange] = useState<RangeKey>("today");
   const resource = useResource(() => api.dashboard(range), [range]);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState("");
+  const aiConfigured = settings.data?.aiConfigured ?? true;
 
   const refresh = async () => {
+    if (!aiConfigured) {
+      setRefreshMessage("Connect an AI in Settings to build your profile and suggestions. Threads and activity work without it.");
+      return;
+    }
     setRefreshing(true);
     setRefreshMessage("Refreshing profile and recommendations…");
     try {
@@ -491,6 +386,7 @@ function DashboardPage() {
         }
       />
       {refreshMessage && <p className="refresh-status" role="status">{refreshMessage}</p>}
+      <ProfileBuildStatus onReady={() => void resource.reload()} />
 
       <ResourceState {...resource}>
         {(data) => <DashboardContent data={data} />}
@@ -662,11 +558,86 @@ function formatContextDateTime(value: string): string {
   }).format(new Date(value));
 }
 
+/**
+ * Shows first-profile progress while setup's background import and profile
+ * build run, and offers the build when an AI was connected after setup.
+ */
+function ProfileBuildStatus({ onReady }: { onReady: () => void }) {
+  const { settings } = useAppStatus();
+  const status = useResource(() => api.bootstrapStatus(), []);
+  const { setData: setStatus } = status;
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  const phase = status.data?.phase;
+  const working = phase === "importing" || phase === "profiling";
+
+  useEffect(() => {
+    if (!working) return;
+    const interval = window.setInterval(() => {
+      void api.bootstrapStatus().then((next) => {
+        setStatus(next);
+        if (next.phase === "complete") onReadyRef.current();
+      }).catch(() => undefined);
+    }, 3000);
+    return () => window.clearInterval(interval);
+  }, [working, setStatus]);
+
+  const build = async (work: () => Promise<unknown>) => {
+    setBusy(true);
+    setActionError("");
+    try {
+      await work();
+      setStatus(await api.bootstrapStatus());
+      void settings.reload();
+      onReadyRef.current();
+    } catch (cause) {
+      setActionError(errorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (working) {
+    return (
+      <p className="build-status" role="status">
+        <LoaderCircle size={15} className="spin" />
+        {phase === "importing" ? "Importing your browser history…" : "Building your first profile. On a local model this can take a few minutes—you can keep working."}
+      </p>
+    );
+  }
+  if (phase === "error" || actionError) {
+    return (
+      <div className="build-status error" role="alert">
+        <span>Your profile couldn’t be built: {actionError || status.data?.message}</span>
+        <button className="ghost-button" disabled={busy} onClick={() => void build(() => api.refreshProfile())}>{busy && <LoaderCircle size={14} className="spin" />} Try again</button>
+        <a className="ghost-button" href="#/settings">AI settings</a>
+      </div>
+    );
+  }
+  if (settings.data?.aiConfigured && settings.data.profileReady === false && status.data) {
+    return (
+      <div className="build-status" role="status">
+        <Sparkles size={15} />
+        <span>Your AI is connected. Build your profile so Knov can summarize your projects and suggest next steps.</span>
+        <button className="primary-button" disabled={busy} onClick={() => {
+          setStatus({ ...status.data!, phase: "importing" });
+          void build(() => api.startBootstrap());
+        }}>Build my profile</button>
+      </div>
+    );
+  }
+  return null;
+}
+
 function DashboardContent({ data }: { data: DashboardData }) {
+  const { settings } = useAppStatus();
+  const labs = settings.data?.labsEnabled ?? false;
   const threads = useMemo(() => deriveThreads(data), [data]);
-  const predictions = useResource(() => api.predictionsDashboard(), []);
   const storedThread = localStorage.getItem("knov.selected-thread");
   const [selectedId, setSelectedId] = useState(storedThread ?? threads[0]?.id);
+  const [showAllThreads, setShowAllThreads] = useState(false);
   const [actionMessage, setActionMessage] = useState("");
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const selected = threads.find((thread) => thread.id === selectedId) ?? threads[0];
@@ -675,8 +646,14 @@ function DashboardContent({ data }: { data: DashboardData }) {
   if (!selected) {
     return (
       <>
-        <AgentInbox />
-        <EmptyState title="No work threads yet" detail="Keep collection on while you work. Knov will group recent activity into reviewable threads." />
+        {labs && <AgentInbox />}
+        <EmptyState
+          title="Knov is getting to know your work"
+          detail={settings.data?.collectionStatus.enabled === false
+            ? "Collection is paused, so nothing new is being recorded. Resume it in the sidebar."
+            : "Keep Knov running and work as usual. Your first threads appear here after about 15 minutes of activity. Closing this window keeps Knov running in the menu bar."}
+          action={<a className="ghost-button" href="#/activity">See what’s been recorded</a>}
+        />
         <RecommendationSection recommendations={data.recommendations} />
       </>
     );
@@ -757,8 +734,8 @@ function DashboardContent({ data }: { data: DashboardData }) {
 
   return (
     <>
-      <PredictionSection resource={predictions} threads={threads} onSelectThread={selectThread} />
-      <AgentInbox />
+      {labs && <LabsPredictions threads={threads} onSelectThread={selectThread} />}
+      {labs && <AgentInbox />}
       <section className="now-status" aria-label="Current context status">
         <span><i className="status-light" /> {threads.length} active thread{threads.length === 1 ? "" : "s"}</span>
         <span>{formatDuration(data.trackedSeconds)} observed</span>
@@ -795,10 +772,14 @@ function DashboardContent({ data }: { data: DashboardData }) {
       <section className="thread-section">
         <div className="section-title-row">
           <div><div className="eyebrow">Your current landscape</div><h2>Active threads</h2></div>
-          <a className="section-link" href="#/threads">Explore all <ChevronRight size={15} /></a>
+          {threads.length > 4 && (
+            <button type="button" className="section-link" onClick={() => setShowAllThreads((value) => !value)}>
+              {showAllThreads ? "Show fewer" : `Show all ${threads.length}`} <ChevronRight size={15} />
+            </button>
+          )}
         </div>
         <div className="thread-grid">
-          {threads.slice(0, 4).map((thread) => <ThreadCard key={thread.id} thread={thread} selected={thread.id === selected.id} onSelect={() => selectThread(thread.id)} />)}
+          {(showAllThreads ? threads : threads.slice(0, 4)).map((thread) => <ThreadCard key={thread.id} thread={thread} selected={thread.id === selected.id} onSelect={() => selectThread(thread.id)} />)}
         </div>
       </section>
 
@@ -815,6 +796,11 @@ function DashboardContent({ data }: { data: DashboardData }) {
       </details>
     </>
   );
+}
+
+function LabsPredictions({ threads, onSelectThread }: { threads: WorkThread[]; onSelectThread: (id: string) => void }) {
+  const predictions = useResource(() => api.predictionsDashboard(), []);
+  return <PredictionSection resource={predictions} threads={threads} onSelectThread={onSelectThread} />;
 }
 
 const PREDICTION_DISPLAY_THRESHOLD = 0.65;
@@ -1132,42 +1118,6 @@ function ThreadCard({ thread, selected = false, onSelect }: { thread: WorkThread
       <p>{thread.summary}</p>
       <span className="thread-meta"><span>{thread.events.length} signals</span><span>{threadMeasure(thread)}</span><ChevronRight size={15} /></span>
     </button>
-  );
-}
-
-function ThreadsPage() {
-  const [range, setRange] = useState<RangeKey>("7d");
-  const resource = useResource(() => api.dashboard(range), [range]);
-  const [selectedId, setSelectedId] = useState<string>();
-  return (
-    <div className="page threads-page">
-      <PageHeader eyebrow="Reconstructed work" title="Your threads" description="Knov groups related activity into provisional work streams. Review the evidence before treating an inference as intent." actions={<RangePicker value={range} onChange={setRange} />} />
-      <ResourceState {...resource}>
-        {(data) => {
-          const threads = deriveThreads(data);
-          const selected = threads.find((thread) => thread.id === selectedId);
-          return (
-            <div className="threads-layout">
-              <section className="threads-list" aria-label="Work threads">
-                {threads.map((thread) => <ThreadCard key={thread.id} thread={thread} selected={thread.id === selectedId} onSelect={() => setSelectedId(thread.id)} />)}
-              </section>
-              <aside className="thread-detail">
-                {selected ? (
-                  <>
-                    <div className="eyebrow">Thread evidence</div>
-                    <h2>{selected.title}</h2>
-                    <p>{selected.summary}</p>
-                    <div className="next-move"><Sparkles size={17} /><span><small>Suggested next move</small><strong>{selected.nextMove}</strong></span></div>
-                    <EvidenceRail events={selected.events} />
-                    <a className="primary-button large" href="#/dashboard" onClick={() => localStorage.setItem("knov.selected-thread", selected.id)}>Continue in Now <ArrowUpRight size={17} /></a>
-                  </>
-                ) : <EmptyState title="Choose a thread" detail="Select a thread to inspect the local evidence and suggested next move." />}
-              </aside>
-            </div>
-          );
-        }}
-      </ResourceState>
-    </div>
   );
 }
 
@@ -1537,7 +1487,16 @@ function ProfilePage() {
   );
 }
 
+const STARTER_QUESTIONS = [
+  "What have I been working on this week?",
+  "Draft a short standup update from today’s work.",
+  "What did I leave unfinished that I should pick back up?",
+  "Summarize what I researched recently and what to read next.",
+];
+
 function AssistantPage() {
+  const { settings } = useAppStatus();
+  const aiConfigured = settings.data?.aiConfigured ?? true;
   const activeThreadContext = loadThreadContext();
   const activeContextBrief = activeThreadContext ? makeContextBrief(activeThreadContext) : undefined;
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -1556,10 +1515,9 @@ function AssistantPage() {
   const [retrievedMemories, setRetrievedMemories] = useState<MemoryRecord[]>([]);
   const [error, setError] = useState("");
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!draft.trim() || sending) return;
-    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content: draft.trim(), createdAt: new Date().toISOString() };
+  const ask = async (question: string) => {
+    if (!question.trim() || sending) return;
+    const userMessage: ChatMessage = { id: crypto.randomUUID(), role: "user", content: question.trim(), createdAt: new Date().toISOString() };
     const next = [...messages, userMessage];
     setMessages(next);
     setDraft("");
@@ -1576,13 +1534,18 @@ function AssistantPage() {
       setSending(false);
     }
   };
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    void ask(draft);
+  };
+  const conversationStarted = messages.some((message) => message.role === "user");
 
   return (
     <div className="page assistant-page">
       <PageHeader
-        eyebrow="Memory-efficient personal AI"
+        eyebrow="Ask with your context"
         title="Remembers more. Sends less."
-        description="One question shows the full-context baseline, the memories Knov selected, and the resulting token reduction."
+        description="Ask about your own work. Knov adds only the relevant parts of your activity and memory—never your full history."
         actions={(
           <div className="assistant-header-actions">
             <a className="ghost-button" href="#/dashboard">Back to Now</a>
@@ -1592,6 +1555,12 @@ function AssistantPage() {
       <div className="assistant-workspace">
         <section className="chat-shell">
           <div className="chat-context"><ShieldCheck size={15} /><span>Local memory + token-budgeted selected evidence</span><small>Full raw logs stay on this Mac</small></div>
+          {!aiConfigured && (
+            <div className="assistant-connect" role="note">
+              <span><strong>Connect an AI to start asking.</strong> Use a free model on this Mac or your own API key.</span>
+              <a className="primary-button" href="#/settings">Connect AI</a>
+            </div>
+          )}
           {activeContextBrief && <details className="active-context-preview"><summary>Review local candidate evidence</summary><pre>{activeContextBrief}</pre></details>}
           <div className="message-list">
             {messages.map((message) => (
@@ -1608,6 +1577,13 @@ function AssistantPage() {
               </article>
             ))}
             {sending && <article className="message assistant"><div className="message-avatar"><Bot size={18} /></div><div className="typing"><i /><i /><i /></div></article>}
+            {!conversationStarted && !activeContextBrief && (
+              <div className="starter-questions" aria-label="Suggested questions">
+                {STARTER_QUESTIONS.map((question) => (
+                  <button type="button" key={question} disabled={sending || !aiConfigured} onClick={() => void ask(question)}>{question}</button>
+                ))}
+              </div>
+            )}
           </div>
           {error && <p className="assistant-error error-message">{error}</p>}
           <form className="chat-composer" onSubmit={(event) => void submit(event)}>
@@ -1621,7 +1597,7 @@ function AssistantPage() {
                   event.currentTarget.form?.requestSubmit();
                 }
               }}
-              placeholder="What should I prioritize when building the production version?"
+              placeholder="Ask about your work, e.g. “What was I doing on the pitch deck yesterday?”"
               rows={2}
             />
             <button className="primary-button" disabled={!draft.trim() || sending}>{sending ? <LoaderCircle size={16} className="spin" /> : "Send"} {!sending && <ChevronRight size={16} />}</button>
@@ -1693,9 +1669,7 @@ function formatTokenCount(value: number): string {
 function SettingsPage() {
   const { settings: resource, setCollectionEnabled, setAgentPaused } = useAppStatus();
   const browsers = useResource(() => api.browserProfiles(), []);
-  const [key, setKey] = useState("");
-  const [providerMessage, setProviderMessage] = useState<{ tone: "ok" | "error"; text: string }>();
-  const [providerBusy, setProviderBusy] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [settingsError, setSettingsError] = useState("");
   const [historyImportMessage, setHistoryImportMessage] = useState("");
   const [historyImportError, setHistoryImportError] = useState(false);
@@ -1717,20 +1691,6 @@ function SettingsPage() {
     resource.setData(await api.saveSettings(settings));
   });
 
-  const providerAction = async (work: () => Promise<string>, reload = false) => {
-    setProviderBusy(true);
-    setProviderMessage(undefined);
-    try {
-      const text = await work();
-      setProviderMessage({ tone: "ok", text });
-      if (reload) await resource.reload();
-    } catch (cause) {
-      setProviderMessage({ tone: "error", text: errorMessage(cause) });
-    } finally {
-      setProviderBusy(false);
-    }
-  };
-
   const deleteEverything = async () => {
     setDeleting(true);
     setDeleteError("");
@@ -1748,10 +1708,10 @@ function SettingsPage() {
   const reimportHistory = async () => {
     setHistoryImporting(true);
     setHistoryImportError(false);
-    setHistoryImportMessage("Re-importing the last 30 days of Chrome history…");
+    setHistoryImportMessage("Re-importing the last 30 days of browser history…");
     try {
       await api.reimportChromeHistory();
-      setHistoryImportMessage("Chrome durations imported and your profile was refreshed.");
+      setHistoryImportMessage("Browser history imported and your profile was refreshed.");
     } catch (cause) {
       setHistoryImportError(true);
       setHistoryImportMessage(cause instanceof Error ? cause.message : String(cause));
@@ -1766,73 +1726,64 @@ function SettingsPage() {
       <ResourceState {...resource}>
         {(settings) => (
           <div className="settings-grid">
-            <section className="panel settings-card">
-              <SettingsHeading icon={<KeyRound />} title="AI provider" detail="Your key goes directly from this Mac to the selected provider." />
-              <p className="status-detail">Profile digests and chat are sent only when needed. OpenAI disables optional storage. AWS Bedrock uses model-specific token preflight and eligible prompt caching; provider processing remains governed by your account policy.</p>
-              <div className="provider-tabs">
-                {providers.map((provider) => (
-                  <button className={settings.provider === provider ? "selected" : ""} key={provider} onClick={() => void patch({ provider })}>
-                    {providerLabel(provider)}
-                  </button>
-                ))}
-              </div>
-              <label className="secret-field">API key<input type="password" value={key} onChange={(event) => setKey(event.target.value)} placeholder={settings.hasProviderKey ? "Key stored in macOS Keychain" : "Paste your key"} /></label>
-              <div className="inline-actions">
-                <button className="primary-button" disabled={!key.trim() || providerBusy} onClick={() => void providerAction(async () => {
-                  await api.saveProviderKey(settings.provider, key.trim());
-                  setKey("");
-                  return "Saved securely in Keychain.";
-                }, true)}>Save key</button>
-                <button className="ghost-button" disabled={providerBusy} onClick={() => void providerAction(() => api.testProvider(settings.provider))}>
-                  {providerBusy && <LoaderCircle size={14} className="spin" />} Test connection
-                </button>
-                {settings.hasProviderKey && <button className="ghost-button" disabled={providerBusy} onClick={() => void providerAction(async () => {
-                  await api.removeProviderKey(settings.provider);
-                  return "Key removed from Keychain.";
-                }, true)}>Remove key</button>}
-              </div>
-              {providerMessage && (providerMessage.tone === "ok"
-                ? <p className="success-message"><Check size={14} />{providerMessage.text}</p>
-                : <p className="error-message" role="alert">{providerMessage.text}</p>)}
+            <section className="panel settings-card full-width">
+              <SettingsHeading icon={<KeyRound />} title="AI" detail="Builds your profile and answers questions. Raw activity never leaves this Mac." />
+              <AiProviderPicker settings={settings} onChange={resource.setData} />
             </section>
 
             <section className="panel settings-card">
-              <SettingsHeading icon={<Eye />} title="Collection" detail="Foreground app, window title, selected Chrome history, and editor workspace-change metadata." />
+              <SettingsHeading icon={<Eye />} title="Collection" detail="Foreground app, window title, selected browser history, and editor workspace-change metadata." />
               <Toggle label="Collection active" detail="Collect local foreground activity and backfill selected browser and editor metadata." checked={settings.collectionStatus.enabled} onChange={(enabled) => void guard(() => setCollectionEnabled(enabled))} />
               <Toggle label="Behavioral guidance" detail="Break and focus suggestions; work-continuity guidance stays on." checked={settings.behavioralGuidanceEnabled} onChange={(behavioralGuidanceEnabled) => void patch({ behavioralGuidanceEnabled })} />
-              <Toggle label="Launch at login" detail="Resume local collection after you sign in." checked={settings.launchAtLogin} onChange={(launchAtLogin) => void patch({ launchAtLogin })} />
+              <Toggle label="Launch at login" detail="Start Knov quietly in the menu bar when you sign in, so collection never misses a day." checked={settings.launchAtLogin} onChange={(launchAtLogin) => void patch({ launchAtLogin })} />
               <div className="permission-row">
                 <div><strong>Accessibility permission</strong><p>Required only for active window titles.</p></div>
                 <span className={settings.collectionStatus.accessibilityGranted ? "status-ok" : "status-warn"}>{settings.collectionStatus.accessibilityGranted ? "Granted" : "Not granted"}</span>
                 {!settings.collectionStatus.accessibilityGranted && <button className="ghost-button" onClick={() => void api.requestAccessibility()}>Open prompt</button>}
               </div>
               {settings.collectionStatus.degradedReasons.map((reason) => <p className="status-detail" key={reason}>{reason}</p>)}
-              <p className="status-detail">While collection is active, Knov backfills new Chrome visits and reads metadata-only Local History indexes and Git working-tree paths from VS Code, Cursor, and Cortex Code workspaces. It never opens saved code snapshots or source contents.</p>
+              <p className="status-detail">Closing the window keeps Knov running in the menu bar. While collection is active, Knov backfills new browser visits and reads metadata-only Local History indexes and Git working-tree paths from VS Code, Cursor, and Cortex Code workspaces. It never opens saved code snapshots or source contents.</p>
               {settings.collectionStatus.dataPath && <p className="status-detail">Local database: {settings.collectionStatus.dataPath}</p>}
             </section>
 
             <section className="panel settings-card">
-              <SettingsHeading icon={<Inbox />} title="Work agent" detail="Learns repeated workflows locally and acts only with your approval or explicit permission." />
+              <SettingsHeading icon={<FlaskConical />} title="Labs" detail="Experimental features we’re still shaping. Expect rough edges." />
               <Toggle
-                label="Agent execution"
-                detail="The kill switch: off stops everything the agent would run, immediately. Collection is separate."
-                checked={!settings.agentPaused}
-                onChange={(on) => void guard(() => setAgentPaused(!on))}
+                label="Show Labs features"
+                detail="Adds Workflows, the work agent, workflow interviews, and next-step predictions."
+                checked={settings.labsEnabled}
+                onChange={(labsEnabled) => void patch({ labsEnabled })}
               />
-              <p className="status-detail">Activity-based workflow mining, goals, and the action journal stay local. Workflow Discovery sends bounded interview context only when you answer or skip. The agent cannot send messages, delete data, or change repositories.</p>
-              <a className="ghost-button" href="#/agent">Permissions and history <ChevronRight size={14} /></a>
             </section>
 
-            <PredictionSettings
-              enabled={settings.predictionExperimentEnabled}
-              collectionEnabled={settings.collectionStatus.enabled}
-              onToggle={(predictionExperimentEnabled) => patch({ predictionExperimentEnabled })}
-            />
+            {settings.labsEnabled && (
+              <section className="panel settings-card">
+                <SettingsHeading icon={<Inbox />} title="Work agent" detail="Learns repeated workflows locally and acts only with your approval or explicit permission." />
+                <Toggle
+                  label="Agent execution"
+                  detail="The kill switch: off stops everything the agent would run, immediately. Collection is separate."
+                  checked={!settings.agentPaused}
+                  onChange={(on) => void guard(() => setAgentPaused(!on))}
+                />
+                <p className="status-detail">Activity-based workflow mining, goals, and the action journal stay local. Workflow interviews send bounded interview context only when you answer or skip. The agent cannot send messages, delete data, or change repositories.</p>
+                <a className="ghost-button" href="#/agent">Permissions and history <ChevronRight size={14} /></a>
+              </section>
+            )}
+
+            {settings.labsEnabled && (
+              <PredictionSettings
+                enabled={settings.predictionExperimentEnabled}
+                collectionEnabled={settings.collectionStatus.enabled}
+                onToggle={(predictionExperimentEnabled) => patch({ predictionExperimentEnabled })}
+              />
+            )}
 
             <section className="panel settings-card full-width">
-              <SettingsHeading icon={<BarChart3 />} title="Browser profiles" detail="Select local Chrome profiles for history import and continuous backfill." />
+              <SettingsHeading icon={<BarChart3 />} title="Browser history" detail="Optional. Choose Chrome, Arc, Brave, Edge, or Vivaldi profiles to import and keep up to date." />
               <ResourceState {...browsers}>
-                {(profiles) => (
+                {(profiles) => profiles.length === 0 ? (
+                  <p className="status-detail">No supported browser profiles were found on this Mac. Safari history isn’t supported yet; Knov still records Safari page titles from the front window.</p>
+                ) : (
                   <>
                     <BrowserProfileList
                       profiles={profiles}
@@ -1846,10 +1797,10 @@ function SettingsPage() {
                         onClick={() => void reimportHistory()}
                       >
                         {historyImporting ? <LoaderCircle size={15} className="spin" /> : <Clock3 size={15} />}
-                        {historyImporting ? "Re-importing…" : "Re-import Chrome history"}
+                        {historyImporting ? "Re-importing…" : "Re-import browser history"}
                       </button>
                     </div>
-                    <p className="status-detail">Manual re-import reads the last 30 days and rebuilds your profile. While collection is active, new visits are also backfilled approximately every 30 seconds. Foreground app time still comes from live local collection because Chrome history durations are not reliable screen-time data.</p>
+                    <p className="status-detail">Re-import reads the last 30 days and rebuilds your profile. While collection is active, new visits are also picked up about every 30 seconds.</p>
                     {historyImportMessage && (
                       <p className={historyImportError ? "error-message" : "success-message"}>
                         {!historyImportError && <Check size={14} />}
@@ -1871,6 +1822,15 @@ function SettingsPage() {
               />
             </section>
 
+            <section className="panel settings-card">
+              <SettingsHeading icon={<Info />} title="About this test build" detail={`Knov ${settings.appVersion} · early access`} />
+              <p className="status-detail">Thanks for testing Knov. Your feedback decides what we build next.</p>
+              <div className="inline-actions">
+                <button className="primary-button" onClick={() => setFeedbackOpen(true)}>Send feedback</button>
+                <button className="ghost-button" onClick={() => void api.openResource(RELEASES_URL).catch(() => undefined)}>Check for updates <ArrowUpRight size={14} /></button>
+              </div>
+            </section>
+
             <section className="panel settings-card full-width danger-card">
               <SettingsHeading icon={<Trash2 />} title="Delete local Knov data" detail="Permanently removes local activity, profiles, corrections, recommendations, telemetry, settings, and provider credentials." />
               <button className="danger-button" onClick={() => setConfirmDelete(true)}>Delete everything</button>
@@ -1879,6 +1839,7 @@ function SettingsPage() {
           </div>
         )}
       </ResourceState>
+      {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
       {confirmDelete && (
         <Modal title="Delete everything?" onClose={() => setConfirmDelete(false)}>
           <p className="modal-copy">This cannot be undone from within Knov. Local app data, learned workflows, skills, permissions, the action journal, agent drafts, and provider credentials stored in Keychain will be removed.</p>
@@ -2032,10 +1993,6 @@ function BrowserProfileList({
   const missing = savedIds.filter((id) => !available.has(id));
 
   const save = async (next: string[], success: string) => {
-    if (!next.length) {
-      setStatus({ tone: "error", text: "Keep at least one Chrome profile selected. To stop importing history, pause collection instead." });
-      return;
-    }
     setSaving(true);
     setStatus(undefined);
     try {
@@ -2069,16 +2026,13 @@ function BrowserProfileList({
             />
             <div className="browser-icon">{profile.browser.slice(0, 1).toUpperCase()}</div>
             <div><strong>{profile.name}</strong><p>{profile.browser} · {profile.path}</p><code className="profile-id">ID: {profile.id}</code></div>
-            <span className={`support-badge ${profile.support}`}>{profile.support}</span>
           </label>
         ))}
       </div>
       {missing.length > 0 && (
         <div className="missing-profiles" role="note">
           <span>{missing.length === 1 ? "A previously selected profile" : `${missing.length} previously selected profiles`} no longer exist{missing.length === 1 ? "s" : ""} in Chrome ({missing.join(", ")}). Knov skips {missing.length === 1 ? "it" : "them"}.</span>
-          {selected.length > 0 && (
-            <button type="button" className="ghost-button" disabled={saving} onClick={() => void save(selected, "Removed profiles that no longer exist in Chrome.")}>Clear missing</button>
-          )}
+          <button type="button" className="ghost-button" disabled={saving} onClick={() => void save(selected, "Removed profiles that no longer exist in the browser.")}>Clear missing</button>
         </div>
       )}
       {status && (status.tone === "ok"

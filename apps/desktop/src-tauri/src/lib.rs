@@ -10,6 +10,7 @@ mod models;
 mod platform;
 mod prediction;
 mod providers;
+mod revenue;
 mod threading;
 
 use std::sync::{atomic::AtomicBool, Arc, RwLock};
@@ -18,12 +19,32 @@ use commands::AppState;
 use db::Database;
 use platform::RuntimeStatus;
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    Manager,
+    AppHandle, Manager, RunEvent, WindowEvent, Wry,
 };
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_autostart::ManagerExt;
+
+/// Launch-at-login passes this so Knov starts collecting without opening a window.
+const HIDDEN_LAUNCH_ARG: &str = "--hidden";
+
+struct TrayCollectionItem(CheckMenuItem<Wry>);
+
+/// Keeps the menu-bar checkmark in step with collection changes made in the window.
+pub(crate) fn sync_tray_collection(app: &AppHandle, enabled: bool) {
+    if let Some(item) = app.try_state::<TrayCollectionItem>() {
+        let _ = item.0.set_checked(enabled);
+    }
+}
+
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -31,11 +52,30 @@ pub fn run() {
         .plugin(
             tauri_plugin_autostart::Builder::new()
                 .macos_launcher(MacosLauncher::LaunchAgent)
+                .args([HIDDEN_LAUNCH_ARG])
                 .build(),
         )
+        // Collection runs in this process, so closing the window hides it instead
+        // of quitting. Quit from the menu bar icon or with ⌘Q.
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let db = Arc::new(Database::open(data_dir.join("knov.sqlite3"))?);
+            let providers = providers::ProviderClient::default();
+            let initial_settings = db.settings()?;
+            providers.configure_local(commands::local_model_config(&initial_settings));
+            if std::env::args().any(|arg| arg == HIDDEN_LAUNCH_ARG) {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
+                }
+            }
             let launch_result = if db.settings()?.launch_at_login {
                 app.autolaunch().enable()
             } else {
@@ -52,7 +92,7 @@ pub fn run() {
                 Arc::new(agent::SystemHost::new(data_dir.join("drafts")));
             let state = AppState {
                 db: db.clone(),
-                providers: providers::ProviderClient::default(),
+                providers,
                 runtime: runtime.clone(),
                 refresh_lock: Arc::new(AtomicBool::new(false)),
                 prediction_lock: Arc::new(AtomicBool::new(false)),
@@ -75,26 +115,68 @@ pub fn run() {
                 agent_lock: state.agent_lock.clone(),
             }));
 
-            let show = MenuItem::with_id(app, "show", "Show Knov", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &quit])?;
-            TrayIconBuilder::new()
+            let show = MenuItem::with_id(app, "show", "Open Knov", true, None::<&str>)?;
+            let collecting = CheckMenuItem::with_id(
+                app,
+                "collect",
+                "Collect activity",
+                true,
+                initial_settings.collection_enabled,
+                None::<&str>,
+            )?;
+            let separator = PredefinedMenuItem::separator(app)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit Knov", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show, &collecting, &separator, &quit])?;
+            app.manage(TrayCollectionItem(collecting));
+            let mut tray = TrayIconBuilder::with_id("knov")
+                .tooltip("Knov")
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                    "show" => show_main_window(app),
+                    "collect" => {
+                        let Some(state) = app.try_state::<AppState>() else {
+                            return;
+                        };
+                        if let Ok(mut settings) = state.db.settings() {
+                            settings.collection_enabled = !settings.collection_enabled;
+                            let enabled = settings.collection_enabled;
+                            if state.db.save_settings(&settings).is_ok() {
+                                sync_tray_collection(app, enabled);
+                            }
                         }
                     }
                     "quit" => app.exit(0),
                     _ => {}
-                })
-                .build(app)?;
+                });
+            if let Some(icon) = app.default_window_icon() {
+                tray = tray.icon(icon.clone());
+            }
+            tray.build(app)?;
             app.manage(state);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            revenue::revenue_overview,
+            revenue::revenue_seed_demo,
+            revenue::revenue_create_project,
+            revenue::revenue_import_agreement,
+            revenue::revenue_update_agreement,
+            revenue::revenue_import_file,
+            revenue::revenue_add_evidence,
+            revenue::revenue_classify_evidence,
+            revenue::revenue_delete_source,
+            revenue::revenue_analyze,
+            revenue::revenue_review,
+            revenue::revenue_prepare_action,
+            revenue::revenue_save_draft,
+            revenue::revenue_approve_draft,
+            revenue::revenue_record_outcome,
+            revenue::connectors::revenue_connector_status,
+            revenue::connectors::revenue_connector_connect,
+            revenue::connectors::revenue_connector_sync,
+            revenue::connectors::revenue_connector_disconnect,
+            revenue::connectors::revenue_extract_document,
+            revenue::connectors::revenue_gmail_oauth,
             commands::delete_discovery_interview,
             commands::get_discovery_sessions,
             commands::start_discovery_interview,
@@ -115,6 +197,10 @@ pub fn run() {
             commands::get_browser_profiles,
             commands::get_bootstrap_status,
             commands::set_collection_enabled,
+            commands::probe_permissions,
+            commands::detect_local_models,
+            commands::get_tester_summary,
+            commands::open_mail_draft,
             commands::request_accessibility_permission,
             commands::set_browser_profiles,
             commands::start_bootstrap,
@@ -164,6 +250,19 @@ pub fn run() {
             commands::install_native_host,
             commands::delete_all_data
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // Clicking the Dock icon brings back the hidden window.
+            #[cfg(target_os = "macos")]
+            if let RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } = event
+            {
+                show_main_window(app);
+            }
+            #[cfg(not(target_os = "macos"))]
+            let _ = (app, event);
+        });
 }

@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Knov · Stop re-explaining your work to AI</title>
+  <meta name="description" content="Knov is a Mac app that remembers what you work on across apps and websites, so you can pick up where you left off and ask AI about your own work. Raw activity stays on your Mac.">
+  <meta name="theme-color" content="#0b0d0d">
+  <meta property="og:title" content="Knov · Stop re-explaining your work to AI">
+  <meta property="og:description" content="Pick up where you left off and ask AI about your own work. Raw activity stays on your Mac.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="assets/now.jpg">
+  <link rel="icon" href="assets/knov-icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script src="main.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#top" aria-label="Knov home">
+        <img src="assets/knov-icon.svg" alt="" width="30" height="30">
+        <span>Knov</span>
+      </a>
+      <nav class="topnav" aria-label="Sections">
+        <a href="#how">How it works</a>
+        <a href="#privacy">Privacy</a>
+        <a href="#install">Install</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <a class="button button-small" href="https://github.com/Marstronix218/knov/releases" data-download>Download</a>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="container hero-copy">
+        <p class="eyebrow"><span class="live-dot" aria-hidden="true"></span>Early access for Mac</p>
+        <h1>Stop re-explaining your work to AI.</h1>
+        <p class="lede">Knov quietly notices what you work on across apps and websites, then gives you that context when you need it. Pick up where you left off in one click, and ask AI about your own work. Raw activity never leaves your Mac.</p>
+        <div class="cta-row">
+          <a class="button" href="https://github.com/Marstronix218/knov/releases" data-download>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>
+            <span>Download for Mac</span>
+          </a>
+          <a class="button button-ghost" href="#how">See how it works</a>
+        </div>
+        <p class="fine" data-release-meta>macOS 13 or later · Apple Silicon and Intel</p>
+      </div>
+      <div class="container shot-wrap">
+        <figure class="window">
+          <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+          <img src="assets/now.jpg" width="2400" height="1500" alt="Knov's Now page showing the current work thread, a suggested next step, a Resume thread button, and the apps and files behind the thread">
+        </figure>
+      </div>
+    </section>
+
+    <section class="band" id="how">
+      <div class="container">
+        <div class="section-head">
+          <p class="eyebrow">How it works</p>
+          <h2>Work as usual. Knov keeps the thread.</h2>
+          <p>Knov runs in your menu bar. It notes which app is in front, window and page titles, and which files you save. From that it builds work threads you can return to.</p>
+        </div>
+
+        <ol class="loop" aria-label="The daily loop">
+          <li><span class="loop-n">1</span><div><h3>You work</h3><p>Docs, browser, editor, Slack. Nothing to tag or file.</p></div></li>
+          <li><span class="loop-n">2</span><div><h3>Knov groups it</h3><p>Related apps, pages and files become one thread, like "Q4 pricing proposal".</p></div></li>
+          <li><span class="loop-n">3</span><div><h3>You pick it back up</h3><p>Open Now, click Resume thread, or ask a question with that context attached.</p></div></li>
+        </ol>
+
+        <div class="feature">
+          <div class="feature-copy">
+            <p class="eyebrow">Now</p>
+            <h3>Pick up where you left off</h3>
+            <p>See your active threads, why Knov thinks they belong together, and a suggested next step. <b>Resume thread</b> reopens the pages and files you were using.</p>
+            <ul class="checks">
+              <li>Threads across apps, browsers and editors</li>
+              <li>"Why this thread?" shows the evidence</li>
+              <li>Copy a brief to paste anywhere</li>
+            </ul>
+          </div>
+          <figure class="window window-tilt">
+            <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+            <img src="assets/now.jpg" width="2400" height="1500" loading="lazy" alt="The Now page with a Resume thread button">
+          </figure>
+        </div>
+
+        <div class="feature feature-flip">
+          <div class="feature-copy">
+            <p class="eyebrow">Ask</p>
+            <h3>Ask about your own work</h3>
+            <p>"What have I been working on this week?" "Draft a standup update from today." Knov adds only the relevant parts of your activity and memory to the question, never your full history.</p>
+            <ul class="checks">
+              <li>Use a free model on your Mac, or your own API key</li>
+              <li>Works with Ollama, LM Studio, OpenAI, Anthropic and Amazon Bedrock</li>
+              <li>See how much context was sent</li>
+            </ul>
+          </div>
+          <figure class="window">
+            <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+            <img src="assets/ask.jpg" width="2400" height="1500" loading="lazy" alt="The Ask page with suggested questions such as What have I been working on this week">
+          </figure>
+        </div>
+
+        <div class="feature">
+          <div class="feature-copy">
+            <p class="eyebrow">Memory</p>
+            <h3>You stay in charge of what it knows</h3>
+            <p>Knov keeps a short, readable profile: your projects, skills and focus. Every item is marked as inferred, observed, or yours. Remove anything, add corrections, and your corrections always win.</p>
+            <ul class="checks">
+              <li>Edit the summary in plain language</li>
+              <li>Corrections override what Knov guesses</li>
+              <li>Stored and retrieved on your Mac</li>
+            </ul>
+          </div>
+          <figure class="window window-tilt">
+            <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+            <img src="assets/memory.jpg" width="2400" height="1500" loading="lazy" alt="The Memory page listing active projects, skills and a user correction">
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section class="band band-alt" id="privacy">
+      <div class="container">
+        <div class="section-head">
+          <p class="eyebrow">Privacy</p>
+          <h2>Remembers more. Sends less.</h2>
+          <p>Everything Knov records lives in a local database on your Mac. With a local model, nothing leaves the Mac at all.</p>
+        </div>
+
+        <div class="flow">
+          <div class="flow-card">
+            <p class="flow-label">Knov records</p>
+            <ul>
+              <li>Which app is in front, and for how long</li>
+              <li>Window and page titles</li>
+              <li>History from browsers you choose</li>
+              <li>Which files you save, by path only</li>
+            </ul>
+          </div>
+          <div class="flow-arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 12h15m-5-5 5 5-5 5"/></svg></div>
+          <div class="flow-card flow-card-mac">
+            <p class="flow-label">Stays on your Mac</p>
+            <p class="flow-big">30 days</p>
+            <p>Raw activity is deleted after 30 days. Pause from the menu bar anytime. <b>Delete everything</b> in Settings erases all data and stored keys.</p>
+          </div>
+          <div class="flow-arrow" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 12h15m-5-5 5 5-5 5"/></svg></div>
+          <div class="flow-card">
+            <p class="flow-label">Goes to your AI</p>
+            <ul>
+              <li><b>Local model:</b> nothing leaves the Mac</li>
+              <li><b>Cloud key:</b> a short summary and your question, sent straight to the provider you chose</li>
+              <li><b>No AI:</b> threads and timeline still work</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="never">
+          <p class="flow-label flow-label-danger">Never recorded</p>
+          <ul>
+            <li>Keystrokes</li><li>Screenshots</li><li>Page or document contents</li><li>Audio or camera</li><li>Clipboard</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="install">
+      <div class="container">
+        <div class="section-head">
+          <p class="eyebrow">Install</p>
+          <h2>Up and running in about 5 minutes</h2>
+        </div>
+
+        <div class="install-grid">
+          <ol class="steps">
+            <li>
+              <h3>Download and install</h3>
+              <p>Download the <code>.dmg</code>, open it, and drag <b>Knov</b> into <b>Applications</b>.</p>
+              <a class="button button-small" href="https://github.com/Marstronix218/knov/releases" data-download>Download for Mac</a>
+            </li>
+            <li>
+              <h3>Open it once from Settings</h3>
+              <p>This early build isn't notarized by Apple yet. If macOS says it can't verify Knov, click <b>Done</b>, then go to <b>System Settings → Privacy &amp; Security</b>, scroll down, and click <b>Open Anyway</b>. You only do this once.</p>
+              <details>
+                <summary>macOS says the app "is damaged"</summary>
+                <p>Open Terminal, run this command, then open Knov again:</p>
+                <div class="code">
+                  <code id="xattr-cmd">xattr -dr com.apple.quarantine /Applications/Knov.app</code>
+                  <button type="button" class="copy" data-copy="xattr-cmd">Copy</button>
+                </div>
+              </details>
+            </li>
+            <li>
+              <h3>Follow the 4-step setup</h3>
+              <p><b>Welcome</b>, then <b>Permissions</b> (allow System Events and Accessibility so Knov can see the front app and window titles), then optional <b>Browser history</b> from Chrome, Arc, Brave, Edge or Vivaldi, then <b>AI</b>.</p>
+            </li>
+          </ol>
+
+          <aside class="ai-card" aria-labelledby="ai-h">
+            <h3 id="ai-h">Choose your AI</h3>
+            <div class="ai-option ai-option-rec">
+              <div class="ai-head"><strong>On this Mac</strong><span class="tag">Recommended</span></div>
+              <p>Free and private. Install <a href="https://ollama.com/download">Ollama</a>, then run:</p>
+              <div class="code">
+                <code id="ollama-cmd">ollama pull llama3.2</code>
+                <button type="button" class="copy" data-copy="ollama-cmd">Copy</button>
+              </div>
+              <p class="fine">Knov finds it automatically. LM Studio works too.</p>
+            </div>
+            <div class="ai-option">
+              <div class="ai-head"><strong>Cloud API key</strong></div>
+              <p>OpenAI, Anthropic or Amazon Bedrock. Better answers, billed to your key, stored in macOS Keychain.</p>
+            </div>
+            <div class="ai-option">
+              <div class="ai-head"><strong>Skip for now</strong></div>
+              <p>Threads and the activity timeline work without AI. Connect one later in Settings.</p>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="band band-alt" id="faq">
+      <div class="container narrow">
+        <div class="section-head">
+          <p class="eyebrow">FAQ</p>
+          <h2>Questions</h2>
+        </div>
+        <div class="faq">
+          <details>
+            <summary>Which Macs does Knov run on?</summary>
+            <p>Macs running macOS 13 (Ventura) or later, with Apple Silicon or Intel. Knov is tested most on Apple Silicon.</p>
+          </details>
+          <details>
+            <summary>Does it work with Safari or Firefox?</summary>
+            <p>History import supports Chrome, Arc, Brave, Edge and Vivaldi. Safari and Firefox history aren't supported yet, but their page titles are still recorded through window titles.</p>
+          </details>
+          <details>
+            <summary>Do I need an AI provider?</summary>
+            <p>No. Threads, Resume thread and the activity timeline work without one. Ask and the profile summary need a local model or an API key.</p>
+          </details>
+          <details>
+            <summary>Does Knov keep running when I close the window?</summary>
+            <p>Yes. It stays in the menu bar. Use the menu bar icon to pause or resume collection, or to quit.</p>
+          </details>
+          <details>
+            <summary>How do I send feedback?</summary>
+            <p>Click <b>Send feedback</b> in the app's sidebar. It opens a message you review before anything is sent. Feedback is never sent automatically.</p>
+          </details>
+          <details>
+            <summary>How do I uninstall?</summary>
+            <p>In Knov, choose <b>Settings → Delete everything</b> to erase your data and stored keys. Quit Knov from the menu bar icon, then drag it from Applications to the Trash.</p>
+          </details>
+          <details>
+            <summary>What are Labs?</summary>
+            <p>Experimental features you can turn on in <b>Settings → Labs</b>: workflow detection, guided workflow interviews, next-step predictions, and a work agent that drafts and opens things only with your approval.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="closing">
+      <div class="container closing-inner">
+        <img src="assets/knov-icon.svg" alt="" width="64" height="64">
+        <h2>Try Knov this week.</h2>
+        <p>Work as usual for an hour, then open Now and see if it got your day right.</p>
+        <a class="button" href="https://github.com/Marstronix218/knov/releases" data-download>Download for Mac</a>
+        <p class="fine" data-release-meta>macOS 13 or later · Apple Silicon and Intel</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <span class="brand brand-quiet"><img src="assets/knov-icon.svg" alt="" width="22" height="22"> Knov</span>
+      <nav aria-label="Footer">
+        <a href="https://github.com/Marstronix218/knov/blob/main/TESTERS.md">Tester guide</a>
+        <a href="https://github.com/Marstronix218/knov/releases">All releases</a>
+        <a href="https://github.com/Marstronix218/knov">GitHub</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>

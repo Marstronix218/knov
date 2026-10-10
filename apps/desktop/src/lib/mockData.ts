@@ -186,7 +186,7 @@ export const mockProfile: ProfileData = {
 export const mockBrowsers: BrowserProfile[] = [
   {
     id: "chrome-default",
-    browser: "chrome",
+    browser: "Chrome",
     name: "Default",
     path: "~/Library/Application Support/Google/Chrome/Default",
     selected: true,
@@ -194,7 +194,7 @@ export const mockBrowsers: BrowserProfile[] = [
   },
   {
     id: "chrome-profile-1",
-    browser: "chrome",
+    browser: "Chrome",
     name: "Work",
     path: "~/Library/Application Support/Google/Chrome/Profile 1",
     selected: true,
@@ -211,8 +211,14 @@ export const mockBrowsers: BrowserProfile[] = [
 ];
 
 export const mockSettings: SettingsData = {
-  provider: "openai",
-  hasProviderKey: false,
+  provider: "local",
+  aiConfigured: false,
+  hasProviderKey: true,
+  localBaseUrl: "http://localhost:11434",
+  localModel: null,
+  labsEnabled: false,
+  profileReady: true,
+  appVersion: "0.2.0",
   behavioralGuidanceEnabled: true,
   predictionExperimentEnabled: false,
   predictionDisplayThreshold: 0.65,

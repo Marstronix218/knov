@@ -63,6 +63,8 @@ pub struct WorkflowDocument {
     pub confidence: f64,
     pub confirmed: bool,
     pub updated_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commercial_context: Option<serde_json::Value>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -163,7 +165,7 @@ pub fn validate_workflow(doc: &WorkflowDocument) -> AppResult<()> {
 pub fn sessions(db: &Database) -> AppResult<Vec<InterviewSession>> {
     let conn = db.conn();
     let mut stmt =
-        conn.prepare("SELECT document FROM discovery_sessions ORDER BY updated_at DESC,id")?;
+        conn.prepare("SELECT document FROM discovery_sessions WHERE COALESCE(json_extract(document,'$.workflow.commercialContext.demo'),0)=0 ORDER BY updated_at DESC,id")?;
     let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
     rows.map(|row| Ok(serde_json::from_str(&row?)?)).collect()
 }
@@ -315,6 +317,14 @@ pub fn start(
     description: String,
     context: Option<ThreadContext>,
 ) -> AppResult<InterviewSession> {
+    start_scoped(db, description, context, None)
+}
+fn start_scoped(
+    db: &Database,
+    description: String,
+    context: Option<ThreadContext>,
+    commercial_context: Option<serde_json::Value>,
+) -> AppResult<InterviewSession> {
     if description.chars().count() > 4000 {
         return Err(invalid("Describe a workflow in at most 4000 characters."));
     }
@@ -443,6 +453,7 @@ pub fn start(
         json!({"id":Uuid::new_v4().to_string(),"sessionId":id,"name":"Untitled workflow","description":description,"businessGoal":"","trigger":"","actors":[],"steps":[],"applications":[],"resources":[],"inputs":[],"outputs":[],"decisions":[],"dependencies":[],"approvals":[],"exceptions":[],"bottlenecks":[],"frequency":"","estimatedMinutes":null,"desiredOutcome":"","automationOpportunities":[],"evidence":[{"source":"user_reported","detail":description}],"confidence":0.0,"confirmed":false,"updatedAt":now}),
     )?;
     let mut doc = doc;
+    doc.commercial_context = commercial_context;
     if let Some(c) = &context {
         for e in &c.events {
             doc.evidence.push(WorkflowEvidence {
@@ -497,7 +508,7 @@ pub fn set_status(db: &Database, id: &str, status: &str) -> AppResult<InterviewS
 pub fn workflows(db: &Database) -> AppResult<Vec<WorkflowDocument>> {
     let conn = db.conn();
     let mut stmt =
-        conn.prepare("SELECT document FROM discovered_workflows ORDER BY updated_at DESC,id")?;
+        conn.prepare("SELECT document FROM discovered_workflows WHERE COALESCE(json_extract(document,'$.commercialContext.demo'),0)=0 ORDER BY updated_at DESC,id")?;
     let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
     rows.map(|r| Ok(serde_json::from_str(&r?)?)).collect()
 }
@@ -637,6 +648,8 @@ fn apply_response(s: &mut InterviewSession, text: &str) -> AppResult<()> {
         ));
     }
     output.workflow.confirmed = s.workflow.confirmed;
+    // Commercial ownership and demo isolation are application state, never provider output.
+    output.workflow.commercial_context = s.workflow.commercial_context.clone();
     for e in &mut output.workflow.evidence {
         if matches!(e.source.as_str(), "observed" | "user_confirmed")
             && !s
@@ -751,6 +764,61 @@ pub fn delete_session(db: &Database, id: &str) -> AppResult<()> {
     tx.execute("DELETE FROM discovery_sessions WHERE id=?1", [id])?;
     tx.commit()?;
     Ok(())
+}
+
+/// Brief commercial clarification uses the existing session, workflow, graph and revision storage.
+/// It does not invoke a provider or expose imported source text outside the local application.
+pub fn start_commercial_clarification(
+    db: &Database,
+    opportunity_id: &str,
+    project_id: &str,
+    question: &str,
+    demo: bool,
+) -> AppResult<InterviewSession> {
+    let mut s = start_scoped(
+        db,
+        "Review the commercial workflow associated with this opportunity.".into(),
+        None,
+        Some(json!({"opportunityId":opportunity_id,"projectId":project_id,"demo":demo})),
+    )?;
+    let revision = s.revision;
+    s.workflow.name = "Commercial clarification".into();
+    s.workflow.commercial_context =
+        Some(json!({"opportunityId":opportunity_id,"projectId":project_id,"demo":demo}));
+    s.messages.last_mut().unwrap().content = question.into();
+    s.missing_information = vec![question.into()];
+    persist(db, &mut s, Some(revision))?;
+    Ok(s)
+}
+pub fn answer_commercial_clarification(
+    db: &Database,
+    session_id: &str,
+    answer: &str,
+) -> AppResult<InterviewSession> {
+    if answer.trim().is_empty() || answer.len() > 4000 {
+        return Err(invalid("Clarification answer is empty or too long."));
+    }
+    let mut s = session(db, session_id)?;
+    if s.workflow.commercial_context.is_none() {
+        return Err(invalid("This is not a commercial clarification session."));
+    }
+    let revision = s.revision;
+    s.messages.push(InterviewMessage {
+        role: "user".into(),
+        content: answer.into(),
+        created_at: Utc::now().timestamp(),
+    });
+    s.workflow.evidence.push(WorkflowEvidence {
+        source: "user_confirmed".into(),
+        detail: answer.into(),
+    });
+    if let Some(context) = s.workflow.commercial_context.as_mut() {
+        context["answer"] = json!(answer);
+    }
+    s.missing_information.clear();
+    s.status = "completed".into();
+    persist(db, &mut s, Some(revision))?;
+    Ok(s)
 }
 
 #[cfg(test)]

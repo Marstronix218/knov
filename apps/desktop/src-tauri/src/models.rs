@@ -54,6 +54,8 @@ impl TryFrom<&str> for ActivitySource {
 #[serde(rename_all = "camelCase")]
 pub struct ChromeProfile {
     pub id: String,
+    /// Chromium-family browser key, e.g. `chrome`, `arc`, `brave`.
+    pub browser: String,
     pub name: String,
     pub path: String,
     pub selected: bool,
@@ -159,6 +161,12 @@ pub struct Settings {
     pub agent_paused: bool,
     /// Budget for actions that run under an automatic grant.
     pub agent_max_actions_per_hour: i64,
+    /// Address of a local Ollama or OpenAI-compatible server on this Mac.
+    pub local_base_url: String,
+    /// Local model name; the first installed model is used when unset.
+    pub local_model: Option<String>,
+    /// Shows experimental surfaces: work agent, workflows, interviews, predictions.
+    pub labs_enabled: bool,
 }
 
 impl Default for Settings {
@@ -180,6 +188,9 @@ impl Default for Settings {
             prediction_cooldown_minutes: 15,
             agent_paused: false,
             agent_max_actions_per_hour: 30,
+            local_base_url: crate::providers::DEFAULT_LOCAL_BASE_URL.into(),
+            local_model: None,
+            labs_enabled: false,
         }
     }
 }

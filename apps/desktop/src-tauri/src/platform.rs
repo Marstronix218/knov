@@ -40,67 +40,131 @@ pub struct RuntimeStatus {
     pub accessibility_message: Option<String>,
 }
 
+/// Chromium-family browsers share Chrome's profile layout and History schema,
+/// so one importer covers all of them.
+pub struct ChromiumBrowser {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub app_name: &'static str,
+    root: &'static str,
+}
+
+pub const CHROMIUM_BROWSERS: &[ChromiumBrowser] = &[
+    ChromiumBrowser {
+        key: "chrome",
+        label: "Chrome",
+        app_name: "Google Chrome",
+        root: "Google/Chrome",
+    },
+    ChromiumBrowser {
+        key: "arc",
+        label: "Arc",
+        app_name: "Arc",
+        root: "Arc/User Data",
+    },
+    ChromiumBrowser {
+        key: "brave",
+        label: "Brave",
+        app_name: "Brave Browser",
+        root: "BraveSoftware/Brave-Browser",
+    },
+    ChromiumBrowser {
+        key: "edge",
+        label: "Edge",
+        app_name: "Microsoft Edge",
+        root: "Microsoft Edge",
+    },
+    ChromiumBrowser {
+        key: "vivaldi",
+        label: "Vivaldi",
+        app_name: "Vivaldi",
+        root: "Vivaldi",
+    },
+];
+
+/// Chrome profile IDs stay bare (`Default`) for compatibility with existing
+/// selections; other browsers are namespaced (`arc:Default`).
+fn browser_profile_id(browser: &ChromiumBrowser, directory: &str) -> String {
+    if browser.key == "chrome" {
+        directory.to_string()
+    } else {
+        format!("{}:{directory}", browser.key)
+    }
+}
+
+pub fn browser_for_profile(profile_id: &str) -> &'static ChromiumBrowser {
+    profile_id
+        .split_once(':')
+        .and_then(|(key, _)| CHROMIUM_BROWSERS.iter().find(|browser| browser.key == key))
+        .unwrap_or(&CHROMIUM_BROWSERS[0])
+}
+
+/// Returns an empty list, not an error, when no supported browser is
+/// installed: browser history is optional context.
 pub fn discover_chrome_profiles(db: &Database) -> AppResult<Vec<ChromeProfile>> {
-    let root = chrome_root()
-        .ok_or_else(|| AppError::InvalidInput("Chrome data directory not found".into()))?;
-    let local_state = fs::read_to_string(root.join("Local State")).unwrap_or_default();
-    let parsed: serde_json::Value = serde_json::from_str(&local_state).unwrap_or_default();
-    let info = parsed
-        .pointer("/profile/info_cache")
-        .and_then(|v| v.as_object())
-        .cloned()
-        .unwrap_or_default();
+    let Some(support) = dirs::home_dir().map(|home| home.join("Library/Application Support"))
+    else {
+        return Ok(Vec::new());
+    };
     let settings = db.settings()?;
     let mut persisted = Vec::new();
     let mut result = Vec::new();
-    let info_was_empty = info.is_empty();
-    for (directory, metadata) in info {
-        let path = root.join(&directory);
-        if !path.join("History").exists() {
+    let mut every_list_read = true;
+    for browser in CHROMIUM_BROWSERS {
+        let root = support.join(browser.root);
+        if !root.exists() {
             continue;
         }
-        let name = metadata
-            .get("name")
-            .and_then(|v| v.as_str())
-            .unwrap_or(&directory)
-            .to_string();
-        persisted.push((
-            directory.clone(),
-            name.clone(),
-            path.to_string_lossy().into_owned(),
-        ));
-        result.push(ChromeProfile {
-            selected: settings.selected_chrome_profiles.contains(&directory),
-            id: directory,
-            name,
-            path: path.to_string_lossy().into_owned(),
-            support_level: "history_and_live_tab".into(),
-        });
-    }
-    // Chrome occasionally omits info_cache; Default still exists.
-    if result.is_empty() {
-        let path = root.join("Default");
-        if path.join("History").exists() {
+        let local_state = fs::read_to_string(root.join("Local State")).unwrap_or_default();
+        let parsed: serde_json::Value = serde_json::from_str(&local_state).unwrap_or_default();
+        let info = parsed
+            .pointer("/profile/info_cache")
+            .and_then(|v| v.as_object())
+            .cloned()
+            .unwrap_or_default();
+        every_list_read &= !info.is_empty();
+        let mut found = Vec::new();
+        for (directory, metadata) in &info {
+            let name = metadata
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or(directory)
+                .to_string();
+            found.push((directory.clone(), name));
+        }
+        // Chromium occasionally omits info_cache; Default still exists.
+        if found.is_empty() {
+            found.push(("Default".into(), "Default".into()));
+        }
+        for (directory, name) in found {
+            let path = root.join(&directory);
+            if !path.join("History").exists() {
+                continue;
+            }
+            let id = browser_profile_id(browser, &directory);
             persisted.push((
-                "Default".into(),
-                "Default".into(),
+                id.clone(),
+                name.clone(),
                 path.to_string_lossy().into_owned(),
             ));
             result.push(ChromeProfile {
-                id: "Default".into(),
-                name: "Default".into(),
+                selected: settings.selected_chrome_profiles.contains(&id),
+                id,
+                browser: browser.key.into(),
+                name,
                 path: path.to_string_lossy().into_owned(),
-                selected: settings
-                    .selected_chrome_profiles
-                    .iter()
-                    .any(|v| v == "Default"),
                 support_level: "history_and_live_tab".into(),
             });
         }
     }
-    // Prune only when Chrome's profile list was read; the Default-only fallback
-    // must not forget other profiles because of a momentarily unreadable file.
-    db.save_chrome_profiles(&persisted, !info_was_empty)?;
+    result.sort_by(|left, right| {
+        left.browser
+            .cmp(&right.browser)
+            .then(left.name.cmp(&right.name))
+    });
+    // Prune only when every browser's profile list was read; a fallback must
+    // not forget other profiles because of a momentarily unreadable file.
+    db.save_chrome_profiles(&persisted, every_list_read && !persisted.is_empty())?;
     Ok(result)
 }
 
@@ -177,7 +241,7 @@ fn import_chrome_history(
                 ended_at: (duration_seconds > 0)
                     .then(|| occurred_at.saturating_add(duration_seconds)),
                 duration_seconds,
-                app_name: "Google Chrome".into(),
+                app_name: browser_for_profile(profile_id).app_name.into(),
                 window_title: None,
                 url: Some(url.clone()),
                 page_title: nonempty(title),
@@ -870,6 +934,49 @@ fn inactive_user_seconds() -> Option<u64> {
     None
 }
 
+/// Whether macOS trusts Knov for Accessibility (needed for window titles).
+/// With `prompt`, macOS lists Knov in Settings and shows its permission dialog.
+#[cfg(target_os = "macos")]
+pub fn accessibility_trusted(prompt: bool) -> bool {
+    use core_foundation::{
+        base::TCFType,
+        boolean::CFBoolean,
+        dictionary::{CFDictionary, CFDictionaryRef},
+        string::{CFString, CFStringRef},
+    };
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
+        static kAXTrustedCheckOptionPrompt: CFStringRef;
+        fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> bool;
+    }
+    // SAFETY: the key is an immutable framework constant and the dictionary
+    // outlives the call.
+    unsafe {
+        let key = CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt);
+        let value = if prompt {
+            CFBoolean::true_value()
+        } else {
+            CFBoolean::false_value()
+        };
+        let options = CFDictionary::from_CFType_pairs(&[(key.as_CFType(), value.as_CFType())]);
+        AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef())
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn accessibility_trusted(_prompt: bool) -> bool {
+    false
+}
+
+/// Reads the foreground app once so onboarding can show whether collection
+/// works. The first call is also when macOS asks to allow System Events.
+pub fn probe_foreground_access() -> (bool, bool, Option<String>) {
+    match active_window() {
+        Ok((_, title)) => (true, title.is_some(), None),
+        Err(message) => (false, false, Some(message)),
+    }
+}
+
 pub fn ensure_pairing_token(db: &Database) -> AppResult<String> {
     if let Some((token, _)) = db.extension_state()? {
         return Ok(token);
@@ -1235,10 +1342,6 @@ fn extract_search_query(value: &str) -> Option<String> {
         .query_pairs()
         .find(|(name, _)| name == *key)
         .map(|(_, value)| value.into_owned())
-}
-
-fn chrome_root() -> Option<PathBuf> {
-    dirs::home_dir().map(|home| home.join("Library/Application Support/Google/Chrome"))
 }
 
 fn nonempty(value: String) -> Option<String> {

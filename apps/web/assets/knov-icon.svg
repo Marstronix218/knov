@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Knov logo">
+  <rect width="1024" height="1024" rx="224" fill="#0b0d0d"/>
+  <path d="M252 228h164v214l-82 82 82 82v190H252V228Z" fill="#b7ff3c"/>
+  <path d="m405 451 244-223h178L523 508h-94l-24-57Z" fill="#b7ff3c"/>
+  <path d="m429 516h94l304 280H649L405 573l24-57Z" fill="#b7ff3c"/>
+  <path d="m459 512 48-48 48 48-48 48-48-48Z" fill="#65cdfd"/>
+</svg>

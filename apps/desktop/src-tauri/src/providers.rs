@@ -1,3 +1,8 @@
+use std::{
+    sync::{Arc, RwLock},
+    time::Duration,
+};
+
 use chrono::Utc;
 use keyring::Entry;
 use reqwest::{Client, StatusCode};
@@ -12,6 +17,27 @@ use crate::{
 };
 
 const KEYCHAIN_SERVICE: &str = "com.knov.desktop.llm";
+/// Ollama's default endpoint. LM Studio and other OpenAI-compatible servers
+/// work too; only loopback addresses are accepted so "local" stays local.
+pub const DEFAULT_LOCAL_BASE_URL: &str = "http://localhost:11434";
+/// Ollama's default context window silently truncates the profile digest, so
+/// local requests ask for a window large enough for Knov's largest prompt.
+const LOCAL_CONTEXT_TOKENS: u32 = 16_384;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalModelConfig {
+    pub base_url: String,
+    pub model: Option<String>,
+}
+
+impl Default for LocalModelConfig {
+    fn default() -> Self {
+        Self {
+            base_url: DEFAULT_LOCAL_BASE_URL.into(),
+            model: None,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct CompletionResult {
@@ -27,22 +53,70 @@ pub struct CompletionResult {
 #[derive(Clone)]
 pub struct ProviderClient {
     http: Client,
+    local: Arc<RwLock<LocalModelConfig>>,
 }
 
 impl Default for ProviderClient {
     fn default() -> Self {
         Self {
+            // A hung request would otherwise hold the profile-refresh lock forever.
+            // Local models on slower Macs can take minutes, hence the generous limit.
             http: Client::builder()
                 .user_agent("Knov/0.2")
+                .connect_timeout(Duration::from_secs(15))
+                .timeout(Duration::from_secs(600))
                 .build()
                 .expect("provider HTTP client"),
+            local: Arc::new(RwLock::new(LocalModelConfig::default())),
         }
     }
 }
 
 impl ProviderClient {
+    pub fn configure_local(&self, config: LocalModelConfig) {
+        *self.local.write().unwrap_or_else(|e| e.into_inner()) = config;
+    }
+
+    fn local_config(&self) -> LocalModelConfig {
+        self.local.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Lists models served by a local Ollama or OpenAI-compatible server.
+    pub async fn local_models(&self, base_url: &str) -> AppResult<Vec<String>> {
+        let base = normalize_local_base_url(base_url)?;
+        let unreachable = |_| local_unreachable(&base);
+        let response = self
+            .http
+            .get(local_endpoint(&base, "api/tags")?)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(unreachable)?;
+        if response.status().is_success() {
+            let body: Value = response.json().await?;
+            return Ok(model_names(&body["models"], "name"));
+        }
+        let response = self
+            .http
+            .get(local_endpoint(&base, "v1/models")?)
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await
+            .map_err(unreachable)?;
+        if !response.status().is_success() {
+            return Err(local_unreachable(&base));
+        }
+        let body: Value = response.json().await?;
+        Ok(model_names(&body["data"], "id"))
+    }
+
     pub fn save_key(&self, provider: &str, key: &str) -> AppResult<()> {
         validate_provider(provider)?;
+        if provider == "local" {
+            return Err(AppError::InvalidInput(
+                "Local models don't need an API key.".into(),
+            ));
+        }
         if key.trim().is_empty() {
             return Err(AppError::InvalidInput("API key cannot be empty".into()));
         }
@@ -54,6 +128,9 @@ impl ProviderClient {
 
     pub fn delete_key(&self, provider: &str) -> AppResult<()> {
         validate_provider(provider)?;
+        if provider == "local" {
+            return Ok(());
+        }
         let entry = Entry::new(KEYCHAIN_SERVICE, provider).map_err(|_| AppError::Credential)?;
         match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -67,6 +144,9 @@ impl ProviderClient {
 
     fn key(&self, provider: &str) -> AppResult<String> {
         validate_provider(provider)?;
+        if provider == "local" {
+            return Ok(String::new());
+        }
         if let Ok(value) = std::env::var(match provider {
             "openai" => "OPENAI_API_KEY",
             "anthropic" => "ANTHROPIC_API_KEY",
@@ -94,6 +174,15 @@ impl ProviderClient {
     }
 
     pub async fn validate(&self, provider: &str) -> AppResult<()> {
+        if provider == "local" {
+            let config = self.local_config();
+            let models = self.local_models(&config.base_url).await?;
+            return match config.model.filter(|model| !model.trim().is_empty()) {
+                _ if models.is_empty() => Err(no_local_models()),
+                Some(model) if !models.contains(&model) => Err(missing_local_model(&model)),
+                _ => Ok(()),
+            };
+        }
         let key = self.key(provider)?;
         let result = match provider {
             "openai" => {
@@ -338,6 +427,11 @@ impl ProviderClient {
         response_format: Option<Value>,
         input_token_limit: Option<i64>,
     ) -> AppResult<CompletionResult> {
+        if provider == "local" {
+            return self
+                .complete_local(system, messages, max_tokens, response_format)
+                .await;
+        }
         let key = self.key(provider)?;
         match provider {
             "openai" => {
@@ -481,11 +575,218 @@ impl ProviderClient {
             _ => Err(AppError::InvalidInput("Unsupported provider.".into())),
         }
     }
+
+    /// Prefers Ollama's native chat API, which accepts a context-window size and
+    /// a JSON schema; falls back to the OpenAI-compatible endpoint used by
+    /// LM Studio, llama.cpp, and similar servers.
+    async fn complete_local(
+        &self,
+        system: &str,
+        messages: &[ChatMessage],
+        max_tokens: u32,
+        response_format: Option<Value>,
+    ) -> AppResult<CompletionResult> {
+        let config = self.local_config();
+        let base = normalize_local_base_url(&config.base_url)?;
+        let model = match config.model.filter(|model| !model.trim().is_empty()) {
+            Some(model) => model,
+            None => self
+                .local_models(&base)
+                .await?
+                .into_iter()
+                .next()
+                .ok_or_else(no_local_models)?,
+        };
+        let mut turns = vec![json!({"role":"system","content":system})];
+        turns.extend(messages.iter().map(|m| {
+            json!({"role": if m.role == "assistant" {"assistant"} else {"user"}, "content":m.content})
+        }));
+
+        let mut native = json!({
+            "model":model,
+            "messages":turns,
+            "stream":false,
+            "options":{"num_ctx":LOCAL_CONTEXT_TOKENS,"num_predict":max_tokens}
+        });
+        if let Some(schema) = response_format
+            .as_ref()
+            .and_then(|format| format.get("schema"))
+        {
+            native["format"] = schema.clone();
+        }
+        let response = self
+            .http
+            .post(local_endpoint(&base, "api/chat")?)
+            .json(&native)
+            .send()
+            .await
+            .map_err(|_| local_unreachable(&base))?;
+        let status = response.status();
+        let body: Value = response.json().await.unwrap_or(Value::Null);
+        let native_unsupported = status == StatusCode::NOT_FOUND
+            && !body["error"]
+                .as_str()
+                .is_some_and(|error| error.to_ascii_lowercase().contains("model"));
+        if !native_unsupported {
+            if status == StatusCode::NOT_FOUND {
+                return Err(missing_local_model(&model));
+            }
+            if !status.is_success() {
+                return Err(local_status_error(status, &body));
+            }
+            let text = body["message"]["content"]
+                .as_str()
+                .map(strip_reasoning)
+                .filter(|text| !text.is_empty())
+                .ok_or_else(|| AppError::Provider("The local model returned no text.".into()))?;
+            return Ok(CompletionResult {
+                text,
+                model: body["model"].as_str().unwrap_or(&model).into(),
+                input_tokens: body["prompt_eval_count"].as_i64(),
+                output_tokens: body["eval_count"].as_i64(),
+                preflight_input_tokens: None,
+                cache_read_input_tokens: None,
+                cache_write_input_tokens: None,
+            });
+        }
+
+        let mut request = json!({
+            "model":model,
+            "messages":turns,
+            "max_tokens":max_tokens,
+            "stream":false
+        });
+        if let Some(format) = response_format {
+            request["response_format"] = json!({
+                "type":"json_schema",
+                "json_schema":{"name":format["name"],"schema":format["schema"],"strict":format["strict"]}
+            });
+        }
+        let response = self
+            .http
+            .post(local_endpoint(&base, "v1/chat/completions")?)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|_| local_unreachable(&base))?;
+        let status = response.status();
+        let body: Value = response.json().await.unwrap_or(Value::Null);
+        if !status.is_success() {
+            return Err(local_status_error(status, &body));
+        }
+        let text = body["choices"][0]["message"]["content"]
+            .as_str()
+            .map(strip_reasoning)
+            .filter(|text| !text.is_empty())
+            .ok_or_else(|| AppError::Provider("The local model returned no text.".into()))?;
+        Ok(CompletionResult {
+            text,
+            model: body["model"].as_str().unwrap_or(&model).into(),
+            input_tokens: body["usage"]["prompt_tokens"].as_i64(),
+            output_tokens: body["usage"]["completion_tokens"].as_i64(),
+            preflight_input_tokens: None,
+            cache_read_input_tokens: None,
+            cache_write_input_tokens: None,
+        })
+    }
+}
+
+/// Accepts `localhost:11434`, `http://127.0.0.1:1234/v1/`, and similar, and
+/// rejects anything that is not this Mac.
+pub fn normalize_local_base_url(value: &str) -> AppResult<String> {
+    let trimmed = value.trim();
+    let candidate = if trimmed.contains("://") {
+        trimmed.to_string()
+    } else {
+        format!("http://{trimmed}")
+    };
+    let parsed = reqwest::Url::parse(&candidate).map_err(|_| {
+        AppError::InvalidInput(
+            "Enter a local server address such as http://localhost:11434.".into(),
+        )
+    })?;
+    let loopback = matches!(
+        parsed.host_str(),
+        Some("localhost" | "127.0.0.1" | "[::1]" | "::1")
+    );
+    if !matches!(parsed.scheme(), "http" | "https") || !loopback {
+        return Err(AppError::InvalidInput(
+            "Local AI must run on this Mac (localhost or 127.0.0.1).".into(),
+        ));
+    }
+    let path = parsed.path().trim_end_matches('/');
+    let path = path.strip_suffix("/v1").unwrap_or(path);
+    let mut base = format!(
+        "{}://{}",
+        parsed.scheme(),
+        parsed.host_str().unwrap_or_default()
+    );
+    if let Some(port) = parsed.port() {
+        base.push_str(&format!(":{port}"));
+    }
+    base.push_str(path);
+    Ok(base)
+}
+
+fn local_endpoint(base: &str, path: &str) -> AppResult<reqwest::Url> {
+    reqwest::Url::parse(&format!("{}/{path}", base.trim_end_matches('/')))
+        .map_err(|_| AppError::InvalidInput("Invalid local AI address.".into()))
+}
+
+fn model_names(list: &Value, field: &str) -> Vec<String> {
+    list.as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.get(field)?.as_str().map(ToOwned::to_owned))
+                .filter(|name| !name.to_ascii_lowercase().contains("embed"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Reasoning models served locally (Qwen 3, DeepSeek R1) may prefix their
+/// answer with a think block that must not reach the UI or the JSON parser.
+fn strip_reasoning(text: &str) -> String {
+    let trimmed = text.trim();
+    match (trimmed.find("<think>"), trimmed.find("</think>")) {
+        (Some(0), Some(end)) => trimmed[end + "</think>".len()..].trim().to_string(),
+        _ => trimmed.to_string(),
+    }
+}
+
+fn local_unreachable(base: &str) -> AppError {
+    AppError::Provider(format!(
+        "Couldn't reach a local AI server at {base}. Open Ollama (or start LM Studio's server) and try again."
+    ))
+}
+
+fn no_local_models() -> AppError {
+    AppError::Provider(
+        "Your local AI server has no models yet. In Terminal, run: ollama pull llama3.2".into(),
+    )
+}
+
+fn missing_local_model(model: &str) -> AppError {
+    AppError::Provider(format!(
+        "The local model \"{model}\" isn't installed. Choose another model in Settings, or run: ollama pull {model}"
+    ))
+}
+
+fn local_status_error(status: StatusCode, body: &Value) -> AppError {
+    let detail = body["error"]
+        .as_str()
+        .or_else(|| body["error"]["message"].as_str())
+        .map(|value| value.chars().take(200).collect::<String>());
+    AppError::Provider(match detail {
+        Some(detail) => format!("The local model failed: {detail}"),
+        None => format!("The local model failed (HTTP {}).", status.as_u16()),
+    })
 }
 
 fn validate_provider(provider: &str) -> AppResult<()> {
     match provider {
-        "openai" | "anthropic" | "bedrock" => Ok(()),
+        "openai" | "anthropic" | "bedrock" | "local" => Ok(()),
         _ => Err(AppError::InvalidInput("Unsupported provider.".into())),
     }
 }
@@ -1006,5 +1307,39 @@ mod tests {
         );
         assert!(bedrock_preflight_tokens(&json!({})).is_err());
         assert!(bedrock_preflight_tokens(&json!({"inputTokens": "42"})).is_err());
+    }
+
+    #[test]
+    fn local_base_url_accepts_only_this_mac() {
+        assert_eq!(
+            normalize_local_base_url("localhost:11434").unwrap(),
+            "http://localhost:11434"
+        );
+        assert_eq!(
+            normalize_local_base_url(" http://127.0.0.1:1234/v1/ ").unwrap(),
+            "http://127.0.0.1:1234"
+        );
+        assert!(normalize_local_base_url("http://192.168.1.20:11434").is_err());
+        assert!(normalize_local_base_url("https://api.example.com").is_err());
+        assert!(normalize_local_base_url("file:///etc/passwd").is_err());
+    }
+
+    #[test]
+    fn strips_leading_reasoning_from_local_models() {
+        assert_eq!(
+            strip_reasoning("<think>plan</think>\n{\"a\":1}"),
+            "{\"a\":1}"
+        );
+        assert_eq!(strip_reasoning("  Answer  "), "Answer");
+        assert_eq!(strip_reasoning("Use <think> tags"), "Use <think> tags");
+    }
+
+    #[test]
+    fn local_model_lists_skip_embedding_models() {
+        let tags = json!([{"name":"llama3.2:latest"},{"name":"nomic-embed-text:latest"}]);
+        assert_eq!(
+            model_names(&tags, "name"),
+            vec!["llama3.2:latest".to_string()]
+        );
     }
 }

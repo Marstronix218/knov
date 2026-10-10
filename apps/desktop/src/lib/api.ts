@@ -17,6 +17,9 @@ import type {
   ChatRunResult,
   DashboardData,
   GrantRequest,
+  LocalModelDetection,
+  PermissionProbe,
+  TesterSummary,
   ProfileData,
   Provider,
   PredictionDashboard,
@@ -136,6 +139,33 @@ export const api = {
   setCollectionEnabled: (enabled: boolean) =>
     call<SettingsData>("set_collection_enabled", { enabled }, { ...mockSettings, collectionStatus: { ...mockSettings.collectionStatus, enabled } }),
   requestAccessibility: () => call<boolean>("request_accessibility_permission", undefined, false),
+  probePermissions: () =>
+    call<PermissionProbe>("probe_permissions", undefined, { foregroundApps: true, windowTitles: false }),
+  detectLocalModels: (baseUrl?: string) =>
+    call<LocalModelDetection>("detect_local_models", { baseUrl }, {
+      baseUrl: baseUrl || "http://localhost:11434",
+      reachable: false,
+      models: [],
+      error: "Local AI detection requires the desktop app.",
+    }),
+  openMailDraft: async (to: string, subject: string, body: string) => {
+    if (!isTauri()) {
+      window.location.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      return;
+    }
+    await invoke<void>("open_mail_draft", { to, subject, body });
+  },
+  testerSummary: () =>
+    call<TesterSummary>("get_tester_summary", undefined, {
+      appVersion: "0.2.0",
+      macOS: "preview",
+      aiProvider: "none",
+      browserProfiles: 0,
+      labsEnabled: false,
+      daysWithActivity: 0,
+      questionsAsked: 0,
+      events: {},
+    }),
   setBrowserProfiles: (profileIds: string[]) =>
     call<void>("set_browser_profiles", { profileIds }, undefined),
   startBootstrap: () => call<BootstrapStatus>("start_bootstrap", undefined, undefined),
