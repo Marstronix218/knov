@@ -8,6 +8,9 @@ async function call(command: string, args?: Record<string, unknown>): Promise<Re
 export const revenueApi = {
   overview: (demo: boolean) => call("revenue_overview", { demo }),
   seedDemo: () => call("revenue_seed_demo"),
+  simulationLoad: (step: SimulationStep | "all") => call("revenue_simulation_load", { step }),
+  simulationReset: () => call("revenue_simulation_reset"),
+  importUpload: (projectId: string, fileName: string, dataBase64: string) => call("revenue_import_upload", { projectId, fileName, dataBase64 }),
   createProject: (clientName: string, name: string, description: string, threadIds: string[]) => call("revenue_create_project", { clientName, name, description, threadIds }),
   importAgreement: (projectId: string, title: string, text: string) => call("revenue_import_agreement", { projectId, title, text }),
   importFile: (projectId: string, title: string, path: string) => call("revenue_import_file", { projectId, title, path }),
@@ -18,3 +21,21 @@ export const revenueApi = {
   approveDraft: (draftId: string) => call("revenue_approve_draft", { draftId }),
   recordOutcome: (opportunityId: string, kind: string, evidence: string, amountCents: number | null, currency: string | null, verified: boolean) => call("revenue_record_outcome", { opportunityId, kind, evidence, amountCents, currency, verified }),
 };
+
+export type SimulationStep = "contracts" | "gmail" | "slack" | "work" | "billing";
+
+/** Reads a picked or dropped file for `importUpload`; the webview never sees file paths. */
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",", 2)[1] ?? "");
+    reader.onerror = () => reject(reader.error ?? new Error(`${file.name} could not be read.`));
+    reader.readAsDataURL(file);
+  });
+}
+
+let focusedOpportunity = "";
+/** Asks the Opportunities page to open this opportunity the next time it mounts. */
+export function focusOpportunity(id: string) { focusedOpportunity = id; }
+export const pendingFocusedOpportunity = () => focusedOpportunity;
+export function clearFocusedOpportunity() { focusedOpportunity = ""; }

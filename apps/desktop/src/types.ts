@@ -110,6 +110,8 @@ export interface SettingsData {
   /** True once a provider is chosen and usable (local, or a cloud key is stored). */
   aiConfigured: boolean;
   hasProviderKey: boolean;
+  /** The developer supplies the key (KNOV_MANAGED_PROVIDER in .env); users never see one. */
+  managedAi?: boolean;
   localBaseUrl: string;
   localModel?: string | null;
   labsEnabled: boolean;
@@ -707,6 +709,10 @@ export interface InterviewSession {
   createdAt: number;
   updatedAt: number;
   revision: number;
+  /** Revenue topic picked when starting, e.g. "change_requests". */
+  topic?: string | null;
+  /** Short answers the user can tap instead of typing. */
+  suggestedAnswers?: string[];
 }
 export interface GraphEvidence {
   sourceType: string;
@@ -749,4 +755,26 @@ export interface TesterSummary {
   daysSinceFirstActivity?: number | null;
   questionsAsked: number;
   events: Record<string, number>;
+}
+
+export interface AiUsageRow {
+  key: string;
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number | null;
+  unpricedRequests: number;
+}
+
+export interface AiUsageSummary {
+  since: number;
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  unpricedRequests: number;
+  pricesConfigured: boolean;
+  byFeature: AiUsageRow[];
+  byModel: AiUsageRow[];
+  byDay: AiUsageRow[];
 }

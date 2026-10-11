@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AiUsageSummary,
   GraphRevision,
   InterviewGraph,
   InterviewSession,
@@ -79,7 +80,7 @@ async function call<T>(command: string, args?: Record<string, unknown>, fallback
 }
 
 async function discoveryCall<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  if (!isTauri()) throw new Error("Workflow Discovery requires the desktop app. Browser preview cannot save interviews or call your provider.");
+  if (!isTauri()) throw new Error("The AI interview requires the desktop app. Browser preview cannot save interviews or call your provider.");
   return invoke<T>(command, args);
 }
 
@@ -88,7 +89,7 @@ export const api = {
   interviewGraph: (sessionId: string, revision?: number) => discoveryCall<InterviewGraph>("get_discovery_graph", { sessionId, revision }),
   deleteDiscovery: (sessionId: string) => discoveryCall<void>("delete_discovery_interview", { sessionId }),
   discoverySessions: () => discoveryCall<InterviewSession[]>("get_discovery_sessions"),
-  startDiscovery: (description: string, threadContext?: ThreadContext) => discoveryCall<InterviewSession>("start_discovery_interview", { description, threadContext }),
+  startDiscovery: (description: string, threadContext?: ThreadContext, topic?: string) => discoveryCall<InterviewSession>("start_discovery_interview", { description, threadContext, topic }),
   advanceDiscovery: (sessionId: string, action: "answer" | "skip" | "end", answer?: string) => discoveryCall<InterviewSession>("advance_discovery_interview", { sessionId, action, answer }),
   setDiscoveryStatus: (sessionId: string, status: "paused" | "active") => discoveryCall<InterviewSession>("set_discovery_interview_status", { sessionId, status }),
   discoveredWorkflows: () => discoveryCall<WorkflowDocument[]>("get_discovered_workflows"),
@@ -155,6 +156,11 @@ export const api = {
     }
     await invoke<void>("open_mail_draft", { to, subject, body });
   },
+  aiUsage: (days: number) =>
+    call<AiUsageSummary>("get_ai_usage", { days }, {
+      since: 0, requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, unpricedRequests: 0,
+      pricesConfigured: false, byFeature: [], byModel: [], byDay: [],
+    }),
   testerSummary: () =>
     call<TesterSummary>("get_tester_summary", undefined, {
       appVersion: "0.2.0",

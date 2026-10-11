@@ -58,7 +58,7 @@ describe("Workflow Discovery", () => {
     vi.spyOn(api, "discoverySessions").mockResolvedValue([session]);
     const advance = vi.spyOn(api, "advanceDiscovery").mockResolvedValue({ ...session, status: "completed" });
     renderDiscovery();
-    fireEvent.click(await screen.findByRole("button", { name: /Invoice reconciliation.*active/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Invoice reconciliation.*in progress/ }));
     expect(screen.getByRole("button", { name: "Send answer" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Finish & review" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Finish & review" }));
@@ -70,7 +70,7 @@ describe("Workflow Discovery", () => {
     vi.spyOn(api, "discoverySessions").mockResolvedValue([session]);
     vi.spyOn(api, "advanceDiscovery").mockRejectedValue(new Error("Provider unavailable"));
     renderDiscovery();
-    fireEvent.click(await screen.findByRole("button", { name: /Invoice reconciliation.*active/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Invoice reconciliation.*in progress/ }));
     fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "Our ledger" } });
     fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Provider unavailable");
@@ -82,19 +82,47 @@ describe("Workflow Discovery", () => {
     vi.spyOn(api, "discoverySessions").mockResolvedValue([session]);
     const remove = vi.spyOn(api, "deleteDiscovery").mockResolvedValue(undefined);
     renderDiscovery();
-    fireEvent.click(await screen.findByRole("button", { name: /Invoice reconciliation.*active/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Invoice reconciliation.*in progress/ }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     expect(remove).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Delete interview" }));
     await waitFor(() => expect(remove).toHaveBeenCalledWith("session-1"));
     expect(await screen.findByRole("button", { name: "Start interview" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Invoice reconciliation.*active/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Invoice reconciliation.*in progress/ })).not.toBeInTheDocument();
+  });
+
+  it("starts a revenue topic in one click and answers with a suggested reply", async () => {
+    const started: InterviewSession = { ...structuredClone(session), topic: "change_requests", messages: [{ role: "assistant", content: "When a client asks for something new, what happens next?", createdAt: 100 }], suggestedAnswers: ["We send a quote first", "We just do it"] };
+    const start = vi.spyOn(api, "startDiscovery").mockResolvedValue(started);
+    const advance = vi.spyOn(api, "advanceDiscovery").mockResolvedValue({ ...started, suggestedAnswers: [] });
+    renderDiscovery();
+    fireEvent.click(await screen.findByRole("button", { name: /Change requests and extra work/ }));
+    await screen.findByText("When a client asks for something new, what happens next?");
+    expect(start).toHaveBeenCalledWith("", undefined, "change_requests");
+    fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "Draft I am still typing" } });
+    fireEvent.click(within(screen.getByLabelText("Suggested answers")).getByRole("button", { name: "We send a quote first" }));
+    await waitFor(() => expect(advance).toHaveBeenCalledWith("session-1", "answer", "We send a quote first"));
+    expect(screen.getByLabelText("Your answer")).toHaveValue("Draft I am still typing");
+  });
+
+  it("shows what Knov has learned so far, including rules and unknowns", async () => {
+    const learned = { ...structuredClone(session), workflow: { ...structuredClone(workflow), decisions: ["Requests over 2 hours need a change order"], trigger: "" } };
+    vi.spyOn(api, "discoverySessions").mockResolvedValue([learned]);
+    renderDiscovery();
+    fireEvent.click(await screen.findByRole("button", { name: /Invoice reconciliation.*in progress/ }));
+    const panel = screen.getByRole("complementary", { name: "What Knov has learned" });
+    expect(within(panel).getByText("Requests over 2 hours need a change order")).toBeInTheDocument();
+    expect(within(panel).getByText("Manual comparison")).toBeInTheDocument();
+    expect(within(panel).getByText("6 of 7 essentials")).toBeInTheDocument();
+    expect(within(panel).getAllByText("Not yet known")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: /All interviews/ }));
+    expect(await screen.findByRole("button", { name: /Change requests and extra work/ })).toBeInTheDocument();
   });
 
   it("discloses browser unavailability without offering fake persistence", async () => {
     delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
     renderDiscovery();
-    expect(screen.getByText("Open Workflow Discovery in the desktop app")).toBeInTheDocument();
+    expect(screen.getByText("Open the AI interview in the desktop app")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Start interview" })).not.toBeInTheDocument();
     await expect(api.startDiscovery("invoice work")).rejects.toThrow("requires the desktop app");
   });

@@ -12,9 +12,12 @@ npm install
 npm run dev:desktop
 ```
 
-Complete the normal first-run setup, open **Revenue**, choose **Open isolated demo**, then
-**Load reproducible demo**. No AI-provider key or Gmail/Slack account is required for
-the deterministic commercial review loop. Fixtures are isolated from real data
+Complete the normal first-run setup (choose **Explore a simulated business**), or
+open **Simulation** from the sidebar. Connect the simulated contracts, Gmail, Slack,
+work activity, and billing one at a time; after each step the page lists how the
+findings changed, and **Home** shows each problem, its evidence, and the recommended
+action. **Connect everything at once** loads the whole business. No AI-provider key
+or Gmail/Slack account is required for the deterministic commercial review loop. Fixtures are isolated from real data
 and use a fixed reference clock, so an overdue proposal remains reproducible.
 
 The Acme Analytics agreement covers two dashboards. The third-dashboard request
@@ -51,8 +54,11 @@ Tauri application to exercise persistence, imports, and source authorization.
 See [connector configuration](revenue-connectors.md) for the actual authorization
 flow, scopes, credentials, retrieval bounds, and disconnect behavior. Live calls
 require your own provider configuration; fixture data is never shown as a live
-sync. Plain text and Markdown can be imported locally. Agreement persistence is limited to 64 KB of UTF-8 text. PDF extraction requires
-`pdftotext` from Poppler; scanned PDFs requiring OCR are unsupported.
+sync. Documents are uploaded from **Sources** (file picker or drag and drop) and
+extracted locally: text and Markdown directly, `.docx`/`.doc`/`.rtf`/`.odt` with
+macOS `textutil`, and text PDFs with Poppler's `pdftotext` when installed or macOS
+PDFKit otherwise. Agreement persistence is limited to 64 KB of UTF-8 text; scanned
+PDFs requiring OCR are unsupported.
 
 ## Verification
 

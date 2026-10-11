@@ -13,6 +13,8 @@ use uuid::Uuid;
 
 #[path = "revenue/connectors.rs"]
 pub mod connectors;
+#[path = "revenue/simulation.rs"]
+pub mod simulation;
 
 const DEMO_NOW: i64 = 1_760_054_400;
 fn invalid(s: &str) -> AppError {
@@ -693,149 +695,13 @@ fn detect(
         &json!({"id":key,"projectId":p["id"],"clientName":c["name"],"projectName":p["name"],"type":kind,"title":title,"explanation":explanation,"evidenceIds":refs,"uncertainty":[uncertainty],"disproves":[disproves],"recommendedAction":action,"status":"needs_clarification","confidence":0.8,"provenance":"rule_inferred","amountCents":amount,"currency":currency,"clarificationQuestion":question,"interviewId":null,"createdAt":time,"updatedAt":time,"demo":p["demo"]}),
     )
 }
+/// Loads the simulated business with everything except billing records, so the
+/// Atlas milestone still asks for billing verification.
 fn seed(conn: &Connection) -> AppResult<()> {
-    if !list(conn, "project", true)?.is_empty() {
-        return Ok(());
+    for step in simulation::STEPS.iter().filter(|step| **step != "billing") {
+        simulation::load(conn, step)?;
     }
-    let p = project(
-        conn,
-        "Acme Analytics",
-        "Analytics dashboards",
-        "Fictional agency engagement",
-        vec!["demo-third-dashboard-thread".into()],
-        true,
-    )?;
-    let pid = field(&p, "id");
-    import_agreement(conn,pid,"Acme statement of work","Scope: Build two dashboards.\nExclusions: third dashboard\nProject fee USD 12000.\nPayment: invoice after milestone acceptance.")?;
-    evidence(
-        conn,
-        pid,
-        "request",
-        "demo_slack",
-        "acme-request",
-        "Please build a third dashboard.",
-        DEMO_NOW - 7 * 86400,
-        None,
-        None,
-        None,
-        "observed",
-    )?;
-    evidence(
-        conn,
-        pid,
-        "activity",
-        "demo_thread",
-        "demo-third-dashboard-thread",
-        "Implemented the third dashboard in the linked developer thread.",
-        DEMO_NOW - 4 * 86400,
-        None,
-        None,
-        None,
-        "observed",
-    )?;
-    let p = project(
-        conn,
-        "Northstar Labs",
-        "Discovery proposal",
-        "Fictional commercial follow-up",
-        vec![],
-        true,
-    )?;
-    evidence(
-        conn,
-        field(&p, "id"),
-        "commitment",
-        "demo_gmail",
-        "northstar-promise",
-        "I will send the updated proposal by 2025-10-08T17:00:00-07:00.",
-        DEMO_NOW - 5 * 86400,
-        Some(DEMO_NOW - 86400),
-        None,
-        None,
-        "observed",
-    )?;
-    let p = project(
-        conn,
-        "Atlas Systems",
-        "Portal delivery",
-        "Fictional incomplete billing records",
-        vec![],
-        true,
-    )?;
-    import_agreement(conn,field(&p,"id"),"Atlas agreement","Scope: Client portal.\nMilestone: acceptance of portal.\nPayment: USD 5000 after milestone acceptance.")?;
-    evidence(
-        conn,
-        field(&p, "id"),
-        "milestone_accepted",
-        "demo_gmail",
-        "atlas-acceptance",
-        "The portal milestone is accepted.",
-        DEMO_NOW - 2 * 86400,
-        None,
-        Some(500000),
-        Some("USD"),
-        "observed",
-    )?;
-    let p = project(
-        conn,
-        "Approved Example",
-        "Approved expansion",
-        "Negative case: approval already exists",
-        vec![],
-        true,
-    )?;
-    let pid = field(&p, "id");
-    import_agreement(conn, pid, "Original scope", "Scope: Build two dashboards.")?;
-    evidence(
-        conn,
-        pid,
-        "request",
-        "demo_slack",
-        "approved-request",
-        "Please build a third dashboard.",
-        DEMO_NOW - 7 * 86400,
-        None,
-        None,
-        None,
-        "observed",
-    )?;
-    evidence(
-        conn,
-        pid,
-        "activity",
-        "demo_thread",
-        "approved-work",
-        "Third dashboard implemented.",
-        DEMO_NOW - 4 * 86400,
-        None,
-        None,
-        None,
-        "observed",
-    )?;
-    evidence(
-        conn,
-        pid,
-        "approval",
-        "demo_document",
-        "approved-order",
-        "Third dashboard change order already approved.",
-        DEMO_NOW - 6 * 86400,
-        None,
-        Some(200000),
-        Some("USD"),
-        "observed",
-    )?;
-    for kind in ["client", "project", "agreement", "evidence", "commitment"] {
-        for mut v in list(conn, kind, true)? {
-            v["createdAt"] = json!(DEMO_NOW - 10 * 86400);
-            v["updatedAt"] = json!(DEMO_NOW - 10 * 86400);
-            if kind == "evidence" && field(&v, "kind") == "agreement" {
-                v["occurredAt"] = json!(DEMO_NOW - 10 * 86400);
-            }
-            put(conn, kind, &v)?;
-        }
-    }
-    analyze(conn, true, DEMO_NOW)
+    Ok(())
 }
 fn review(
     db: &Database,
@@ -1058,6 +924,38 @@ pub fn revenue_import_file(
     let document = connectors::extract_document(std::path::Path::new(&path))?;
     let text = document.text;
     revenue_import_agreement(state, project_id, title, text)
+}
+/// Imports a document chosen in the file picker or dropped on the window. The
+/// webview cannot see file paths, so it sends the bytes; they are written to a
+/// private temporary file only long enough to extract the text locally.
+#[tauri::command]
+pub fn revenue_import_upload(
+    state: State<'_, AppState>,
+    project_id: String,
+    file_name: String,
+    data_base64: String,
+) -> AppResult<Value> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data_base64.as_bytes())
+        .map_err(|_| invalid("The uploaded file could not be read."))?;
+    if bytes.is_empty() || bytes.len() > 2_000_000 {
+        return Err(invalid("Choose a document no larger than 2 MB."));
+    }
+    let extension = std::path::Path::new(&file_name)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let directory = std::env::temp_dir().join(format!("knov-upload-{}", id()));
+    std::fs::create_dir_all(&directory)?;
+    let path = directory.join(format!("document.{extension}"));
+    let extracted = std::fs::write(&path, &bytes)
+        .map_err(AppError::from)
+        .and_then(|_| connectors::extract_document(&path));
+    let _ = std::fs::remove_dir_all(&directory);
+    let title: String = file_name.chars().take(160).collect();
+    revenue_import_agreement(state, project_id, title, extracted?.text)
 }
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Keep the IPC field contract explicit.
@@ -1282,7 +1180,7 @@ mod tests {
             assert_eq!(o["provenance"], "rule_inferred");
             assert!(o["uncertainty"].is_array());
             assert!(o["disproves"].is_array());
-            assert_ne!(o["clientName"], "Approved Example");
+            assert_ne!(o["clientName"], "Harbor Goods");
             for key in o["evidenceIds"].as_array().unwrap() {
                 assert!(get(&c, "evidence", key.as_str().unwrap()).is_ok());
             }

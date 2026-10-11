@@ -1,6 +1,7 @@
 export interface RevenueClient { id: string; name: string; demo: boolean }
 export interface RevenueProject { id: string; clientId: string; name: string; description: string; threadIds: string[]; demo: boolean }
-export interface RevenueEvidence { id: string; projectId: string; source: string; sourceRef: string; excerpt: string; occurredAt: number; provenance: string; kind: string; demo: boolean }
+export interface RevenueEvidenceMeta { from?: string; to?: string; subject?: string; channel?: string; author?: string; apps?: string; hours?: number; thread?: string; number?: string; status?: string; customer?: string }
+export interface RevenueEvidence { id: string; projectId: string; source: string; sourceRef: string; excerpt: string; occurredAt: number; dueAt?: number | null; amountCents?: number | null; currency?: string | null; provenance: string; kind: string; demo: boolean; meta?: RevenueEvidenceMeta }
 export interface RevenueOpportunity {
   id: string; projectId: string; clientName: string; projectName: string;
   type: string; title: string; explanation: string; evidenceIds: string[];
@@ -16,7 +17,7 @@ export interface RevenueOverview {
   demo: boolean;
   skillSuggestions?: { projectId: string; title: string; description: string; workflowId: string | null; confirmedOpportunityCount: number }[];
   clients: RevenueClient[]; projects: RevenueProject[];
-  agreements: { id: string; projectId: string; title: string; [key: string]: unknown }[];
+  agreements: { id: string; projectId: string; title: string; text?: string; createdAt?: number; [key: string]: unknown }[];
   evidence: RevenueEvidence[]; commitments: unknown[];
   opportunities: RevenueOpportunity[]; drafts: RevenueDraft[]; outcomes: RevenueOutcome[];
   metrics: { open: number; needsClarification: number; draftsAwaitingReview: number; resolved: number; potentialByCurrency: Record<string, number>; verifiedRecoveredByCurrency: Record<string, number>; reviewed: number; confirmed: number; dismissed: number; draftsApproved: number; actionsRecorded: number; paymentsConfirmed: number };

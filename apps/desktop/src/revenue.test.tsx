@@ -1,9 +1,14 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 import { RevenuePage, revenueMoney } from "./pages/RevenuePage";
-import { revenueApi } from "./lib/revenueApi";
+import { HomePage } from "./pages/HomePage";
+import { SimulationPage } from "./pages/SimulationPage";
+import { SourcesPage } from "./pages/SourcesPage";
+import { focusOpportunity, revenueApi } from "./lib/revenueApi";
+import { api } from "./lib/api";
+import { setSimulationMode } from "./state/simulationMode";
 import type { RevenueOverview } from "./revenueTypes";
 const fixture: RevenueOverview = {
   demo: false,
@@ -14,6 +19,8 @@ const fixture: RevenueOverview = {
 };
 beforeEach(() => {
   vi.restoreAllMocks();
+  setSimulationMode(false);
+  window.location.hash = "";
   vi.mocked(invoke).mockResolvedValue({ connected: false, provider: "gmail", account: null, scope: null, lastSync: null });
   (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {};
   vi.spyOn(revenueApi, "overview").mockResolvedValue(structuredClone(fixture));
@@ -23,7 +30,7 @@ describe("Revenue Intelligence", () => {
     delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
     render(<RevenuePage />);
     expect(screen.getByText("Open Revenue in the desktop app")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Analyze local evidence" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Check sources again" })).not.toBeInTheDocument();
   });
   it("shows exact source evidence, unknown values, disproof and missing stages", async () => {
     render(<RevenuePage />);
@@ -43,6 +50,12 @@ describe("Revenue Intelligence", () => {
     fireEvent.change(screen.getByLabelText("Scope decision"), { target: { value: "separately_billable" } });
     fireEvent.click(screen.getByRole("button", { name: "Save clarification" }));
     await waitFor(() => expect(review).toHaveBeenCalledWith("opportunity", "clarify", "separately_billable"));
+  });
+  it("opens the problem chosen on Home with a way back", async () => {
+    focusOpportunity("opportunity");
+    render(<RevenuePage />);
+    expect(await screen.findByRole("heading", { name: "Possible third dashboard" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Back to Home/ })).toHaveAttribute("href", "#/home");
   });
   it("filters the inbox without changing opportunity evidence", async () => {
     render(<RevenuePage />);
@@ -76,22 +89,20 @@ describe("Revenue Intelligence", () => {
     fireEvent.click(screen.getByRole("button", { name: "Record outcome" }));
     await waitFor(() => expect(record).toHaveBeenCalledWith("opportunity", "paid", "Receipt 123 received by email", 12050, "USD", false));
   });
-  it("labels isolated demo separately and requests isolated storage", async () => {
+  it("labels the simulation separately and requests isolated storage", async () => {
+    setSimulationMode(true);
     render(<RevenuePage />);
-    fireEvent.click(screen.getByRole("button", { name: "Open isolated demo" }));
-    expect(screen.getByText(/Isolated demo · Fictional clients/)).toBeInTheDocument();
+    expect(screen.getByText(/Simulation · Fictional clients/)).toBeInTheDocument();
     await waitFor(() => expect(revenueApi.overview).toHaveBeenCalledWith(true));
-    expect(screen.getByRole("button", { name: "Load reproducible demo" })).toBeInTheDocument();
   });
   it("preserves synchronized source identity while asking for reviewed classification", async () => {
     const data = structuredClone(fixture);
     data.projects.push({ id: "project", clientId: "client", name: "Dashboards", description: "", threadIds: [], demo: false });
     data.evidence.push({ id: "message", projectId: "project", source: "gmail", sourceRef: "thread:abc/message:123", excerpt: "Please add a third dashboard", occurredAt: 100, provenance: "observed", kind: "communication", demo: false });
     vi.mocked(revenueApi.overview).mockResolvedValue(data);
-    render(<RevenuePage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Clients, documents & sources" }));
-    fireEvent.change(screen.getByLabelText("Selected client project"), { target: { value: "project" } });
-    expect(screen.getByText("Please add a third dashboard")).toBeInTheDocument();
+    render(<SourcesPage />);
+    expect(await screen.findByText("Please add a third dashboard")).toBeInTheDocument();
+    expect(screen.getByLabelText("Client project")).toHaveValue("project");
     expect(screen.getByText(/thread:abc\/message:123/)).toBeInTheDocument();
     vi.mocked(invoke).mockResolvedValue(data);
     fireEvent.click(screen.getByRole("button", { name: "Save source classification" }));
@@ -124,14 +135,14 @@ describe("Revenue Intelligence", () => {
       : Promise.resolve(actual));
     render(<RevenuePage />);
     await screen.findByRole("button", { name: /Actual confidential candidate/ });
-    fireEvent.click(screen.getByRole("button", { name: "Open isolated demo" }));
+    act(() => setSimulationMode(true));
     expect(screen.queryByRole("button", { name: /Actual confidential candidate/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Analyze local evidence" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Check sources again" })).toBeDisabled();
     await waitFor(() => expect(revenueApi.overview).toHaveBeenCalledWith(true));
     rejectDemo(new Error("Demo load failed"));
     await screen.findByText(/Demo load failed/);
     expect(screen.queryByRole("button", { name: /Actual confidential candidate/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Return to actual data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show my actual data" }));
     await screen.findByRole("button", { name: /Actual confidential candidate/ });
   });
 
@@ -144,8 +155,7 @@ describe("Revenue Intelligence", () => {
       }
       return { connected, provider: "gmail", account: "test@example.com", scope: null, lastSync: null };
     });
-    render(<RevenuePage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Clients, documents & sources" }));
+    render(<SourcesPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Disconnect & revoke" }));
     await screen.findByText("Locally disconnected; remote revocation failed");
     await screen.findByText("Disconnected · No live source is synchronized");
@@ -153,8 +163,7 @@ describe("Revenue Intelligence", () => {
   });
 
   it("passes an optional desktop OAuth secret without persisting it in browser storage", async () => {
-    render(<RevenuePage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Clients, documents & sources" }));
+    render(<SourcesPage />);
     fireEvent.change(await screen.findByLabelText("Google Desktop OAuth client ID (preferred)"), { target: { value: "demo.apps.googleusercontent.com" } });
     fireEvent.change(screen.getByLabelText(/Desktop client secret/), { target: { value: "fixture-client-secret" } });
     fireEvent.change(screen.getByLabelText("Gmail query"), { target: { value: "from:client@example.com" } });
@@ -165,5 +174,80 @@ describe("Revenue Intelligence", () => {
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("revenue_gmail_oauth", expect.objectContaining({ clientId: "demo.apps.googleusercontent.com", clientSecret: "fixture-client-secret", authorized: true })));
     expect(JSON.stringify(localStorage)).not.toContain("fixture-client-secret");
     expect(JSON.stringify(sessionStorage)).not.toContain("fixture-client-secret");
+  });
+});
+
+describe("Home", () => {
+  it("states what is wrong, why, and the recommended action for each open problem", async () => {
+    const data = structuredClone(fixture);
+    data.evidence.push({ id: "request", projectId: "project", source: "demo_slack", sourceRef: "acme-request", excerpt: "Please build a third dashboard", occurredAt: 200, provenance: "observed", kind: "request", demo: false, meta: { channel: "#acme", author: "Dana Lee (Acme)" } });
+    data.opportunities[0].evidenceIds = ["evidence", "request"];
+    vi.mocked(revenueApi.overview).mockResolvedValue(data);
+    const prepare = vi.spyOn(revenueApi, "prepare").mockResolvedValue(data);
+    render(<HomePage />);
+    expect(await screen.findByText("Unbilled extra work")).toBeInTheDocument();
+    expect(screen.getByText(/Acme asked for work that isn't in the contract/)).toBeInTheDocument();
+    expect(screen.getByText("Please build a third dashboard")).toBeInTheDocument();
+    expect(screen.getByText(/Slack · Dana Lee \(Acme\) · #acme/)).toBeInTheDocument();
+    expect(screen.getByText(/Send a change order/)).toBeInTheDocument();
+    expect(screen.getByText("Amount unknown")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Prepare change order/ }));
+    await waitFor(() => expect(prepare).toHaveBeenCalledWith("opportunity"));
+    await waitFor(() => expect(window.location.hash).toBe("#/revenue"));
+  });
+
+  it("lists what is left to set up, linking each step to where it happens", async () => {
+    localStorage.removeItem("knov.setup-checklist-hidden");
+    const data = structuredClone(fixture);
+    data.agreements.push({ id: "sow", projectId: "project", title: "SOW" });
+    vi.mocked(revenueApi.overview).mockResolvedValue(data);
+    vi.spyOn(api, "discoverySessions").mockResolvedValue([]);
+    render(<HomePage />);
+    const checklist = await screen.findByRole("region", { name: "Finish setting up" });
+    expect(within(checklist).getByText("1 of 4 done. Each step helps Knov find more.")).toBeInTheDocument();
+    expect(within(checklist).getByRole("link", { name: /Teach Knov how you bill/ })).toHaveAttribute("href", "#/discovery");
+    fireEvent.click(within(checklist).getByRole("button", { name: "Hide" }));
+    expect(screen.queryByRole("region", { name: "Finish setting up" })).not.toBeInTheDocument();
+    expect(localStorage.getItem("knov.setup-checklist-hidden")).toBe("true");
+  });
+
+  it("offers ways to start, including the simulation, when nothing has been added", async () => {
+    vi.mocked(revenueApi.overview).mockResolvedValue({ ...structuredClone(fixture), evidence: [], opportunities: [], projects: [] });
+    render(<HomePage />);
+    fireEvent.click(await screen.findByRole("button", { name: /Try a simulated business/ }));
+    expect(localStorage.getItem("knov.simulation-mode")).toBe("true");
+    expect(window.location.hash).toBe("#/simulation");
+  });
+});
+
+describe("Simulation", () => {
+  it("connects one simulated source and explains how the findings changed", async () => {
+    const before: RevenueOverview = { ...structuredClone(fixture), demo: true, opportunities: [], evidence: [], projects: [{ id: "project", clientId: "client", name: "Dashboards", description: "", threadIds: [], demo: true }] };
+    const after: RevenueOverview = { ...structuredClone(fixture), demo: true, projects: before.projects, evidence: [{ id: "slack", projectId: "project", source: "demo_slack", sourceRef: "acme-request", excerpt: "Please build a third dashboard", occurredAt: 200, provenance: "observed", kind: "request", demo: true, meta: { channel: "#acme", author: "Dana" } }] };
+    vi.mocked(revenueApi.overview).mockResolvedValue(before);
+    const load = vi.spyOn(revenueApi, "simulationLoad").mockResolvedValue(after);
+    render(<SimulationPage />);
+    // Contracts are loaded, so the first "Connect" is Gmail.
+    fireEvent.click((await screen.findAllByRole("button", { name: "Connect" }))[0]);
+    await waitFor(() => expect(load).toHaveBeenCalledWith("gmail"));
+    expect(await screen.findByText("New problem: Unbilled extra work at Acme")).toBeInTheDocument();
+    expect(localStorage.getItem("knov.simulation-mode")).toBe("true");
+  });
+});
+
+describe("Sources", () => {
+  it("uploads a picked document for the selected client and re-checks for problems", async () => {
+    const data = structuredClone(fixture);
+    data.projects.push({ id: "project", clientId: "client", name: "Dashboards", description: "", threadIds: [], demo: false });
+    vi.mocked(revenueApi.overview).mockResolvedValue(data);
+    const upload = vi.spyOn(revenueApi, "importUpload").mockResolvedValue(data);
+    const analyze = vi.spyOn(revenueApi, "analyze").mockResolvedValue(data);
+    render(<SourcesPage />);
+    await screen.findByText(/Drop files here for Acme · Dashboards/);
+    const file = new File(["Scope: Build two dashboards."], "sow.txt", { type: "text/plain" });
+    fireEvent.change(screen.getByLabelText("Upload documents"), { target: { files: [file] } });
+    await waitFor(() => expect(upload).toHaveBeenCalledWith("project", "sow.txt", btoa("Scope: Build two dashboards.")));
+    await waitFor(() => expect(analyze).toHaveBeenCalledWith(false));
+    expect(await screen.findByText(/Imported 1 document for Acme · Dashboards/)).toBeInTheDocument();
   });
 });

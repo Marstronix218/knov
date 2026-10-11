@@ -14,6 +14,7 @@ use crate::{
         ActivityEvent, ActivitySource, Dashboard, DashboardRequest, HistoryRequest,
         ProfileDocument, QueryActivityFacts, Recommendation, Settings, UsageItem, UserCorrection,
     },
+    providers::AiUsageRecord,
 };
 
 macro_rules! predictions_v1_columns {
@@ -296,6 +297,22 @@ CREATE INDEX predictions_pending_idx ON predictions(evaluation_status, created_a
 "#
     ),
     r#"ALTER TABLE recommendations ADD COLUMN title TEXT NOT NULL DEFAULT '';"#,
+    r#"
+CREATE TABLE ai_usage (
+  id TEXT PRIMARY KEY,
+  timestamp INTEGER NOT NULL,
+  feature TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  cache_read_input_tokens INTEGER,
+  cache_write_input_tokens INTEGER,
+  estimated_cost_usd REAL,
+  latency_ms INTEGER NOT NULL
+);
+CREATE INDEX ai_usage_time_idx ON ai_usage(timestamp DESC);
+"#,
 ];
 
 /// Index of the idempotent agent-schema migration, re-applied after
@@ -411,7 +428,11 @@ impl Database {
     }
 
     pub fn settings(&self) -> AppResult<Settings> {
-        Ok(self.get_setting("settings")?.unwrap_or_default())
+        let mut settings: Settings = self.get_setting("settings")?.unwrap_or_default();
+        if settings.selected_provider.is_none() {
+            settings.selected_provider = crate::providers::managed_provider();
+        }
+        Ok(settings)
     }
 
     pub fn save_settings(&self, settings: &Settings) -> AppResult<()> {
@@ -1003,6 +1024,71 @@ impl Database {
         Ok(facts)
     }
 
+    pub fn record_ai_usage(&self, record: &AiUsageRecord) -> AppResult<()> {
+        self.conn().execute(
+            "INSERT INTO ai_usage
+             (id,timestamp,feature,provider,model,input_tokens,output_tokens,
+              cache_read_input_tokens,cache_write_input_tokens,estimated_cost_usd,latency_ms)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            params![
+                record.id,
+                record.timestamp,
+                record.feature,
+                record.provider,
+                record.model,
+                record.input_tokens,
+                record.output_tokens,
+                record.cache_read_input_tokens,
+                record.cache_write_input_tokens,
+                record.estimated_cost_usd,
+                record.latency_ms,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Requests, tokens, and estimated spend since `since`, grouped by the
+    /// feature, the model, and the local day.
+    pub fn ai_usage_summary(&self, since: i64) -> AppResult<serde_json::Value> {
+        let conn = self.conn();
+        let group = |column: &str| -> AppResult<Vec<serde_json::Value>> {
+            let mut statement = conn.prepare(&format!(
+                "SELECT {column}, COUNT(*), COALESCE(SUM(input_tokens),0),
+                        COALESCE(SUM(output_tokens),0), SUM(estimated_cost_usd),
+                        SUM(CASE WHEN estimated_cost_usd IS NULL THEN 1 ELSE 0 END)
+                 FROM ai_usage WHERE timestamp >= ?1
+                 GROUP BY 1 ORDER BY 1 DESC"
+            ))?;
+            let rows = statement.query_map([since], |row| {
+                Ok(serde_json::json!({
+                    "key": row.get::<_, String>(0)?,
+                    "requests": row.get::<_, i64>(1)?,
+                    "inputTokens": row.get::<_, i64>(2)?,
+                    "outputTokens": row.get::<_, i64>(3)?,
+                    "costUsd": row.get::<_, Option<f64>>(4)?,
+                    "unpricedRequests": row.get::<_, i64>(5)?,
+                }))
+            })?;
+            Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        };
+        let by_feature = group("feature")?;
+        let by_model = group("provider || ' · ' || model")?;
+        let by_day = group("date(timestamp, 'unixepoch', 'localtime')")?;
+        let sum =
+            |field: &str| -> f64 { by_day.iter().filter_map(|row| row[field].as_f64()).sum() };
+        Ok(serde_json::json!({
+            "since": since,
+            "requests": sum("requests") as i64,
+            "inputTokens": sum("inputTokens") as i64,
+            "outputTokens": sum("outputTokens") as i64,
+            "costUsd": sum("costUsd"),
+            "unpricedRequests": sum("unpricedRequests") as i64,
+            "byFeature": by_feature,
+            "byModel": by_model,
+            "byDay": by_day,
+        }))
+    }
+
     pub fn record_inference_run(&self, run: &InferenceRun) -> AppResult<()> {
         self.conn().execute(
             "INSERT OR REPLACE INTO inference_runs
@@ -1109,6 +1195,7 @@ impl Database {
             "recommendations",
             "refresh_runs",
             "inference_runs",
+            "ai_usage",
             "product_events",
             "predictions",
             "agent_actions",
@@ -1675,6 +1762,44 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, MIGRATIONS.len());
+    }
+
+    #[test]
+    fn ai_usage_summary_groups_requests_and_flags_unpriced_ones() {
+        let db = Database::in_memory().unwrap();
+        let record = |id: &str, feature: &str, cost: Option<f64>| AiUsageRecord {
+            id: id.into(),
+            timestamp: Utc::now().timestamp(),
+            feature: feature.into(),
+            provider: "openai".into(),
+            model: "test-model".into(),
+            input_tokens: Some(1_000),
+            output_tokens: Some(200),
+            cache_read_input_tokens: None,
+            cache_write_input_tokens: None,
+            estimated_cost_usd: cost,
+            latency_ms: 40,
+        };
+        db.record_ai_usage(&record("a", "ask", Some(0.01))).unwrap();
+        db.record_ai_usage(&record("b", "ask", Some(0.02))).unwrap();
+        db.record_ai_usage(&record("c", "interview", None)).unwrap();
+        let summary = db.ai_usage_summary(0).unwrap();
+        assert_eq!(summary["requests"], 3);
+        assert_eq!(summary["inputTokens"], 3_000);
+        assert_eq!(summary["outputTokens"], 600);
+        assert_eq!(summary["unpricedRequests"], 1);
+        assert!((summary["costUsd"].as_f64().unwrap() - 0.03).abs() < 1e-9);
+        let ask = summary["byFeature"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["key"] == "ask")
+            .unwrap();
+        assert_eq!(ask["requests"], 2);
+        assert_eq!(
+            db.ai_usage_summary(Utc::now().timestamp() + 60).unwrap()["requests"],
+            0
+        );
     }
 
     #[test]

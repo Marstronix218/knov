@@ -14,6 +14,8 @@ import {
   Eye,
   FileCode2,
   FlaskConical,
+  FolderInput,
+  House,
   Inbox,
   Info,
   KeyRound,
@@ -52,6 +54,7 @@ import {
   PanelHeader,
   RangePicker,
   ResourceState,
+  Segmented,
   SettingsHeading,
   Toggle,
 } from "./components/ui";
@@ -62,10 +65,16 @@ import { domainFromUrl, formatDuration, formatPercentage, formatTime } from "./l
 import { RELEASES_URL } from "./config";
 import { AgentPage } from "./pages/AgentPage";
 import { DiscoveryPage } from "./pages/DiscoveryPage";
+import { HomePage } from "./pages/HomePage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { RevenuePage } from "./pages/RevenuePage";
+import { SimulationPage } from "./pages/SimulationPage";
+import { SourcesPage } from "./pages/SourcesPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
 import { AppStatusProvider, useAppStatus } from "./state/AppStatus";
+import { setSimulationMode, useSimulationMode } from "./state/simulationMode";
+import { revenueApi } from "./lib/revenueApi";
+import { isOpen } from "./lib/revenueCopy";
 import type {
   ActivityEvent,
   BrowserProfile,
@@ -86,21 +95,47 @@ import type {
 } from "./types";
 
 /**
- * The core product is Now, Ask, Memory, and Activity. Experimental surfaces
- * (the work agent, workflow mining and interviews) appear only with Labs on.
+ * Knov exists to grow the user's revenue, so the business pages come first:
+ * Home says what is wrong and what to do, Opportunities holds the evidence,
+ * Sources is what Knov reads, and the AI interview teaches it how the business
+ * works. Personal work context supports them. Experimental surfaces (the work
+ * agent and workflow mining) appear only with Labs on.
  */
 const navigation = [
-  { to: "/dashboard", label: "Now", icon: LayoutDashboard, group: "Work", labs: false },
-  { to: "/assistant", label: "Ask", icon: MessageSquareText, group: "Work", labs: false },
-  { to: "/revenue", label: "Revenue", icon: BarChart3, group: "Work", labs: false },
-  { to: "/profile", label: "Memory", icon: Brain, group: "Context", labs: false },
-  { to: "/activity", label: "Activity", icon: Activity, group: "Context", labs: false },
-  { to: "/workflows", label: "Workflows", icon: WorkflowIcon, group: "Labs", labs: true },
-  { to: "/agent", label: "Agent", icon: Inbox, group: "Labs", labs: true },
-  { to: "/discovery", label: "Interviews", icon: ClipboardList, group: "Labs", labs: true },
-  { to: "/knowledge", label: "Knowledge", icon: Network, group: "Labs", labs: true },
-  { to: "/settings", label: "Settings", icon: Settings, group: "System", labs: false },
+  { to: "/home", label: "Home", icon: House, group: "Business", labs: false, hint: "What's wrong right now and what to do about it" },
+  { to: "/revenue", label: "Opportunities", icon: BarChart3, group: "Business", labs: false, hint: "Every problem with its full evidence, drafts, and outcomes" },
+  { to: "/sources", label: "Sources", icon: FolderInput, group: "Business", labs: false, hint: "Contracts, Gmail, Slack, and clients that Knov reads" },
+  { to: "/discovery", label: "AI interview", icon: ClipboardList, group: "Business", labs: false, hint: "Teach Knov how you price, deliver, and bill" },
+  { to: "/assistant", label: "Ask", icon: MessageSquareText, group: "Business", labs: false, hint: "Ask questions about your recent work" },
+  { to: "/simulation", label: "Simulation", icon: FlaskConical, group: "Sandbox", labs: false, hint: "Try Knov on a fictional business" },
+  { to: "/dashboard", label: "Now", icon: LayoutDashboard, group: "Your work", labs: false, hint: "Your current work thread and where you left off" },
+  { to: "/profile", label: "Memory", icon: Brain, group: "Your work", labs: false, hint: "What Knov knows about you, and your corrections" },
+  { to: "/activity", label: "Activity", icon: Activity, group: "Your work", labs: false, hint: "Your local activity timeline" },
+  { to: "/workflows", label: "Workflows", icon: WorkflowIcon, group: "Labs", labs: true, hint: "Repeated workflows Knov noticed" },
+  { to: "/agent", label: "Agent", icon: Inbox, group: "Labs", labs: true, hint: "Actions the work agent prepared" },
+  { to: "/knowledge", label: "Knowledge", icon: Network, group: "Labs", labs: true, hint: "The knowledge graph built from interviews" },
+  { to: "/settings", label: "Settings", icon: Settings, group: "System", labs: false, hint: "AI, privacy, collection, and usage" },
 ];
+
+/** Secondary groups stay folded until opened, so the business pages stand out. */
+const COLLAPSIBLE_GROUPS = new Set(["Your work"]);
+
+/** Number of open revenue problems for the Home badge; refreshed on navigation. */
+function useOpenProblems(): number | undefined {
+  const simulation = useSimulationMode();
+  const [count, setCount] = useState<number>();
+  useEffect(() => {
+    if (!isDesktopRuntime()) return;
+    let active = true;
+    const load = () => void revenueApi.overview(simulation)
+      .then((data) => { if (active) setCount(data.opportunities.filter(isOpen).length); })
+      .catch(() => { if (active) setCount(undefined); });
+    load();
+    window.addEventListener("hashchange", load);
+    return () => { active = false; window.removeEventListener("hashchange", load); };
+  }, [simulation]);
+  return count;
+}
 
 function useNavigation() {
   const { settings } = useAppStatus();
@@ -158,7 +193,11 @@ function AppShell({ route }: { route: string }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [visibleNavigation]);
 
+  const simulation = useSimulationMode();
   const page = {
+    "/home": <HomePage />,
+    "/sources": <SourcesPage />,
+    "/simulation": <SimulationPage />,
     "/dashboard": <DashboardPage />,
     "/revenue": <RevenuePage />,
     "/workflows": <WorkflowsPage />,
@@ -176,6 +215,7 @@ function AppShell({ route }: { route: string }) {
       <Sidebar route={route} items={visibleNavigation} onOpenPalette={() => setPaletteOpen(true)} onOpenFeedback={() => setFeedbackOpen(true)} />
       <main className="main-stage" id="main">
         {!isDesktopRuntime() && <div className="demo-banner">Browser preview · sample data · controls do not change your Mac</div>}
+        {isDesktopRuntime() && simulation && <div className="simulation-banner" role="status"><FlaskConical size={14} aria-hidden="true" /> Simulation mode · Home and Opportunities show Brightline Studio, a fictional business <button type="button" onClick={() => setSimulationMode(false)}>Show my actual data</button></div>}
         {page}
       </main>
       {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
@@ -237,7 +277,7 @@ const validRoutes = new Set([...navigation.map(({ to }) => to), "/assistant"]);
 
 function routeFromHash(): string {
   const candidate = window.location.hash.slice(1);
-  return validRoutes.has(candidate) ? candidate : "/dashboard";
+  return validRoutes.has(candidate) ? candidate : "/home";
 }
 
 function useHashRoute(): string {
@@ -247,7 +287,7 @@ function useHashRoute(): string {
     const syncRoute = () => setRoute(routeFromHash());
     window.addEventListener("hashchange", syncRoute);
     if (!validRoutes.has(window.location.hash.slice(1))) {
-      window.history.replaceState(null, "", "#/dashboard");
+      window.history.replaceState(null, "", "#/home");
     }
     return () => window.removeEventListener("hashchange", syncRoute);
   }, []);
@@ -271,11 +311,27 @@ function Sidebar({
   const labs = settings.data?.labsEnabled ?? false;
   const collecting = settings.data?.collectionStatus.enabled ?? false;
   const agentPaused = agent.data?.paused ?? settings.data?.agentPaused ?? false;
+  const openProblems = useOpenProblems();
   const badges: Record<string, number | undefined> = {
+    "/home": openProblems || undefined,
     "/agent": agent.data?.awaitingCount || undefined,
     "/workflows": agent.data?.opportunityCount || undefined,
   };
+  const badgeTitles: Record<string, string> = {
+    "/home": "Open revenue problems",
+    "/agent": "Runs waiting for your decision",
+    "/workflows": "New automation opportunities without a skill",
+  };
   const groups = [...new Set(items.map((item) => item.group))];
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("knov.open-nav-groups") ?? "[]") as string[]); } catch { return new Set(); }
+  });
+  const toggleGroup = (group: string) => setOpenGroups((current) => {
+    const next = new Set(current);
+    if (!next.delete(group)) next.add(group);
+    try { localStorage.setItem("knov.open-nav-groups", JSON.stringify([...next])); } catch { /* stays open for this session only */ }
+    return next;
+  });
 
   const guarded = (work: () => Promise<void>) => {
     setError("");
@@ -293,18 +349,26 @@ function Sidebar({
       </div>
 
       <nav className="sidebar-nav" aria-label="Primary navigation">
-        {groups.map((group) => (
-          <div className="nav-group" key={group}>
-            {group !== "System" && <span className="nav-group-label">{group}</span>}
-            {items.filter((item) => item.group === group).map(({ to, label, icon: Icon }) => (
-              <a key={to} href={`#${to}`} className={`nav-link${route === to ? " active" : ""}`} aria-current={route === to ? "page" : undefined}>
-                <Icon size={18} aria-hidden="true" />
-                <span>{label}</span>
-                {badges[to] !== undefined && <span className="nav-badge" title={to === "/agent" ? "Runs waiting for your decision" : "New automation opportunities without a skill"}>{badges[to]}</span>}
-              </a>
-            ))}
-          </div>
-        ))}
+        {groups.map((group) => {
+          const groupItems = items.filter((item) => item.group === group);
+          const collapsible = COLLAPSIBLE_GROUPS.has(group);
+          // The group holding the current page always stays open.
+          const open = !collapsible || openGroups.has(group) || groupItems.some((item) => item.to === route);
+          return (
+            <div className="nav-group" key={group}>
+              {collapsible
+                ? <button type="button" className="nav-group-label nav-group-toggle" aria-expanded={open} onClick={() => toggleGroup(group)}><ChevronRight size={12} aria-hidden="true" />{group}</button>
+                : group !== "System" && <span className="nav-group-label">{group}</span>}
+              {open && groupItems.map(({ to, label, icon: Icon, hint }) => (
+                <a key={to} href={`#${to}`} title={hint} className={`nav-link${route === to ? " active" : ""}`} aria-current={route === to ? "page" : undefined}>
+                  <Icon size={18} aria-hidden="true" />
+                  <span>{label}</span>
+                  {badges[to] !== undefined && <span className={`nav-badge${to === "/home" ? " attention" : ""}`} title={badgeTitles[to]}>{badges[to]}</span>}
+                </a>
+              ))}
+            </div>
+          );
+        })}
       </nav>
 
       <div className="sidebar-spacer" />
@@ -1666,6 +1730,52 @@ function formatTokenCount(value: number): string {
   return new Intl.NumberFormat("en-US").format(value);
 }
 
+const USAGE_FEATURES: Record<string, string> = {
+  ask: "Ask",
+  interview: "AI interview",
+  profile: "Profile refresh",
+  prediction: "Next-step predictions",
+};
+
+/** Every provider request's tokens and estimated cost, recorded on this Mac. */
+function AiUsagePanel() {
+  const [days, setDays] = useState<"1" | "30" | "90">("30");
+  const usage = useResource(() => api.aiUsage(Number(days)), [days]);
+  const usd = (value: number | null) => value === null ? "—" : new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: value < 1 ? 4 : 2 }).format(value);
+  const tokens = (value: number) => new Intl.NumberFormat(undefined, { notation: "compact" }).format(value);
+  return (
+    <section className="panel settings-card full-width">
+      <SettingsHeading icon={<BarChart3 />} title="AI usage & cost" detail="Tokens for every AI request, as reported by the provider, and the estimated cost." />
+      <Segmented label="Usage period" value={days} onChange={setDays} options={[{ value: "1", label: "24 hours" }, { value: "30", label: "30 days" }, { value: "90", label: "90 days" }]} />
+      <ResourceState {...usage}>
+        {(summary) => (
+          <>
+            <div className="usage-totals">
+              <article><span>Requests</span><strong>{summary.requests}</strong></article>
+              <article><span>Input tokens</span><strong>{tokens(summary.inputTokens)}</strong></article>
+              <article><span>Output tokens</span><strong>{tokens(summary.outputTokens)}</strong></article>
+              <article><span>Estimated cost</span><strong>{summary.pricesConfigured ? usd(summary.costUsd) : "Set prices"}</strong></article>
+            </div>
+            {summary.byFeature.length > 0 && (
+              <table className="usage-table">
+                <thead><tr><th>Feature</th><th>Requests</th><th>Input</th><th>Output</th><th>Cost</th></tr></thead>
+                <tbody>{summary.byFeature.map((row) => <tr key={row.key}><td>{USAGE_FEATURES[row.key] ?? row.key}</td><td>{row.requests}</td><td>{tokens(row.inputTokens)}</td><td>{tokens(row.outputTokens)}</td><td>{row.unpricedRequests ? "—" : usd(row.costUsd)}</td></tr>)}</tbody>
+              </table>
+            )}
+            {summary.byModel.length > 0 && <p className="status-detail">Models: {summary.byModel.map((row) => `${row.key} (${row.requests})`).join(", ")}</p>}
+            <p className="status-detail">
+              {summary.pricesConfigured
+                ? "Cost is estimated from your configured per-million-token prices. Your provider's billing dashboard is the source of truth."
+                : "To estimate cost, set KNOV_INPUT_COST_PER_MILLION and KNOV_OUTPUT_COST_PER_MILLION (USD) in .env to your model's current prices."}
+              {summary.unpricedRequests > 0 && summary.pricesConfigured && ` ${summary.unpricedRequests} requests could not be priced.`}
+            </p>
+          </>
+        )}
+      </ResourceState>
+    </section>
+  );
+}
+
 function SettingsPage() {
   const { settings: resource, setCollectionEnabled, setAgentPaused } = useAppStatus();
   const browsers = useResource(() => api.browserProfiles(), []);
@@ -1731,6 +1841,8 @@ function SettingsPage() {
               <AiProviderPicker settings={settings} onChange={resource.setData} />
             </section>
 
+            <AiUsagePanel />
+
             <section className="panel settings-card">
               <SettingsHeading icon={<Eye />} title="Collection" detail="Foreground app, window title, selected browser history, and editor workspace-change metadata." />
               <Toggle label="Collection active" detail="Collect local foreground activity and backfill selected browser and editor metadata." checked={settings.collectionStatus.enabled} onChange={(enabled) => void guard(() => setCollectionEnabled(enabled))} />
@@ -1750,7 +1862,7 @@ function SettingsPage() {
               <SettingsHeading icon={<FlaskConical />} title="Labs" detail="Experimental features we’re still shaping. Expect rough edges." />
               <Toggle
                 label="Show Labs features"
-                detail="Adds Workflows, the work agent, workflow interviews, and next-step predictions."
+                detail="Adds Workflows, the work agent, the knowledge graph, and next-step predictions."
                 checked={settings.labsEnabled}
                 onChange={(labsEnabled) => void patch({ labsEnabled })}
               />

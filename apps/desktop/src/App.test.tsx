@@ -121,10 +121,20 @@ function editorActivity(): ActivityEvent[] {
 describe("application navigation", () => {
   beforeEach(stubApi);
 
-  it("redirects unknown routes to the dashboard", async () => {
+  it("redirects unknown routes to Home", async () => {
     await renderRoute("#/unknown");
 
-    expect(await screen.findByRole("heading", { name: "Pick up where you left off." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What needs your attention" })).toBeInTheDocument();
+    expect(window.location.hash).toBe("#/home");
+  });
+
+  it("puts the business pages first and the AI interview outside Labs", async () => {
+    await renderRoute("#/home");
+
+    const links = (await screen.findAllByRole("link")).map((link) => link.textContent);
+    expect(links.slice(0, 6)).toEqual(["Home", "Opportunities", "Sources", "AI interview", "Ask", "Simulation"]);
+    fireEvent.click(screen.getByRole("link", { name: "AI interview" }));
+    expect(await screen.findByRole("heading", { name: "AI interview" })).toBeInTheDocument();
   });
 
   it("navigates from the dashboard to activity history", async () => {
@@ -133,6 +143,16 @@ describe("application navigation", () => {
     fireEvent.click(screen.getByRole("link", { name: "Activity" }));
 
     expect(await screen.findByRole("heading", { name: "Your local timeline" })).toBeInTheDocument();
+  });
+
+  it("folds secondary work pages until opened, and keeps the current page's group open", async () => {
+    localStorage.removeItem("knov.open-nav-groups");
+    await renderRoute("#/home");
+    expect(screen.queryByRole("link", { name: "Memory" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Your work" }));
+    expect(screen.getByRole("link", { name: "Memory" })).toHaveAttribute("title", "What Knov knows about you, and your corrections");
+    expect(localStorage.getItem("knov.open-nav-groups")).toBe('["Your work"]');
+    localStorage.removeItem("knov.open-nav-groups");
   });
 
   it("opens Ask from the primary navigation", async () => {
@@ -144,14 +164,14 @@ describe("application navigation", () => {
     expect(screen.getByRole("button", { name: "What have I been working on this week?" })).toBeInTheDocument();
   });
 
-  it("opens Revenue without enabling Labs and states the browser boundary", async () => {
+  it("opens Opportunities without enabling Labs and states the browser boundary", async () => {
     await renderRoute("#/dashboard");
 
-    fireEvent.click(screen.getByRole("link", { name: "Revenue" }));
+    fireEvent.click(screen.getByRole("link", { name: "Opportunities" }));
 
-    expect(await screen.findByRole("heading", { name: "Revenue Intelligence" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Opportunities" })).toBeInTheDocument();
     expect(screen.getByText("Open Revenue in the desktop app")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Analyze local evidence" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Check sources again" })).not.toBeInTheDocument();
   });
 
   it("keeps experimental pages out of the navigation until Labs is on", async () => {
@@ -188,6 +208,7 @@ describe("onboarding", () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Use my own business data/ }));
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
     fireEvent.click((await screen.findAllByRole("checkbox"))[0]);
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
@@ -199,7 +220,8 @@ describe("onboarding", () => {
     expect(saveKey).toHaveBeenCalledWith("openai", "sk-test-only");
     fireEvent.click(screen.getByRole("button", { name: /Finish setup/ }));
 
-    expect(await screen.findByRole("heading", { name: "Pick up where you left off." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Sources" })).toBeInTheDocument();
+    expect(localStorage.getItem("knov.simulation-mode")).toBe("false");
     expect(api.startBootstrap).toHaveBeenCalledOnce();
     expect(api.setBrowserProfiles).toHaveBeenCalledWith(["chrome-default"]);
     expect(localStorage.getItem("knov.setup-complete")).toBe("true");
@@ -215,7 +237,8 @@ describe("onboarding", () => {
     fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
     fireEvent.click(await screen.findByRole("button", { name: /Skip AI and finish/ }));
 
-    expect(await screen.findByRole("heading", { name: "Pick up where you left off." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Simulation" })).toBeInTheDocument();
+    expect(localStorage.getItem("knov.simulation-mode")).toBe("true");
     expect(api.setBrowserProfiles).toHaveBeenCalledWith([]);
     expect(api.startLocalBootstrap).toHaveBeenCalledOnce();
   });
@@ -233,9 +256,23 @@ describe("onboarding", () => {
     expect(await screen.findByText("Using qwen3:8b on this Mac.")).toBeInTheDocument();
   });
 
+  it("skips the AI step when Knov provides the AI", async () => {
+    vi.mocked(api.settings).mockResolvedValue({ ...clone(mockSettings), managedAi: true, aiConfigured: true, provider: "openai" });
+    render(<App />);
+
+    expect(await screen.findByText("Mac activity")).toBeInTheDocument();
+    expect(screen.queryByText("AI")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Finish setup/ }));
+
+    await waitFor(() => expect(api.startBootstrap).toHaveBeenCalledOnce());
+  });
+
   it("shows macOS permission status during setup", async () => {
     render(<App />);
 
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
     fireEvent.click(screen.getByRole("button", { name: "Allow" }));
 
@@ -668,7 +705,7 @@ describe("editor file changes", () => {
       recommendations: [],
     });
 
-    await renderRoute("#/threads");
+    await renderRoute("#/dashboard");
     fireEvent.click(await screen.findByRole("button", { name: /Software development/i }));
 
     const summary = await screen.findByRole("region", { name: "Saved files" });

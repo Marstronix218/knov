@@ -1,15 +1,17 @@
-import { Check, ChevronRight, Eye, Globe, LoaderCircle, LockKeyhole, MessageSquareText, Sparkles, X } from "lucide-react";
+import { BadgeDollarSign, Briefcase, Check, ChevronRight, Clock, Eye, FileWarning, FlaskConical, Globe, LoaderCircle, LockKeyhole, Sparkles, X } from "lucide-react";
 import { ReactNode, useEffect, useState } from "react";
 import { useResource } from "../hooks/useResource";
 import { api } from "../lib/api";
+import { setSimulationMode } from "../state/simulationMode";
 import type { PermissionProbe, SettingsData } from "../types";
 import { AiProviderPicker } from "./AiProviderPicker";
 import { errorMessage, LogoMark, ResourceState } from "./ui";
 
-const steps = ["Welcome", "Permissions", "Browser history", "AI"];
+type Start = "simulation" | "own";
 
 export function SetupWizard({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState(0);
+  const [start, setStart] = useState<Start>("simulation");
   const [selectedProfiles, setSelectedProfiles] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -17,6 +19,8 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
   const browsers = useResource(() => api.browserProfiles(), []);
   const settings = useResource(() => api.settings(), []);
   const aiReady = Boolean(settings.data?.aiConfigured);
+  // When Knov provides the AI there is nothing for the user to set up.
+  const steps = settings.data?.managedAi ? ["Welcome", "Start", "Mac activity"] : ["Welcome", "Start", "Mac activity", "AI"];
 
   const finish = async () => {
     setBusy(true);
@@ -39,6 +43,8 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
         await api.startLocalBootstrap();
       }
       void api.recordProductEvent("setup_completed").catch(() => undefined);
+      setSimulationMode(start === "simulation");
+      window.location.hash = start === "simulation" ? "/simulation" : "/sources";
       onComplete();
     } catch (cause) {
       setMessage(errorMessage(cause));
@@ -52,7 +58,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
     <div className="setup-shell">
       <section className="setup-panel">
         <div className="setup-brand"><LogoMark /><strong>Knov</strong><span className="beta-pill">Early access</span></div>
-        <div className="setup-progress">
+        <div className="setup-progress" style={{ gridTemplateColumns: `repeat(${steps.length}, 1fr)` }}>
           {steps.map((label, index) => (
             <div className={index <= step ? "active" : ""} key={label}>
               <span>{index < step ? <Check size={12} /> : index + 1}</span>
@@ -64,27 +70,42 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
         {step === 0 && (
           <div className="setup-content">
             <div className="eyebrow">Welcome to Knov</div>
-            <h1>Stop re-explaining your work to AI.</h1>
-            <p>Knov quietly notices what you work on across apps and websites, then gives you that context when you need it.</p>
+            <h1>Find the revenue your business is missing.</h1>
+            <p>Knov compares what clients agreed to pay for with what they asked for, what your team delivered, and what you invoiced. Then it tells you what is wrong and what to do about it.</p>
             <div className="value-list">
-              <article><Sparkles size={18} /><span><strong>Pick up where you left off</strong><small>See your active projects and reopen the last page or app in one click.</small></span></article>
-              <article><MessageSquareText size={18} /><span><strong>Ask with context</strong><small>“What did I do on the pitch deck this week?” Knov answers from your real activity.</small></span></article>
-              <article><LockKeyhole size={18} /><span><strong>Private by design</strong><small>Raw activity stays on this Mac. Pause, exclude apps or sites, or delete everything anytime.</small></span></article>
-            </div>
-            <div className="collect-grid">
-              <div><strong>Knov records</strong><ul><li>Which app is in front, and for how long</li><li>Window and page titles</li><li>History from browsers you choose</li></ul></div>
-              <div><strong>Knov never records</strong><ul><li>Keystrokes or screenshots</li><li>Page or document contents</li><li>Audio, camera, or clipboard</li></ul></div>
+              <article><BadgeDollarSign size={18} /><span><strong>Unbilled extra work</strong><small>A client asked for something outside the contract, and your team already did it.</small></span></article>
+              <article><FileWarning size={18} /><span><strong>Missing invoices</strong><small>A milestone was accepted, but no invoice went out.</small></span></article>
+              <article><Clock size={18} /><span><strong>Overdue promises</strong><small>You told a client you would send something, and the date passed.</small></span></article>
+              <article><LockKeyhole size={18} /><span><strong>You stay in control</strong><small>Analysis runs on this Mac. Knov drafts change orders, invoices, and follow-ups, and never sends anything for you.</small></span></article>
             </div>
           </div>
         )}
 
-        {step === 1 && <PermissionStep />}
+        {step === 1 && (
+          <div className="setup-content narrow">
+            <div className="eyebrow">Get started</div>
+            <h1>How do you want to start?</h1>
+            <p>You can switch between the two at any time.</p>
+            <div className="start-choice" role="radiogroup" aria-label="How to start">
+              <button type="button" role="radio" aria-checked={start === "simulation"} className={start === "simulation" ? "selected" : ""} onClick={() => setStart("simulation")}>
+                <FlaskConical size={20} />
+                <span><strong>Explore a simulated business</strong><small>Recommended first. Watch Knov read a fictional agency's contracts, inbox, Slack, and invoices, and find what it is missing.</small></span>
+              </button>
+              <button type="button" role="radio" aria-checked={start === "own"} className={start === "own" ? "selected" : ""} onClick={() => setStart("own")}>
+                <Briefcase size={20} />
+                <span><strong>Use my own business data</strong><small>Upload a contract and connect Gmail or Slack. Takes a few minutes.</small></span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {step === 2 && (
           <div className="setup-content">
             <div className="eyebrow">Optional</div>
-            <h1>Add your browser history?</h1>
-            <p>Importing recent history lets Knov understand your projects on day one instead of after a few days of use. You can skip this and change it later in Settings.</p>
+            <h1>Let Knov see the work you do.</h1>
+            <p>Activity on this Mac is evidence that work was delivered, which helps Knov spot work you haven't billed. You can skip this and turn it on later in Settings.</p>
+            <PermissionStep />
+            <h2 className="setup-subheading">Browser history</h2>
             <ResourceState {...browsers}>
               {(profiles) => profiles.length ? (
                 <div className="setup-browser-grid">
@@ -105,7 +126,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
                 <p className="setup-note"><Globe size={16} /> No Chrome, Arc, Brave, Edge, or Vivaldi profiles were found. That’s fine—Knov still learns from app and window activity, including Safari page titles.</p>
               )}
             </ResourceState>
-            <span className="setup-skip">Up to 90 days are read once to build your first profile; anything older than 30 days is then deleted.</span>
+            <span className="setup-skip">Knov records which app is in front, window and page titles, and history from browsers you choose. It never records keystrokes, screenshots, or page contents. Up to 90 days of history are read once; anything older than 30 days is then deleted.</span>
           </div>
         )}
 
@@ -113,14 +134,14 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
           <div className="setup-content">
             <div className="eyebrow">Connect an AI</div>
             <h1>Choose where the AI runs.</h1>
-            <p>The AI turns your activity into a profile and answers your questions. Everything else works without it, so you can also skip this.</p>
+            <p>The AI powers the interview and Ask. Finding revenue problems works without it, so you can also skip this.</p>
             <ResourceState {...settings}>
               {(data) => <AiProviderPicker compact settings={data} onChange={(next: SettingsData) => settings.setData(next)} />}
             </ResourceState>
-            {progress && <p className="setup-progress-note" role="status"><LoaderCircle size={14} className="spin" /> {progress}</p>}
-            {message && <p className="error-message" role="alert">{message}</p>}
           </div>
         )}
+        {progress && <p className="setup-progress-note" role="status"><LoaderCircle size={14} className="spin" /> {progress}</p>}
+        {message && <p className="error-message" role="alert">{message}</p>}
 
         <footer className="setup-footer">
           <button className="ghost-button" disabled={step === 0 || busy} onClick={() => setStep((value) => value - 1)}>Back</button>
@@ -164,10 +185,8 @@ function PermissionStep() {
   }, [watching, probe?.windowTitles]);
 
   return (
-    <div className="setup-content narrow">
-      <div className="eyebrow">macOS permissions</div>
-      <h1>Let Knov see which app you’re using.</h1>
-      <p>macOS will ask twice: once to let Knov ask <strong>System Events</strong> which app is in front, and once for <strong>Accessibility</strong> so it can read window titles. Knov never reads keystrokes, screen contents, or documents.</p>
+    <div className="setup-permissions">
+      <p className="status-detail">macOS asks twice: once to let Knov ask <strong>System Events</strong> which app is in front, and once for <strong>Accessibility</strong> so it can read window titles.</p>
       <div className="permission-checklist">
         <PermissionRow
           label="Apps in front"
@@ -183,7 +202,6 @@ function PermissionStep() {
         />
       </div>
       {probe?.message && !probe.foregroundApps && <p className="status-detail">{probe.message}. If you clicked “Don’t Allow”, enable Knov under System Settings → Privacy & Security → Automation.</p>}
-      <span className="setup-skip">Already enabled but still showing off? Quit Knov from the menu bar icon and open it again.</span>
     </div>
   );
 }

@@ -68,11 +68,24 @@ notes.
 
 ### Revenue intelligence demo
 
-Run `npm install` and `npm run dev:desktop`, then open **Revenue** and load the
-explicitly labeled demo. It uses isolated fictional agency records and requires
+Run `npm install` and `npm run dev:desktop`, then open **Simulation** and connect
+the fictional agency's sources one at a time, or choose **Explore a simulated
+business** during setup. **Home** then lists each problem Knov found, the evidence,
+and the recommended action. It uses isolated fictional agency records and requires
 no connector credentials. Review the Acme third-dashboard candidate, answer its
 clarification, prepare and approve an internal change-order draft, and record
 outcomes separately. Approval never sends a message or issues an invoice.
+
+### Knov-provided AI and cost tracking (development)
+
+Copy [`.env.example`](.env.example) to `.env.local` and set
+`KNOV_MANAGED_PROVIDER=openai` and `OPENAI_API_KEY`. Development builds read it at
+startup, so onboarding skips the AI step and users never see a key, which simulates
+Knov providing the AI. Release builds never read these files: a key inside a
+distributed app can be extracted, so production needs a server-side proxy that
+holds the key. **Settings → AI usage & cost** lists the provider-reported tokens for
+every request by feature and model. Set `KNOV_INPUT_COST_PER_MILLION` and
+`KNOV_OUTPUT_COST_PER_MILLION` to your model's current prices to see estimated spend.
 
 See the [engineering report](docs/revenue-engineering-report.md) for delivered
 features and validation, [Revenue intelligence](docs/revenue-intelligence.md) for the demo and evidence
@@ -311,8 +324,11 @@ opportunity score with its breakdown.
 
 ### Interview and correct a workflow
 
-Open **Interviews** and describe a task or select an existing work
-thread. Starting saves the interview locally. With a provider key configured in
+Open **AI interview** and pick a revenue topic (change requests, invoicing,
+follow-ups, or pricing), or describe a task or select an existing work thread.
+Topic interviews ask about what is billable, who approves it, and where money
+slips through, offer one-tap suggested answers, and show what Knov has learned
+beside the conversation. Starting saves the interview locally. With a provider key configured in
 Settings, answer a question to reconstruct the process and receive a focused
 follow-up. You can skip, pause, resume a saved session, or finish locally even
 without a provider key. Answers and bounded interview context go directly to

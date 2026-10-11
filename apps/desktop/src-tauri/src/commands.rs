@@ -1030,6 +1030,16 @@ pub async fn detect_local_models(
 /// Counts only (no titles, URLs, apps, or chat text) that a tester can choose
 /// to attach to feedback after reviewing them.
 #[tauri::command]
+pub async fn get_ai_usage(days: i64, state: State<'_, AppState>) -> AppResult<Value> {
+    let since = Utc::now().timestamp() - days.clamp(1, 365) * 86_400;
+    let db = state.db.clone();
+    let mut summary = blocking(move || db.ai_usage_summary(since)).await?;
+    summary["pricesConfigured"] =
+        json!(crate::analytics::estimated_cost_usd(Some(1), Some(1), None, None).is_some());
+    Ok(summary)
+}
+
+#[tauri::command]
 pub async fn get_tester_summary(state: State<'_, AppState>) -> AppResult<Value> {
     let db = state.db.clone();
     let mut summary = blocking(move || db.tester_summary()).await?;
@@ -1742,6 +1752,7 @@ fn settings_to_ui(state: &AppState) -> AppResult<Value> {
         "provider":provider,
         "aiConfigured":settings.selected_provider.is_some() && state.providers.has_key(&provider),
         "hasProviderKey":state.providers.has_key(&provider),
+        "managedAi":crate::providers::managed_provider().as_deref() == Some(provider.as_str()),
         "localBaseUrl":settings.local_base_url,
         "localModel":settings.local_model,
         "labsEnabled":settings.labs_enabled,
@@ -2599,12 +2610,14 @@ pub fn get_discovery_sessions(
 pub fn start_discovery_interview(
     description: String,
     thread_context: Option<ThreadContext>,
+    topic: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<crate::discovery::InterviewSession> {
     crate::discovery::start(
         &state.db,
         description,
         validated_thread_context(thread_context)?,
+        topic,
     )
 }
 #[tauri::command]

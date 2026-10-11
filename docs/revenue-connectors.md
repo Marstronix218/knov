@@ -31,7 +31,7 @@ Disconnect immediately deletes the local Keychain entry. Choosing revoke also ca
 
 ## Contract import
 
-User-selected `.txt`, `.md`, `.markdown` and text-based `.pdf` files up to 2 MB are read locally. Extraction returns text for review before agreement persistence. PDF extraction calls the separately installed Poppler `pdftotext` executable with argument boundaries (no shell). Install on macOS with `brew install poppler`; `pdftotext` was unavailable on the development host. PDF execution times out after 15 seconds and extracted output is capped at 2 MB. Missing extractor, extraction errors, empty/scanned PDF and unsupported formats produce explicit errors. No OCR or fallback invented text is supplied.
+User-selected `.txt`, `.md`, `.markdown`, `.docx`, `.doc`, `.rtf`, `.odt` and text-based `.pdf` files up to 2 MB are read locally. Sources uploads the bytes (the webview cannot see file paths); they are written to a private temporary directory only for extraction and removed afterward. PDF extraction calls Poppler `pdftotext` when installed and otherwise macOS PDFKit through `osascript`; word-processor formats use macOS `textutil`. All extractors run with argument boundaries (no shell), time out after 15 seconds, and their output is capped at 2 MB. Missing extractor, extraction errors, empty/scanned PDF and unsupported formats produce explicit errors. No OCR or fallback invented text is supplied.
 
 ## IPC contracts
 

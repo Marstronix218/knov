@@ -54,6 +54,17 @@ export function AiProviderPicker({
     }
   };
 
+  const [override, setOverride] = useState(false);
+  if (settings.managedAi && !override) {
+    return (
+      <div className={`ai-picker${compact ? " compact" : ""}`}>
+        <p className="ai-connected"><Check size={14} /> AI is included. Knov provides {providerLabel(settings.provider)}, so there is no key to set up.</p>
+        <p className="status-detail">Only a minimized summary and your questions are sent to {providerLabel(settings.provider)}, never your raw activity or files.</p>
+        <button type="button" className="link-button" onClick={() => setOverride(true)}>Use my own AI instead</button>
+      </div>
+    );
+  }
+
   const connectedLabel = settings.aiConfigured
     ? settings.provider === "local"
       ? `Connected to ${settings.localModel || "your local model"} on this Mac`

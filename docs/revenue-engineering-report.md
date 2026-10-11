@@ -68,10 +68,11 @@ npm install
 npm run dev:desktop
 ```
 
-Complete setup, open Revenue, choose **Open isolated demo**, then **Load
-reproducible demo**. Select Acme, ask the clarification, choose separately
-billable, prepare/edit/save/approve the change-order draft, then record an actual
-outcome separately. Return to actual data for client creation and real imports.
+Complete setup, open **Simulation**, and choose **Connect everything at once**.
+On **Home**, choose **Prepare change order** for Acme; in **Opportunities**, ask
+the clarification, choose separately billable, edit/save/approve the draft, then
+record an actual outcome separately. Use **Show my actual data** in the banner to
+return to actual data, and **Sources** for client creation and real imports.
 
 See [Revenue intelligence](revenue-intelligence.md) for evidence/retention
 semantics and [source setup](revenue-connectors.md) for exact OAuth credentials,

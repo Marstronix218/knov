@@ -743,59 +743,34 @@ pub(crate) fn extract_document(path: &Path) -> AppResult<ExtractedDocument> {
         .and_then(|s| s.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
+    let canonical = std::fs::canonicalize(path)?;
     let text = match extension.as_str() {
         "txt" | "md" | "markdown" => std::fs::read_to_string(path)?,
         "pdf" => {
-            let mut child = Command::new("pdftotext")
-                .arg("-layout")
-                .arg(std::fs::canonicalize(path)?)
-                .arg("-")
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null())
-                .spawn()
-                .map_err(|_| {
-                    invalid(
-                        "Text PDF extraction needs pdftotext (install Poppler); OCR is unsupported",
-                    )
-                })?;
-            let stdout = child
-                .stdout
-                .take()
-                .ok_or_else(|| invalid("PDF extractor output unavailable"))?;
-            let reader = std::thread::spawn(move || {
-                let mut bytes = Vec::new();
-                let result = stdout.take((MAX_BODY + 1) as u64).read_to_end(&mut bytes);
-                (result, bytes)
-            });
-            let deadline = Instant::now() + Duration::from_secs(15);
-            let status = loop {
-                if let Some(status) = child.try_wait()? {
-                    break Some(status);
+            let mut poppler = Command::new("pdftotext");
+            poppler.arg("-layout").arg(&canonical).arg("-");
+            match run_extractor(poppler) {
+                Ok(text) => text,
+                // Stock macOS has no Poppler; PDFKit reads text PDFs without it.
+                Err(_) => {
+                    let mut pdfkit = Command::new("/usr/bin/osascript");
+                    pdfkit
+                        .args(["-l", "JavaScript", "-e", PDFKIT_SCRIPT])
+                        .arg(&canonical);
+                    run_extractor(pdfkit)?
                 }
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break None;
-                }
-                std::thread::sleep(Duration::from_millis(20));
-            };
-            let (read_result, bytes) = reader
-                .join()
-                .map_err(|_| invalid("PDF extraction interrupted"))?;
-            read_result?;
-            if bytes.len() > MAX_BODY {
-                return Err(invalid("Extracted PDF exceeds 2 MB limit"));
             }
-            if !status.is_some_and(|s| s.success()) {
-                return Err(invalid(
-                    "PDF extraction failed or timed out; use a text-based PDF",
-                ));
-            }
-            String::from_utf8(bytes).map_err(|_| invalid("PDF text is not UTF-8"))?
+        }
+        "docx" | "doc" | "rtf" | "odt" => {
+            let mut textutil = Command::new("/usr/bin/textutil");
+            textutil
+                .args(["-convert", "txt", "-stdout"])
+                .arg(&canonical);
+            run_extractor(textutil)?
         }
         _ => {
             return Err(invalid(
-                "Supported documents: .txt, .md, .markdown and text-based .pdf",
+                "Supported documents: .pdf, .docx, .doc, .rtf, .odt, .txt and .md",
             ))
         }
     };
@@ -815,6 +790,54 @@ pub(crate) fn extract_document(path: &Path) -> AppResult<ExtractedDocument> {
             .into(),
         text,
     })
+}
+
+/// Prints the text layer of the PDF passed as the first argument.
+const PDFKIT_SCRIPT: &str = "ObjC.import('PDFKit'); function run(argv) { \
+    const doc = $.PDFDocument.alloc.initWithURL($.NSURL.fileURLWithPath(argv[0])); \
+    return doc.isNil() ? '' : ObjC.unwrap(doc.string); }";
+
+/// Runs a local text extractor with a time limit, bounding its output.
+fn run_extractor(mut command: Command) -> AppResult<String> {
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| invalid("No local text extractor is available for this document"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| invalid("Document extractor output unavailable"))?;
+    let reader = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        let result = stdout.take((MAX_BODY + 1) as u64).read_to_end(&mut bytes);
+        (result, bytes)
+    });
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break Some(status);
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let (read_result, bytes) = reader
+        .join()
+        .map_err(|_| invalid("Document extraction interrupted"))?;
+    read_result?;
+    if bytes.len() > MAX_BODY {
+        return Err(invalid("Extracted document exceeds 2 MB limit"));
+    }
+    if !status.is_some_and(|s| s.success()) {
+        return Err(invalid(
+            "Document extraction failed or timed out; use a text-based document",
+        ));
+    }
+    String::from_utf8(bytes).map_err(|_| invalid("Document text is not UTF-8"))
 }
 
 #[tauri::command]

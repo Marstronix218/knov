@@ -1,0 +1,146 @@
+import { useState } from "react";
+import { ArrowRight, Check, FileText, Hash, LoaderCircle, Mail, MonitorSmartphone, Receipt, RotateCcw } from "lucide-react";
+import { EmptyState, errorMessage, PageHeader, Segmented } from "../components/ui";
+import { useResource } from "../hooks/useResource";
+import { isDesktopRuntime } from "../lib/api";
+import { isOpen, issueCopy, kindLabel } from "../lib/revenueCopy";
+import { revenueApi, SimulationStep } from "../lib/revenueApi";
+import { setSimulationMode, useSimulationMode } from "../state/simulationMode";
+import type { RevenueEvidence, RevenueOverview } from "../revenueTypes";
+import { revenueMoney } from "./RevenuePage";
+import "./home.css";
+
+const STEPS: { step: SimulationStep; source?: string; title: string; detail: string; icon: typeof Mail }[] = [
+  { step: "contracts", title: "Contracts", detail: "Four clients and what each one agreed to pay for.", icon: FileText },
+  { step: "gmail", source: "demo_gmail", title: "Gmail", detail: "Client emails, including a sign-off, an approval, and a promise you made.", icon: Mail },
+  { step: "slack", source: "demo_slack", title: "Slack", detail: "Shared client channels where requests arrive.", icon: Hash },
+  { step: "work", source: "demo_thread", title: "Work activity", detail: "What Knov saw your team working on, from Mac activity.", icon: MonitorSmartphone },
+  { step: "billing", source: "demo_billing", title: "Billing", detail: "Invoices from a simulated QuickBooks account.", icon: Receipt },
+];
+
+type Tab = "inbox" | "slack" | "contracts" | "work" | "billing";
+
+/** Describes how one step changed what Knov found, so cause and effect are visible. */
+function describeChanges(before: RevenueOverview | undefined, after: RevenueOverview): string[] {
+  const previous = new Map((before?.opportunities ?? []).map((item) => [item.id, item]));
+  const changes: string[] = [];
+  for (const item of after.opportunities) {
+    const old = previous.get(item.id);
+    const copy = issueCopy(item);
+    if (!old && isOpen(item)) changes.push(`New problem: ${copy.label} at ${item.clientName}`);
+    else if (!old) changes.push(`${item.clientName}: checked and found no problem`);
+    else if (isOpen(old) && !isOpen(item)) changes.push(`Resolved: ${item.clientName}. New evidence shows it is already handled`);
+    else if (old.type !== item.type || old.amountCents !== item.amountCents) changes.push(`Sharper: ${item.clientName} is now "${copy.label}"${item.amountCents !== null ? ` worth ${revenueMoney(item.amountCents, item.currency)}` : ""}`);
+  }
+  return changes.length ? changes : ["No change in findings. This source added context but no new evidence of a problem."];
+}
+
+export function SimulationPage() {
+  const simulation = useSimulationMode();
+  const resource = useResource(() => revenueApi.overview(true), []);
+  const [busy, setBusy] = useState<SimulationStep | "all" | "reset">();
+  const [error, setError] = useState("");
+  const [changes, setChanges] = useState<{ title: string; lines: string[] }>();
+  const [tab, setTab] = useState<Tab>("inbox");
+  const data = resource.data;
+  const loaded = (step: (typeof STEPS)[number]) => Boolean(data && (step.source ? data.evidence.some((item) => item.source === step.source) : data.projects.length));
+  const open = (data?.opportunities ?? []).filter(isOpen);
+
+  const run = async (key: SimulationStep | "all" | "reset", title: string, operation: () => Promise<RevenueOverview>) => {
+    setBusy(key); setError("");
+    try {
+      const before = data;
+      const after = await operation();
+      resource.setData(after);
+      setChanges(key === "reset" ? undefined : { title, lines: describeChanges(before, after) });
+      setSimulationMode(key !== "reset" || simulation);
+    } catch (cause) { setError(errorMessage(cause)); }
+    finally { setBusy(undefined); }
+  };
+
+  if (!isDesktopRuntime()) {
+    return <div className="page"><PageHeader eyebrow="Sandbox" title="Simulation" description="Run Knov against a fictional business." /><EmptyState title="Open the simulation in the desktop app" detail="The simulated business is stored in the local database, separately from your actual data." /></div>;
+  }
+
+  return <div className="page simulation-page">
+    <PageHeader
+      eyebrow="Sandbox · fictional data"
+      title="Simulation: Brightline Studio"
+      description="Brightline Studio is a made-up six-person web agency with four clients. Connect its sources one at a time and watch what Knov finds. Nothing here touches your actual data, and nothing leaves this Mac."
+      actions={<>
+        <button className="ghost-button" disabled={Boolean(busy) || !data?.projects.length} onClick={() => void run("reset", "", revenueApi.simulationReset)}><RotateCcw size={14} /> Reset</button>
+        <a className="primary-button" href="#/home" onClick={() => setSimulationMode(true)}>See findings on Home <ArrowRight size={14} /></a>
+      </>}
+    />
+    {!simulation && data?.projects.length ? <p className="notice info">Home currently shows your actual data. <button className="link-button" onClick={() => setSimulationMode(true)}>Show the simulation on Home instead</button></p> : null}
+    {error && <p className="notice error" role="alert">{error}</p>}
+    {resource.error && <p className="notice error" role="alert">{resource.error} <button onClick={() => void resource.reload()}>Retry</button></p>}
+
+    <div className="simulation-layout">
+      <section className="simulation-steps" aria-label="Simulated sources">
+        <h2>1. Connect sources</h2>
+        <ol>{STEPS.map((step, index) => {
+          const done = loaded(step);
+          const Icon = step.icon;
+          const blocked = index > 0 && !data?.projects.length;
+          return <li key={step.step} className={done ? "done" : ""}>
+            <span className="step-icon">{done ? <Check size={16} /> : <Icon size={16} />}</span>
+            <div><strong>{step.title}</strong><small>{step.detail}</small></div>
+            {done ? <span className="step-state">Connected</span>
+              : <button className="ghost-button" disabled={Boolean(busy) || blocked} title={blocked ? "Load the contracts first" : undefined} onClick={() => void run(step.step, `After connecting ${step.title}`, () => revenueApi.simulationLoad(step.step))}>{busy === step.step && <LoaderCircle size={14} className="spin" />}{index === 0 ? "Load" : "Connect"}</button>}
+          </li>;
+        })}</ol>
+        {!STEPS.every(loaded) && <button className="ghost-button full" disabled={Boolean(busy)} onClick={() => void run("all", "After connecting everything", () => revenueApi.simulationLoad("all"))}>{busy === "all" && <LoaderCircle size={14} className="spin" />}Connect everything at once</button>}
+        <p className="field-hint">In the simulation, each message comes already labeled (request, approval, promise). With your actual Gmail or Slack, you confirm the label for each imported message.</p>
+      </section>
+
+      <section className="simulation-findings" aria-label="What Knov found" aria-live="polite">
+        <h2>2. What Knov found</h2>
+        {changes && <div className="simulation-changes"><strong>{changes.title}</strong><ul>{changes.lines.map((line) => <li key={line}>{line}</li>)}</ul></div>}
+        {!data?.projects.length ? <p className="field-hint">Load the contracts to begin. Findings appear here as each source connects.</p>
+          : open.length ? <ul className="simulation-issues">{open.map((item) => <li key={item.id}><span className="issue-badge">{issueCopy(item).label}</span><strong>{item.clientName}</strong><small>{item.amountCents === null ? "Amount unknown" : revenueMoney(item.amountCents, item.currency)}</small></li>)}</ul>
+          : <p className="field-hint">No problems yet. Contracts alone don't show what was requested, delivered, or invoiced. Connect more sources.</p>}
+        {open.length > 0 && <a className="primary-button" href="#/home" onClick={() => setSimulationMode(true)}>See what to do about {open.length === 1 ? "it" : "them"} <ArrowRight size={14} /></a>}
+      </section>
+    </div>
+
+    {data && data.projects.length > 0 && <section className="simulation-browser" aria-label="Simulated source data">
+      <div className="simulation-browser-heading"><h2>3. Look inside the simulated sources</h2><Segmented label="Source" value={tab} onChange={setTab} options={[
+        { value: "inbox", label: "Inbox", count: data.evidence.filter((item) => item.source === "demo_gmail").length },
+        { value: "slack", label: "Slack", count: data.evidence.filter((item) => item.source === "demo_slack").length },
+        { value: "contracts", label: "Contracts", count: data.agreements.length },
+        { value: "work", label: "Work activity", count: data.evidence.filter((item) => item.source === "demo_thread").length },
+        { value: "billing", label: "Billing", count: data.evidence.filter((item) => item.source === "demo_billing").length },
+      ]} /></div>
+      <SourceView tab={tab} data={data} />
+    </section>}
+  </div>;
+}
+
+function Label({ evidence }: { evidence: RevenueEvidence }) {
+  return evidence.kind === "communication"
+    ? <span className="knov-label quiet">Ordinary message · not evidence</span>
+    : <span className="knov-label">Knov reads this as: {kindLabel(evidence.kind)}</span>;
+}
+
+function SourceView({ tab, data }: { tab: Tab; data: RevenueOverview }) {
+  const source = { inbox: "demo_gmail", slack: "demo_slack", work: "demo_thread", billing: "demo_billing", contracts: "" }[tab];
+  const client = (projectId: string) => data.clients.find((item) => item.id === data.projects.find((project) => project.id === projectId)?.clientId)?.name ?? "";
+  const when = (seconds: number) => new Date(seconds * 1000).toLocaleDateString();
+  if (tab === "contracts") {
+    return <div className="source-records">{data.agreements.map((agreement) => <article key={agreement.id}><header><strong>{agreement.title}</strong><small>{client(agreement.projectId)}</small></header><pre>{agreement.text}</pre><span className="knov-label">Knov reads this as: Contract (what was agreed)</span></article>)}</div>;
+  }
+  const records = data.evidence.filter((item) => item.source === source).sort((a, b) => b.occurredAt - a.occurredAt);
+  if (!records.length) return <p className="field-hint">Not connected yet. Connect this source in step 1.</p>;
+  return <div className="source-records">{records.map((item) => {
+    const meta = item.meta ?? {};
+    return <article key={item.id}>
+      {tab === "inbox" && <header><strong>{meta.subject}</strong><small>{meta.from} → {meta.to} · {when(item.occurredAt)}</small></header>}
+      {tab === "slack" && <header><strong>{meta.channel}</strong><small>{meta.author} · {when(item.occurredAt)}</small></header>}
+      {tab === "work" && <header><strong>{meta.thread}</strong><small>{meta.apps} · {meta.hours} hours · {when(item.occurredAt)}</small></header>}
+      {tab === "billing" && <header><strong>{meta.number ?? "Billing sync"} · {meta.customer}</strong><small>{meta.status}{item.amountCents ? ` · ${revenueMoney(item.amountCents, item.currency ?? "USD")}` : ""} · {when(item.occurredAt)}</small></header>}
+      <p>{item.excerpt}</p>
+      <Label evidence={item} />
+    </article>;
+  })}</div>;
+}

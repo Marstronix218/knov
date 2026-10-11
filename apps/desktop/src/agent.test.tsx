@@ -283,7 +283,7 @@ describe("app-wide experience", () => {
 
     await waitFor(() => expect(local).toHaveBeenCalledOnce());
     expect(bootstrap).not.toHaveBeenCalled();
-    expect(await screen.findByRole("heading", { name: "Pick up where you left off." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Simulation" })).toBeInTheDocument();
   });
 });
 

@@ -1,6 +1,6 @@
 use std::{
     sync::{Arc, RwLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use chrono::Utc;
@@ -54,6 +54,8 @@ pub struct CompletionResult {
 pub struct ProviderClient {
     http: Client,
     local: Arc<RwLock<LocalModelConfig>>,
+    /// Every completed provider request is recorded here so AI spend stays visible.
+    usage_ledger: Arc<RwLock<Option<Arc<Database>>>>,
 }
 
 impl Default for ProviderClient {
@@ -68,6 +70,7 @@ impl Default for ProviderClient {
                 .build()
                 .expect("provider HTTP client"),
             local: Arc::new(RwLock::new(LocalModelConfig::default())),
+            usage_ledger: Arc::new(RwLock::new(None)),
         }
     }
 }
@@ -75,6 +78,10 @@ impl Default for ProviderClient {
 impl ProviderClient {
     pub fn configure_local(&self, config: LocalModelConfig) {
         *self.local.write().unwrap_or_else(|e| e.into_inner()) = config;
+    }
+
+    pub fn attach_usage_ledger(&self, db: Arc<Database>) {
+        *self.usage_ledger.write().unwrap_or_else(|e| e.into_inner()) = Some(db);
     }
 
     fn local_config(&self) -> LocalModelConfig {
@@ -147,22 +154,8 @@ impl ProviderClient {
         if provider == "local" {
             return Ok(String::new());
         }
-        if let Ok(value) = std::env::var(match provider {
-            "openai" => "OPENAI_API_KEY",
-            "anthropic" => "ANTHROPIC_API_KEY",
-            "bedrock" => "AWS_BEDROCK_API_KEY",
-            _ => unreachable!(),
-        }) {
-            if !value.trim().is_empty() {
-                return Ok(value);
-            }
-        }
-        if provider == "bedrock" {
-            if let Ok(value) = std::env::var("AWS_BEARER_TOKEN_BEDROCK") {
-                if !value.trim().is_empty() {
-                    return Ok(value);
-                }
-            }
+        if let Some(value) = env_key(provider) {
+            return Ok(value);
         }
         Entry::new(KEYCHAIN_SERVICE, provider)
             .map_err(|_| AppError::Credential)?
@@ -245,6 +238,7 @@ impl ProviderClient {
             content: message.into(),
         });
         self.complete(
+            "ask",
             provider,
             system,
             &turns,
@@ -274,6 +268,7 @@ impl ProviderClient {
         );
         let completion = self
             .complete(
+                "prediction",
                 provider,
                 system,
                 &[ChatMessage {
@@ -317,6 +312,7 @@ impl ProviderClient {
         );
         let raw = self
             .complete(
+                "profile",
                 provider,
                 system,
                 &[ChatMessage {
@@ -418,7 +414,50 @@ impl ProviderClient {
         })
     }
 
+    /// Sends one request and records its token usage under `feature` in the
+    /// local AI usage ledger.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn complete(
+        &self,
+        feature: &str,
+        provider: &str,
+        system: &str,
+        messages: &[ChatMessage],
+        max_tokens: u32,
+        response_format: Option<Value>,
+        input_token_limit: Option<i64>,
+    ) -> AppResult<CompletionResult> {
+        let started = Instant::now();
+        let completion = self
+            .complete_unrecorded(
+                provider,
+                system,
+                messages,
+                max_tokens,
+                response_format,
+                input_token_limit,
+            )
+            .await?;
+        let ledger = self
+            .usage_ledger
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        if let Some(db) = ledger {
+            let record = AiUsageRecord::new(
+                feature,
+                provider,
+                &completion,
+                started.elapsed().as_millis() as i64,
+            );
+            if let Err(error) = db.record_ai_usage(&record) {
+                eprintln!("AI usage could not be recorded: {error}");
+            }
+        }
+        Ok(completion)
+    }
+
+    async fn complete_unrecorded(
         &self,
         provider: &str,
         system: &str,
@@ -440,7 +479,7 @@ impl ProviderClient {
                     json!({"role": if m.role == "assistant" {"assistant"} else {"user"}, "content":m.content})
                 }));
                 let mut request = json!({
-                    "model":"gpt-6-luna",
+                    "model":openai_model(),
                     "input":input,
                     "max_output_tokens":max_tokens,
                     "store":false
@@ -475,7 +514,10 @@ impl ProviderClient {
                     .ok_or_else(|| AppError::Provider("The provider returned no text.".into()))?;
                 Ok(CompletionResult {
                     text,
-                    model: body["model"].as_str().unwrap_or("gpt-6-luna").into(),
+                    model: body["model"]
+                        .as_str()
+                        .map(str::to_owned)
+                        .unwrap_or_else(openai_model),
                     input_tokens: body["usage"]["input_tokens"].as_i64(),
                     output_tokens: body["usage"]["output_tokens"].as_i64(),
                     preflight_input_tokens: None,
@@ -782,6 +824,87 @@ fn local_status_error(status: StatusCode, body: &Value) -> AppError {
         Some(detail) => format!("The local model failed: {detail}"),
         None => format!("The local model failed (HTTP {}).", status.as_u16()),
     })
+}
+
+/// One provider request as recorded in the local AI usage ledger.
+#[derive(Debug, Clone)]
+pub struct AiUsageRecord {
+    pub id: String,
+    pub timestamp: i64,
+    pub feature: String,
+    pub provider: String,
+    pub model: String,
+    pub input_tokens: Option<i64>,
+    pub output_tokens: Option<i64>,
+    pub cache_read_input_tokens: Option<i64>,
+    pub cache_write_input_tokens: Option<i64>,
+    pub estimated_cost_usd: Option<f64>,
+    pub latency_ms: i64,
+}
+
+impl AiUsageRecord {
+    fn new(feature: &str, provider: &str, completion: &CompletionResult, latency_ms: i64) -> Self {
+        let input_tokens = completion
+            .input_tokens
+            .or(completion.preflight_input_tokens);
+        Self {
+            id: Uuid::new_v4().to_string(),
+            timestamp: Utc::now().timestamp(),
+            feature: feature.into(),
+            provider: provider.into(),
+            model: completion.model.clone(),
+            input_tokens,
+            output_tokens: completion.output_tokens,
+            cache_read_input_tokens: completion.cache_read_input_tokens,
+            cache_write_input_tokens: completion.cache_write_input_tokens,
+            // Requests to a model on this Mac cost nothing per token.
+            estimated_cost_usd: if provider == "local" {
+                Some(0.0)
+            } else {
+                crate::analytics::estimated_cost_usd(
+                    input_tokens,
+                    completion.output_tokens,
+                    completion.cache_read_input_tokens,
+                    completion.cache_write_input_tokens,
+                )
+            },
+            latency_ms,
+        }
+    }
+}
+
+fn env_key(provider: &str) -> Option<String> {
+    let names: &[&str] = match provider {
+        "openai" => &["OPENAI_API_KEY"],
+        "anthropic" => &["ANTHROPIC_API_KEY"],
+        "bedrock" => &["AWS_BEDROCK_API_KEY", "AWS_BEARER_TOKEN_BEDROCK"],
+        _ => &[],
+    };
+    names
+        .iter()
+        .filter_map(|name| std::env::var(name).ok())
+        .find(|value| !value.trim().is_empty())
+}
+
+/// The developer-supplied provider (`KNOV_MANAGED_PROVIDER` plus that
+/// provider's key in the environment). It stands in for "Knov provides the AI"
+/// until requests go through a hosted proxy, so users never handle a key.
+pub fn managed_provider() -> Option<String> {
+    let provider = std::env::var("KNOV_MANAGED_PROVIDER")
+        .ok()?
+        .trim()
+        .to_ascii_lowercase();
+    (matches!(provider.as_str(), "openai" | "anthropic" | "bedrock")
+        && env_key(&provider).is_some())
+    .then_some(provider)
+}
+
+fn openai_model() -> String {
+    std::env::var("KNOV_OPENAI_MODEL")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "gpt-6-luna".into())
 }
 
 fn validate_provider(provider: &str) -> AppResult<()> {

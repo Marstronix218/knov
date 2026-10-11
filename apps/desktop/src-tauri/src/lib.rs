@@ -46,8 +46,37 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
+/// Development builds read provider keys and prices from the repository's
+/// `.env.local` and `.env` (existing environment variables win), simulating a
+/// Knov-provided AI without asking users for a key. Release builds never read
+/// these files, so a developer key cannot ship inside the app bundle.
+#[cfg(debug_assertions)]
+fn load_development_env() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    for name in [".env.local", ".env"] {
+        let Ok(contents) = std::fs::read_to_string(root.join(name)) else {
+            continue;
+        };
+        for line in contents.lines().map(str::trim) {
+            if line.starts_with('#') {
+                continue;
+            }
+            let Some((key, value)) = line.trim_start_matches("export ").split_once('=') else {
+                continue;
+            };
+            let key = key.trim();
+            let value = value.trim().trim_matches(|c| c == '"' || c == '\'');
+            if !key.is_empty() && std::env::var_os(key).is_none() {
+                std::env::set_var(key, value);
+            }
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(debug_assertions)]
+    load_development_env();
     tauri::Builder::default()
         .plugin(
             tauri_plugin_autostart::Builder::new()
@@ -69,6 +98,7 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             let db = Arc::new(Database::open(data_dir.join("knov.sqlite3"))?);
             let providers = providers::ProviderClient::default();
+            providers.attach_usage_ledger(db.clone());
             let initial_settings = db.settings()?;
             providers.configure_local(commands::local_model_config(&initial_settings));
             if std::env::args().any(|arg| arg == HIDDEN_LAUNCH_ARG) {
@@ -158,6 +188,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             revenue::revenue_overview,
             revenue::revenue_seed_demo,
+            revenue::simulation::revenue_simulation_load,
+            revenue::simulation::revenue_simulation_reset,
+            revenue::revenue_import_upload,
             revenue::revenue_create_project,
             revenue::revenue_import_agreement,
             revenue::revenue_update_agreement,
@@ -200,6 +233,7 @@ pub fn run() {
             commands::probe_permissions,
             commands::detect_local_models,
             commands::get_tester_summary,
+            commands::get_ai_usage,
             commands::open_mail_draft,
             commands::request_accessibility_permission,
             commands::set_browser_profiles,
