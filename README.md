@@ -45,13 +45,15 @@ Implemented and usable from source:
   page or app, write a local draft, run allow-listed tests in an approved
   folder), an action journal with undo, a kill switch, and permission
   suggestions earned from repeated approval
-- dashboard, activity history, profile corrections, pause, and delete controls
+- dashboard, activity history, profile corrections, pause, export, and delete controls
 - command menu (⌘K) and page shortcuts (⌘1–⌘9)
 
 Important alpha limitations:
 
-- macOS 26 on Apple Silicon is the tested target. Safari, Firefox, Intel Macs,
-  Windows, and Linux are not implemented release targets.
+- Apple Silicon on macOS 26 is the tested and supported target. Release builds
+  are universal with a macOS 13 minimum, so Knov may launch on Intel Macs or
+  older macOS, but that is untested and unsupported. Safari, Firefox, Windows,
+  and Linux are not implemented release targets.
 - Accessibility permission is required for window titles.
 - The optional companion is a post-MVP experiment and must be loaded unpacked;
   its Native Messaging host is registered manually for compatibility testing.
@@ -208,8 +210,13 @@ the Keychain credential with `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or
 OPENAI_API_KEY="your-key" npm run dev:desktop
 ```
 
-The first-run wizard still requires entering a key to configure the selected
-provider. Knov does not load `.env` files automatically.
+The first-run wizard does not require a key. Choose **On this Mac** for a local
+model, or **Skip AI and finish** and connect an AI later in **Settings**. Without
+an AI, AI features (Ask, the AI interview, and provider-backed profile refresh)
+are unavailable, but collection, the dashboard, and revenue-problem detection
+still work. Development builds (`npm run dev:desktop`) also read `.env.local`
+and `.env` from the repository root; variables already set in the environment
+win. Release builds never read `.env` files.
 
 ## Optional: connect the experimental Chrome companion
 

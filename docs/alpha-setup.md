@@ -6,6 +6,9 @@ The tested target is an Apple Silicon Mac running macOS 26 with Google Chrome
 120 or newer. This source alpha is not signed, notarized, or packaged for
 consumer installation.
 
+Release builds are universal with a macOS 13 minimum, so Knov may launch on
+Intel Macs or older macOS. That is untested and unsupported.
+
 Install:
 
 - Xcode Command Line Tools (`xcode-select --install` if absent)
@@ -36,10 +39,13 @@ npm install
 npm run dev:desktop
 ```
 
-The first launch enables a login item and creates the SQLite database in the
-Tauri application-data directory. Complete the setup wizard with a real provider
-key; the initial profile cannot succeed without one. After onboarding, use the
-sidebar control to resume live desktop collection.
+The first launch creates the SQLite database in the Tauri application-data
+directory. Launch at login is off by default; turn it on in Settings. Complete
+the setup wizard. An AI provider is optional: choose **Skip AI and finish** to
+start with local features only, and connect an AI later in Settings. Without
+one, AI features (Ask, the AI interview, and provider-backed profile refresh)
+are unavailable, but collection and the dashboard work. After onboarding, use
+the sidebar control to resume live desktop collection.
 
 ### macOS Accessibility
 
@@ -58,9 +64,11 @@ the active development process.
 
 ## BYOK provider setup
 
-Choose OpenAI or Anthropic in onboarding or Settings and paste an API key. Save
-stores the key in macOS Keychain; **Test connection** makes a direct request to
-the selected provider.
+Choose **On this Mac** to use a local Ollama or LM Studio model (no key;
+only loopback addresses are accepted), or **Cloud API key** for OpenAI,
+Anthropic, or AWS Bedrock, in onboarding or Settings. For a cloud provider,
+paste an API key. Save stores the key in macOS Keychain; **Test connection**
+makes a direct request to the selected provider.
 
 After a provider has been configured through the app, a source-development
 session can override its Keychain credential through the environment:
@@ -201,8 +209,11 @@ authentication, but it has no TLS and is not the intended release transport.
 
 ## Optional companion behavior to verify manually
 
-- Pause desktop collection in the app and pause extension collection in the
-  extension popup. These controls are not synchronized in this build.
+- Pause desktop collection in the app and confirm the extension stops
+  collecting after its next status check. Desktop collection state is
+  synchronized to the extension, but only one way: a desktop pause pauses the
+  extension, while resuming the desktop does not clear a pause set in the
+  extension popup, and pausing the extension does not pause the desktop.
 - Add sensitive domains to both the desktop and extension exclusion lists.
   The extension options expose its list; the desktop Rust setting exists, but
   use the desktop and extension exclusion editors for their respective sources.

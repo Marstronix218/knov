@@ -8,3 +8,8 @@ target/
 # oh-my-claudecode runtime state (project skills stay committable)
 **/.omc/*
 !**/.omc/skills/
+
+# Other agent runtime state, logs, and Tauri-generated schemas
+.omx/
+*.log
+apps/desktop/src-tauri/gen/schemas/

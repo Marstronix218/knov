@@ -1032,7 +1032,11 @@ pub fn scripted_session(db: &Database, business_id: &str) -> AppResult<Option<In
             .is_some_and(|c| c["simulation"] == business_id)
     }))
 }
-pub fn start_scripted(db: &Database, business_id: &str, script: &Script) -> AppResult<InterviewSession> {
+pub fn start_scripted(
+    db: &Database,
+    business_id: &str,
+    script: &Script,
+) -> AppResult<InterviewSession> {
     let Some(first) = script.turns.first() else {
         return Err(invalid("The scripted interview has no questions."));
     };
@@ -1052,12 +1056,17 @@ fn advance_scripted(s: &mut InterviewSession, action: &str) -> AppResult<()> {
         .commercial_context
         .clone()
         .ok_or_else(|| invalid("Not a scripted interview."))?;
-    let script = crate::revenue::simulation::interview_script(context["simulation"].as_str().unwrap_or(""))
-        .ok_or_else(|| invalid("The scripted interview for this business is unavailable."))?;
+    let script =
+        crate::revenue::simulation::interview_script(context["simulation"].as_str().unwrap_or(""))
+            .ok_or_else(|| invalid("The scripted interview for this business is unavailable."))?;
     let turn = context["turn"].as_u64().unwrap_or(0) as usize;
     if action == "answer" {
         if let Some(current) = script.turns.get(turn) {
-            let answer = s.messages.last().map(|m| m.content.clone()).unwrap_or_default();
+            let answer = s
+                .messages
+                .last()
+                .map(|m| m.content.clone())
+                .unwrap_or_default();
             learn(&mut s.workflow, &current.learned, &answer);
         }
     }
@@ -1065,14 +1074,22 @@ fn advance_scripted(s: &mut InterviewSession, action: &str) -> AppResult<()> {
     let now = Utc::now().timestamp();
     s.workflow.confidence = (next as f64 / script.turns.len().max(1) as f64 * 0.9).min(0.9);
     if let Some(turn) = script.turns.get(next) {
-        s.messages.push(InterviewMessage { role: "assistant".into(), content: turn.question.clone(), created_at: now });
+        s.messages.push(InterviewMessage {
+            role: "assistant".into(),
+            content: turn.question.clone(),
+            created_at: now,
+        });
         s.suggested_answers = clean_suggestions(turn.suggested_answers.clone());
         s.missing_information = information_gaps(&s.workflow);
         if let Some(c) = s.workflow.commercial_context.as_mut() {
             c["turn"] = json!(next);
         }
     } else {
-        s.messages.push(InterviewMessage { role: "assistant".into(), content: script.closing.clone(), created_at: now });
+        s.messages.push(InterviewMessage {
+            role: "assistant".into(),
+            content: script.closing.clone(),
+            created_at: now,
+        });
         s.suggested_answers.clear();
         s.missing_information.clear();
         s.status = "completed".into();
@@ -1110,7 +1127,10 @@ fn learn(doc: &mut WorkflowDocument, learned: &Learned, answer: &str) {
     extend(&mut doc.approvals, &learned.approvals);
     extend(&mut doc.exceptions, &learned.exceptions);
     extend(&mut doc.bottlenecks, &learned.bottlenecks);
-    extend(&mut doc.automation_opportunities, &learned.automation_opportunities);
+    extend(
+        &mut doc.automation_opportunities,
+        &learned.automation_opportunities,
+    );
     let evidence = answer.trim();
     for step in &learned.steps {
         if doc.steps.iter().any(|existing| existing.id == step.id) {
@@ -1133,12 +1153,19 @@ fn learn(doc: &mut WorkflowDocument, learned: &Learned, answer: &str) {
             depends_on,
             decision: step.decision.clone(),
             requires_approval: step.requires_approval,
-            evidence: if evidence.is_empty() { vec![] } else { vec![evidence.to_string()] },
+            evidence: if evidence.is_empty() {
+                vec![]
+            } else {
+                vec![evidence.to_string()]
+            },
             confidence: 0.7,
         });
     }
     if !evidence.is_empty() {
-        doc.evidence.push(WorkflowEvidence { source: "user_reported".into(), detail: evidence.to_string() });
+        doc.evidence.push(WorkflowEvidence {
+            source: "user_reported".into(),
+            detail: evidence.to_string(),
+        });
     }
 }
 
@@ -1156,16 +1183,30 @@ mod tests {
         assert!(runs_without_provider(&db, &s.id).unwrap());
         assert!(sessions_in_scope(&db, false).unwrap().is_empty());
         assert!(workflows(&db).unwrap().is_empty());
-        assert_eq!(scripted_session(&db, "brightline").unwrap().unwrap().id, s.id);
+        assert_eq!(
+            scripted_session(&db, "brightline").unwrap().unwrap().id,
+            s.id
+        );
         assert!(scripted_session(&db, "lanternwood").unwrap().is_none());
         let providers = ProviderClient::default();
         let mut current = s;
         for (index, turn) in script.turns.iter().enumerate() {
             let action = if index == 1 { "skip" } else { "answer" };
-            current = tauri::async_runtime::block_on(advance(&db, &providers, "", &current.id, action, Some(turn.suggested_answers[0].clone()))).unwrap();
+            current = tauri::async_runtime::block_on(advance(
+                &db,
+                &providers,
+                "",
+                &current.id,
+                action,
+                Some(turn.suggested_answers[0].clone()),
+            ))
+            .unwrap();
             if index + 1 < script.turns.len() {
                 assert_eq!(current.status, "active");
-                assert_eq!(current.messages.last().unwrap().content, script.turns[index + 1].question);
+                assert_eq!(
+                    current.messages.last().unwrap().content,
+                    script.turns[index + 1].question
+                );
             }
         }
         assert_eq!(current.status, "completed");
@@ -1174,14 +1215,34 @@ mod tests {
         assert!(current.missing_information.is_empty());
         assert!(current.workflow.steps.len() >= 3);
         assert!(!current.workflow.business_goal.is_empty());
-        assert!(current.workflow.evidence.iter().any(|e| e.source == "user_reported"));
-        assert!(current.workflow.evidence.iter().all(|e| e.source != "observed"));
+        assert!(current
+            .workflow
+            .evidence
+            .iter()
+            .any(|e| e.source == "user_reported"));
+        assert!(current
+            .workflow
+            .evidence
+            .iter()
+            .all(|e| e.source != "observed"));
         for step in &current.workflow.steps {
             for dependency in &step.depends_on {
-                assert!(current.workflow.steps.iter().any(|other| &other.id == dependency));
+                assert!(current
+                    .workflow
+                    .steps
+                    .iter()
+                    .any(|other| &other.id == dependency));
             }
         }
-        assert!(tauri::async_runtime::block_on(advance(&db, &providers, "", &current.id, "answer", Some("more".into()))).is_err());
+        assert!(tauri::async_runtime::block_on(advance(
+            &db,
+            &providers,
+            "",
+            &current.id,
+            "answer",
+            Some("more".into())
+        ))
+        .is_err());
         delete_demo_sessions(&db).unwrap();
         assert!(session(&db, &current.id).is_err());
     }
@@ -1190,18 +1251,34 @@ mod tests {
     fn every_simulated_business_has_a_valid_script() {
         for business in crate::revenue::simulation::businesses() {
             let script = &business.interview;
-            assert!(topic(&script.topic).is_some(), "{}: unknown topic", business.id);
+            assert!(
+                topic(&script.topic).is_some(),
+                "{}: unknown topic",
+                business.id
+            );
             assert!(script.turns.len() >= 3, "{}: too few turns", business.id);
             let db = Database::in_memory().unwrap();
             let mut s = start_scripted(&db, &business.id, script).unwrap();
             for turn in &script.turns {
-                s.messages.push(InterviewMessage { role: "user".into(), content: turn.suggested_answers.first().cloned().unwrap_or_else(|| "ok".into()), created_at: 0 });
+                s.messages.push(InterviewMessage {
+                    role: "user".into(),
+                    content: turn
+                        .suggested_answers
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| "ok".into()),
+                    created_at: 0,
+                });
                 advance_scripted(&mut s, "answer").unwrap();
                 validate_workflow(&s.workflow).unwrap_or_else(|e| panic!("{}: {e:?}", business.id));
             }
             assert_eq!(s.status, "completed", "{}", business.id);
             assert!(s.workflow.steps.len() >= 3, "{}: steps", business.id);
-            assert!(!s.workflow.bottlenecks.is_empty(), "{}: bottlenecks", business.id);
+            assert!(
+                !s.workflow.bottlenecks.is_empty(),
+                "{}: bottlenecks",
+                business.id
+            );
         }
     }
 

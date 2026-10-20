@@ -166,6 +166,8 @@ Historical note: Rewind/Limitless defined the “perfect memory” category, but
 
 ## Information architecture
 
+> **Revision note (2026-10-20):** The shipped navigation is revenue first. Home (revenue) is the default route, Now sits under "Your work" with Memory and Activity, and Ask is its own destination instead of folding into Now. This supersedes the earlier guidance below to open Knov to Now and to fold the Assistant into Now and Threads (see the navigation comment in `apps/desktop/src/App.tsx`).
+
 - Primary navigation:
   - **Now** — the daily continuity surface and universal ask box
   - **Threads** — active projects/work streams reconstructed from behavior

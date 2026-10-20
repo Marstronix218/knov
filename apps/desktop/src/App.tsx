@@ -11,6 +11,7 @@ import {
   Clock3,
   Command,
   Copy,
+  Download,
   Eye,
   FileCode2,
   FlaskConical,
@@ -44,10 +45,14 @@ import { AiProviderPicker } from "./components/AiProviderPicker";
 import { FeedbackDialog } from "./components/FeedbackDialog";
 import { SetupWizard } from "./components/SetupWizard";
 import { CommandPalette, PaletteCommand } from "./components/CommandPalette";
+import { ChromeCompanionCard, NumberSetting } from "./components/SettingsControls";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MarkdownMessage } from "./components/MarkdownMessage";
 import {
   EmptyState,
   errorMessage,
+  isModalOpen,
+  isOverlayOpen,
   LogoMark,
   Modal,
   PageHeader,
@@ -73,6 +78,7 @@ import { SourcesPage } from "./pages/SourcesPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
 import { AppStatusProvider, useAppStatus } from "./state/AppStatus";
 import { setSimulationMode, useSimulationMode } from "./state/simulationMode";
+import { clearLocalUiState } from "./lib/localState";
 import { revenueApi } from "./lib/revenueApi";
 import { isOpen } from "./lib/revenueCopy";
 import type {
@@ -81,6 +87,7 @@ import type {
   ChatMessage,
   ContextEconomics,
   DashboardData,
+  DataExport,
   MemoryRecord,
   ProfileData,
   PredictionDashboard,
@@ -172,17 +179,27 @@ function App() {
 function AppShell({ route }: { route: string }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const visibleNavigation = useNavigation();
   const commands = useCommands(() => setFeedbackOpen(true));
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "?" && !event.metaKey && !event.ctrlKey && !event.altKey && !isTypingTarget(event.target) && !isOverlayOpen()) {
+        event.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
       if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
       if (event.key.toLowerCase() === "k") {
+        // An open dialog keeps focus; the menu would open behind its trap.
+        if (isModalOpen()) return;
         event.preventDefault();
         setPaletteOpen((open) => !open);
         return;
       }
+      // Same guard as ⌘K: navigating away would skip the dialog's discard prompt.
+      if (isModalOpen()) return;
       const index = Number(event.key) - 1;
       if (Number.isInteger(index) && visibleNavigation[index]) {
         event.preventDefault();
@@ -217,11 +234,30 @@ function AppShell({ route }: { route: string }) {
       <main className="main-stage" id="main">
         {!isDesktopRuntime() && <div className="demo-banner">Browser preview · sample data · controls do not change your Mac</div>}
         {isDesktopRuntime() && simulation && <div className="simulation-banner" role="status"><FlaskConical size={14} aria-hidden="true" /> Simulation mode · Home and Opportunities show {problems.business ?? "a simulated"}, a fictional business <button type="button" onClick={() => setSimulationMode(false)}>Show my actual data</button></div>}
-        {page}
+        <ErrorBoundary key={route} onSendFeedback={() => setFeedbackOpen(true)}>{page}</ErrorBoundary>
       </main>
       {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
       {feedbackOpen && <FeedbackDialog onClose={() => setFeedbackOpen(false)} />}
+      {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
     </div>
+  );
+}
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement
+    && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+}
+
+function ShortcutsDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <Modal title="Keyboard shortcuts" onClose={onClose}>
+      <dl className="shortcut-list">
+        <dt><kbd>⌘K</kbd></dt><dd>Open or close the command menu</dd>
+        <dt><kbd>⌘1</kbd>–<kbd>⌘9</kbd></dt><dd>Go to a page in the sidebar, in order</dd>
+        <dt><kbd>Esc</kbd></dt><dd>Close the top dialog or menu, or cancel an inline confirmation</dd>
+        <dt><kbd>?</kbd></dt><dd>Show these shortcuts</dd>
+      </dl>
+    </Modal>
   );
 }
 
@@ -236,9 +272,39 @@ function useCommands(openFeedback: () => void): PaletteCommand[] {
       id: `go-${item.label.toLowerCase()}`,
       label: `Go to ${item.label}`,
       group: "Navigate",
-      hint: `⌘${index + 1}`,
+      // The ⌘-digit shortcut reads a single key, so only the first nine have one.
+      hint: index < 9 ? `⌘${index + 1}` : undefined,
       run: () => { window.location.hash = item.to; },
     })),
+    {
+      id: "ask-context",
+      label: "Ask with context",
+      group: "Ask",
+      keywords: "assistant thread question chat",
+      // Attaches the thread selected on Now (or the newest one), the same packet
+      // as Now's "Ask with context" button; without a thread, Ask opens without one.
+      run: async () => {
+        let thread: WorkThread | undefined;
+        try {
+          const threads = deriveThreads(await api.dashboard("today"));
+          const storedId = localStorage.getItem("knov.selected-thread");
+          thread = threads.find((candidate) => candidate.id === storedId) ?? threads[0];
+        } catch {
+          thread = undefined;
+        }
+        if (thread) {
+          sessionStorage.setItem(THREAD_CONTEXT_KEY, JSON.stringify(makeThreadContext(thread)));
+          void api.recordProductEvent("thread_context_opened", thread.id).catch(() => undefined);
+        } else {
+          sessionStorage.removeItem(THREAD_CONTEXT_KEY);
+        }
+        // A new thread context starts a new conversation, as on Now.
+        sessionStorage.removeItem(ASK_TRANSCRIPT_KEY);
+        // Ask may already be open, in which case no hashchange remounts it.
+        window.dispatchEvent(new CustomEvent(THREAD_CONTEXT_CHANGED_EVENT));
+        window.location.hash = "/assistant";
+      },
+    },
     {
       id: "feedback",
       label: "Send feedback",
@@ -605,8 +671,23 @@ function makeContextBrief(context: ThreadContext): string {
   ].join("\n\n");
 }
 
+const THREAD_CONTEXT_KEY = "knov.active-thread-context";
+const ASK_TRANSCRIPT_KEY = "knov.ask-transcript";
+const THREAD_CONTEXT_CHANGED_EVENT = "knov:thread-context-changed";
+/** Only the latest messages are kept, so a long session stays well under storage quotas. */
+const ASK_TRANSCRIPT_LIMIT = 40;
+
+function loadAskTranscript(): ChatMessage[] | undefined {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(ASK_TRANSCRIPT_KEY) ?? "null") as unknown;
+    return Array.isArray(value) && value.length ? value as ChatMessage[] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function loadThreadContext(): ThreadContext | undefined {
-  const serialized = sessionStorage.getItem("knov.active-thread-context");
+  const serialized = sessionStorage.getItem(THREAD_CONTEXT_KEY);
   if (!serialized) return undefined;
   try {
     const value = JSON.parse(serialized) as Partial<ThreadContext>;
@@ -771,15 +852,22 @@ function DashboardContent({ data }: { data: DashboardData }) {
     }
   };
   const copyBrief = async () => {
-    await navigator.clipboard.writeText(makeContextBrief(makeThreadContext(selected)));
+    try {
+      await navigator.clipboard.writeText(makeContextBrief(makeThreadContext(selected)));
+    } catch (cause) {
+      setActionMessage(`Could not copy the context packet: ${errorMessage(cause)}`);
+      return;
+    }
     setActionMessage("Detailed context packet copied.");
     recordThreadEvent("thread_brief_copied");
   };
   const prepareAssistant = () => {
     sessionStorage.setItem(
-      "knov.active-thread-context",
+      THREAD_CONTEXT_KEY,
       JSON.stringify(makeThreadContext(selected)),
     );
+    // A new thread context starts a new conversation.
+    sessionStorage.removeItem(ASK_TRANSCRIPT_KEY);
     recordThreadEvent("thread_context_opened");
   };
   const sendThreadFeedback = async (feedback: "helpful" | "wrong" | "not_now") => {
@@ -869,7 +957,8 @@ function LabsPredictions({ threads, onSelectThread }: { threads: WorkThread[]; o
   return <PredictionSection resource={predictions} threads={threads} onSelectThread={onSelectThread} />;
 }
 
-const PREDICTION_DISPLAY_THRESHOLD = 0.65;
+/** Used until settings load, and when they carry no threshold. */
+const DEFAULT_PREDICTION_DISPLAY_THRESHOLD = 0.65;
 
 function predictionExpiresAt(prediction: WorkPrediction): number {
   if (Number.isFinite(prediction.expiresAt)) return prediction.expiresAt * 1000;
@@ -882,9 +971,9 @@ function formatPredictionTime(value: number): string {
   return formatTime(new Date(value * 1000).toISOString());
 }
 
-function visiblePrediction(prediction: WorkPrediction, now = Date.now()): boolean {
+function visiblePrediction(prediction: WorkPrediction, threshold: number, now = Date.now()): boolean {
   return prediction.evaluationStatus === "pending"
-    && prediction.confidence >= PREDICTION_DISPLAY_THRESHOLD
+    && prediction.confidence >= threshold
     && predictionExpiresAt(prediction) > now;
 }
 
@@ -897,6 +986,8 @@ function PredictionSection({
   threads: WorkThread[];
   onSelectThread: (id: string) => void;
 }) {
+  const { settings } = useAppStatus();
+  const threshold = settings.data?.predictionDisplayThreshold ?? DEFAULT_PREDICTION_DISPLAY_THRESHOLD;
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   const [pendingId, setPendingId] = useState<string>();
   const [message, setMessage] = useState("");
@@ -920,7 +1011,7 @@ function PredictionSection({
   if (!resource.data?.enabled) return null;
 
   const prediction = resource.data.predictions
-    .filter((candidate) => !hiddenIds.has(candidate.id) && visiblePrediction(candidate))
+    .filter((candidate) => !hiddenIds.has(candidate.id) && visiblePrediction(candidate, threshold))
     .sort((a, b) => b.confidence - a.confidence)[0];
   if (!prediction) return null;
 
@@ -1264,7 +1355,7 @@ function ActivityPage() {
         actions={<RangePicker value={range} onChange={setRange} />}
       />
       <div className="toolbar">
-        <label className="search-field"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter apps, pages, or topics" /></label>
+        <label className="search-field"><Search size={16} /><input aria-label="Filter activity" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter apps, pages, or topics" /></label>
         <span className="fact-badge"><LockKeyhole size={14} /> Stored locally for 30 days</span>
       </div>
       {visibleEvents.length > 0 && (
@@ -1557,6 +1648,9 @@ function ProfilePage() {
   const [error, setError] = useState("");
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
+  const editingItem = editingId ? resource.data?.sections.flatMap((section) => section.items).find((item) => item.id === editingId) : undefined;
+  const correctionDirty = label !== (editingItem?.label ?? "") || description !== (editingItem?.description ?? "");
+  const summaryDirty = summaryDraft !== (resource.data?.summary ?? "");
 
   const mutate = (work: Promise<ProfileData>) => {
     setError("");
@@ -1639,7 +1733,7 @@ function ProfilePage() {
         )}
       </ResourceState>
       {showForm && (
-        <Modal title={editingId ? "Edit authoritative correction" : "Add authoritative correction"} onClose={() => setShowForm(false)}>
+        <Modal title={editingId ? "Edit authoritative correction" : "Add authoritative correction"} dirty={correctionDirty} onClose={() => setShowForm(false)}>
           <form className="stack-form" onSubmit={(event) => void submit(event)}>
             <label>What should Knov know?<input required value={label} onChange={(event) => setLabel(event.target.value)} placeholder="Privacy is more important to me than adding features" /></label>
             <label>Optional context<textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="This will always override automatic inference." /></label>
@@ -1649,7 +1743,7 @@ function ProfilePage() {
         </Modal>
       )}
       {showSummaryForm && (
-        <Modal title="Edit profile summary" onClose={() => setShowSummaryForm(false)}>
+        <Modal title="Edit profile summary" dirty={summaryDirty} onClose={() => setShowSummaryForm(false)}>
           <form className="stack-form" onSubmit={(event) => {
             event.preventDefault();
             setFormError("");
@@ -1675,26 +1769,66 @@ const STARTER_QUESTIONS = [
   "Summarize what I researched recently and what to read next.",
 ];
 
+function askWelcome(withThreadContext: boolean): ChatMessage {
+  return {
+    id: "welcome",
+    role: "assistant",
+    content: withThreadContext
+      ? "Your selected thread is ready. I’ll retrieve only the memories relevant to your question and keep the provisional brief visible."
+      : "Ask anything. I’ll retrieve only the approved memories relevant to this request.",
+    createdAt: new Date().toISOString(),
+  };
+}
+
 function AssistantPage() {
   const { settings } = useAppStatus();
   const aiConfigured = settings.data?.aiConfigured ?? true;
-  const activeThreadContext = loadThreadContext();
+  const [activeThreadContext, setActiveThreadContext] = useState(loadThreadContext);
   const activeContextBrief = activeThreadContext ? makeContextBrief(activeThreadContext) : undefined;
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content: activeContextBrief
-        ? "Your selected thread is ready. I’ll retrieve only the memories relevant to your question and keep the provisional brief visible."
-        : "Ask anything. I’ll retrieve only the approved memories relevant to this request.",
-      createdAt: new Date().toISOString(),
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => loadAskTranscript() ?? [askWelcome(Boolean(activeThreadContext))]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [economics, setEconomics] = useState<ContextEconomics>();
   const [retrievedMemories, setRetrievedMemories] = useState<MemoryRecord[]>([]);
   const [error, setError] = useState("");
+  const conversationStarted = messages.some((message) => message.role === "user");
+
+  // Keep the conversation for this session so leaving Ask and coming back doesn't lose it.
+  useEffect(() => {
+    if (!conversationStarted) return;
+    try {
+      sessionStorage.setItem(ASK_TRANSCRIPT_KEY, JSON.stringify(messages.slice(-ASK_TRANSCRIPT_LIMIT)));
+    } catch {
+      // Storage full or unavailable: the conversation still works, it just won't survive navigation.
+    }
+  }, [messages, conversationStarted]);
+
+  // ⌘K "Ask with context" while Ask is already open swaps the context in place.
+  useEffect(() => {
+    const onContextChanged = () => {
+      const context = loadThreadContext();
+      setActiveThreadContext(context);
+      setMessages([askWelcome(Boolean(context))]);
+      setEconomics(undefined);
+      setRetrievedMemories([]);
+      setError("");
+    };
+    window.addEventListener(THREAD_CONTEXT_CHANGED_EVENT, onContextChanged);
+    return () => window.removeEventListener(THREAD_CONTEXT_CHANGED_EVENT, onContextChanged);
+  }, []);
+
+  const clearThreadContext = () => {
+    sessionStorage.removeItem(THREAD_CONTEXT_KEY);
+    setActiveThreadContext(undefined);
+    if (!conversationStarted) setMessages([askWelcome(false)]);
+  };
+  const newConversation = () => {
+    sessionStorage.removeItem(ASK_TRANSCRIPT_KEY);
+    setMessages([askWelcome(Boolean(activeThreadContext))]);
+    setEconomics(undefined);
+    setRetrievedMemories([]);
+    setError("");
+  };
 
   const ask = async (question: string) => {
     if (!question.trim() || sending) return;
@@ -1719,7 +1853,6 @@ function AssistantPage() {
     event.preventDefault();
     void ask(draft);
   };
-  const conversationStarted = messages.some((message) => message.role === "user");
 
   return (
     <div className="page assistant-page">
@@ -1729,6 +1862,7 @@ function AssistantPage() {
         description="Ask about your own work. Knov adds only the relevant parts of your activity and memory—never your full history."
         actions={(
           <div className="assistant-header-actions">
+            {conversationStarted && <button type="button" className="ghost-button" disabled={sending} onClick={newConversation}><Plus size={14} /> New conversation</button>}
             <a className="ghost-button" href="#/dashboard">Back to Now</a>
           </div>
         )}
@@ -1736,6 +1870,12 @@ function AssistantPage() {
       <div className="assistant-workspace">
         <section className="chat-shell">
           <div className="chat-context"><ShieldCheck size={15} /><span>Local memory + token-budgeted selected evidence</span><small>Full raw logs stay on this Mac</small></div>
+          {activeThreadContext && (
+            <div className="context-chip">
+              <span>Context: {activeThreadContext.subject}</span>
+              <button type="button" aria-label="Clear thread context" disabled={sending} onClick={clearThreadContext}><X size={13} /></button>
+            </div>
+          )}
           {!aiConfigured && (
             <div className="assistant-connect" role="note">
               <span><strong>Connect an AI to start asking.</strong> Use a free model on this Mac or your own API key.</span>
@@ -1743,7 +1883,7 @@ function AssistantPage() {
             </div>
           )}
           {activeContextBrief && <details className="active-context-preview"><summary>Review local candidate evidence</summary><pre>{activeContextBrief}</pre></details>}
-          <div className="message-list">
+          <div className="message-list" aria-live="polite">
             {messages.map((message) => (
               <article className={`message ${message.role}`} key={message.id}>
                 <div className="message-avatar">{message.role === "assistant" ? <Bot size={18} /> : <CircleUserRound size={18} />}</div>
@@ -1766,7 +1906,7 @@ function AssistantPage() {
               </div>
             )}
           </div>
-          {error && <p className="assistant-error error-message">{error}</p>}
+          {error && <p className="assistant-error error-message" role="alert">{error}</p>}
           <form className="chat-composer" onSubmit={(event) => void submit(event)}>
             <textarea
               maxLength={4000}
@@ -1781,7 +1921,7 @@ function AssistantPage() {
               placeholder="Ask about your work, e.g. “What was I doing on the pitch deck yesterday?”"
               rows={2}
             />
-            <button className="primary-button" disabled={!draft.trim() || sending}>{sending ? <LoaderCircle size={16} className="spin" /> : "Send"} {!sending && <ChevronRight size={16} />}</button>
+            <button className="primary-button" aria-label={sending ? "Sending…" : undefined} disabled={!draft.trim() || sending}>{sending ? <LoaderCircle size={16} className="spin" /> : "Send"} {!sending && <ChevronRight size={16} />}</button>
           </form>
         </section>
         <ContextEconomicsPanel
@@ -1904,6 +2044,9 @@ function SettingsPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<DataExport | null>(null);
+  const [exportError, setExportError] = useState("");
 
   const guard = async (work: () => Promise<void>) => {
     setSettingsError("");
@@ -1923,12 +2066,25 @@ function SettingsPage() {
     setDeleteError("");
     try {
       await api.deleteAllData();
-      localStorage.removeItem("knov.setup-complete");
+      clearLocalUiState();
       window.location.hash = "";
       window.location.reload();
     } catch (cause) {
       setDeleteError(errorMessage(cause));
       setDeleting(false);
+    }
+  };
+
+  const exportData = async () => {
+    setExporting(true);
+    setExportResult(null);
+    setExportError("");
+    try {
+      setExportResult(await api.exportAllData());
+    } catch (cause) {
+      setExportError(errorMessage(cause));
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -1970,6 +2126,14 @@ function SettingsPage() {
                 <span className={settings.collectionStatus.accessibilityGranted ? "status-ok" : "status-warn"}>{settings.collectionStatus.accessibilityGranted ? "Granted" : "Not granted"}</span>
                 {!settings.collectionStatus.accessibilityGranted && <button className="ghost-button" onClick={() => void api.requestAccessibility()}>Open prompt</button>}
               </div>
+              <NumberSetting
+                label="Sampling interval (seconds)"
+                detail="How often Knov checks the foreground app and window, from 2 to 300 seconds. Changes apply to new samples once the current wait ends; no restart needed."
+                value={settings.samplingIntervalSeconds ?? 5}
+                min={2}
+                max={300}
+                onSave={async (samplingIntervalSeconds) => { resource.setData(await api.saveSettings({ samplingIntervalSeconds })); }}
+              />
               {settings.collectionStatus.degradedReasons.map((reason) => <p className="status-detail" key={reason}>{reason}</p>)}
               <p className="status-detail">Closing the window keeps Knov running in the menu bar. While collection is active, Knov backfills new browser visits and reads metadata-only Local History indexes and Git working-tree paths from VS Code, Cursor, and Cortex Code workspaces. It never opens saved code snapshots or source contents.</p>
               {settings.collectionStatus.dataPath && <p className="status-detail">Local database: {settings.collectionStatus.dataPath}</p>}
@@ -2003,9 +2167,14 @@ function SettingsPage() {
               <PredictionSettings
                 enabled={settings.predictionExperimentEnabled}
                 collectionEnabled={settings.collectionStatus.enabled}
+                threshold={settings.predictionDisplayThreshold ?? DEFAULT_PREDICTION_DISPLAY_THRESHOLD}
+                cooldownMinutes={settings.predictionCooldownMinutes ?? 15}
                 onToggle={(predictionExperimentEnabled) => patch({ predictionExperimentEnabled })}
+                onSave={async (changes) => { resource.setData(await api.saveSettings(changes)); }}
               />
             )}
+
+            {settings.labsEnabled && <ChromeCompanionCard status={settings.collectionStatus} />}
 
             <section className="panel settings-card full-width">
               <SettingsHeading icon={<BarChart3 />} title="Browser history" detail="Optional. Choose Chrome, Arc, Brave, Edge, or Vivaldi profiles to import and keep up to date." />
@@ -2060,6 +2229,23 @@ function SettingsPage() {
               </div>
             </section>
 
+            <section className="panel settings-card full-width" aria-label="Export your data">
+              <SettingsHeading icon={<Download />} title="Export your data" detail="Saves activity, profiles, corrections, recommendations, workflows, skills, the action journal, predictions, and revenue records as one JSON file in Downloads. API keys, connector tokens, and the pairing token are never included." />
+              <div className="inline-actions">
+                <button className="ghost-button" disabled={exporting} onClick={() => void exportData()}>
+                  {exporting ? <LoaderCircle size={15} className="spin" /> : <Download size={15} />}
+                  {exporting ? "Exporting…" : "Export my data"}
+                </button>
+              </div>
+              {exportResult && (
+                <div className="inline-actions">
+                  <p className="success-message"><Check size={14} />Saved {exportResult.bytes < 100_000 ? "<0.1" : (exportResult.bytes / 1_000_000).toFixed(1)} MB to {exportResult.path}</p>
+                  <button className="ghost-button" onClick={() => void api.revealInFinder(exportResult.path).catch((cause) => setExportError(errorMessage(cause)))}>Show in Finder</button>
+                </div>
+              )}
+              {exportError && <p className="error-message" role="alert">{exportError}</p>}
+            </section>
+
             <section className="panel settings-card full-width danger-card">
               <SettingsHeading icon={<Trash2 />} title="Delete local Knov data" detail="Permanently removes local activity, profiles, corrections, recommendations, telemetry, settings, and provider credentials." />
               <button className="danger-button" onClick={() => setConfirmDelete(true)}>Delete everything</button>
@@ -2087,11 +2273,17 @@ function formatAccuracy(value?: number): string {
 function PredictionSettings({
   enabled,
   collectionEnabled,
+  threshold,
+  cooldownMinutes,
   onToggle,
+  onSave,
 }: {
   enabled: boolean;
   collectionEnabled: boolean;
+  threshold: number;
+  cooldownMinutes: number;
   onToggle: (enabled: boolean) => Promise<void>;
+  onSave: (changes: Partial<SettingsData>) => Promise<void>;
 }) {
   const dashboard = useResource(() => api.predictionsDashboard(), []);
   const history = useResource(() => api.predictionHistory(), []);
@@ -2140,6 +2332,24 @@ function PredictionSettings({
         </div>
       )}
       {message && <p className="status-detail" role="status">{message}</p>}
+      <div className="revenue-fields">
+        <NumberSetting
+          label="Show on Now at confidence (%)"
+          detail="Predictions below this confidence stay in shadow mode and appear only in the history below."
+          value={Math.round(threshold * 100)}
+          min={0}
+          max={100}
+          onSave={(percent) => onSave({ predictionDisplayThreshold: percent / 100 })}
+        />
+        <NumberSetting
+          label="Minutes between prediction sets"
+          detail="Automatic generation waits at least this long, from 10 to 120 minutes. Generate now ignores it."
+          value={cooldownMinutes}
+          min={10}
+          max={120}
+          onSave={(predictionCooldownMinutes) => onSave({ predictionCooldownMinutes })}
+        />
+      </div>
 
       <div className="prediction-debug-heading">
         <strong>Local prediction history</strong>
@@ -2297,7 +2507,7 @@ function ExclusionEditor({
       <label>Domains<input value={domains} onChange={(event) => { setDomains(event.target.value); setStatus(undefined); }} placeholder="bank.example, health.example" /></label>
       <button className="ghost-button" onClick={() => void save()}>Save exclusions</button>
       {status && (status.tone === "ok"
-        ? <p className="success-message"><Check size={14} />{status.text}</p>
+        ? <p className="success-message" role="status"><Check size={14} />{status.text}</p>
         : <p className="error-message" role="alert">{status.text}</p>)}
     </div>
   );

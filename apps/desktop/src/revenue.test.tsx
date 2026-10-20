@@ -272,18 +272,68 @@ describe("Simulation", () => {
 });
 
 describe("Sources", () => {
-  it("uploads a picked document for the selected client and re-checks for problems", async () => {
+  function sourcesWithProject() {
     const data = structuredClone(fixture);
     data.projects.push({ id: "project", clientId: "client", name: "Dashboards", description: "", threadIds: [], demo: false });
     vi.mocked(revenueApi.overview).mockResolvedValue(data);
-    const upload = vi.spyOn(revenueApi, "importUpload").mockResolvedValue(data);
+    return data;
+  }
+
+  it("extracts a picked document, lets the text be reviewed, then imports only the reviewed text", async () => {
+    const data = sourcesWithProject();
+    const extract = vi.spyOn(revenueApi, "extractUpload").mockResolvedValue({ title: "sow.txt", text: "Scope: Build two dashboards." });
+    const importAgreement = vi.spyOn(revenueApi, "importAgreement").mockResolvedValue(data);
     const analyze = vi.spyOn(revenueApi, "analyze").mockResolvedValue(data);
     render(<SourcesPage />);
     await screen.findByText(/Drop files here for Acme · Dashboards/);
     const file = new File(["Scope: Build two dashboards."], "sow.txt", { type: "text/plain" });
     fireEvent.change(screen.getByLabelText("Upload documents"), { target: { files: [file] } });
-    await waitFor(() => expect(upload).toHaveBeenCalledWith("project", "sow.txt", btoa("Scope: Build two dashboards.")));
+    await waitFor(() => expect(extract).toHaveBeenCalledWith("sow.txt", btoa("Scope: Build two dashboards.")));
+
+    const review = await screen.findByRole("region", { name: "Review extracted text" });
+    const text = within(review).getByLabelText("Extracted text");
+    expect(text).toHaveValue("Scope: Build two dashboards.");
+    expect(within(review).getByText("28 characters")).toBeInTheDocument();
+    expect(importAgreement).not.toHaveBeenCalled();
+
+    fireEvent.change(text, { target: { value: "Scope: Build three dashboards." } });
+    expect(within(review).getByText("30 characters")).toBeInTheDocument();
+    fireEvent.click(within(review).getByRole("button", { name: "Import this text" }));
+    await waitFor(() => expect(importAgreement).toHaveBeenCalledWith("project", "sow.txt", "Scope: Build three dashboards."));
     await waitFor(() => expect(analyze).toHaveBeenCalledWith(false));
     expect(await screen.findByText(/Imported 1 document for Acme · Dashboards/)).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Review extracted text" })).not.toBeInTheDocument();
+  });
+
+  it("discards the extracted text on Cancel without importing", async () => {
+    sourcesWithProject();
+    vi.spyOn(revenueApi, "extractUpload").mockResolvedValue({ title: "sow.txt", text: "Scope" });
+    const importAgreement = vi.spyOn(revenueApi, "importAgreement");
+    const analyze = vi.spyOn(revenueApi, "analyze");
+    render(<SourcesPage />);
+    await screen.findByText(/Drop files here for Acme · Dashboards/);
+    fireEvent.change(screen.getByLabelText("Upload documents"), { target: { files: [new File(["Scope"], "sow.txt")] } });
+    const review = await screen.findByRole("region", { name: "Review extracted text" });
+    fireEvent.click(within(review).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("region", { name: "Review extracted text" })).not.toBeInTheDocument();
+    expect(importAgreement).not.toHaveBeenCalled();
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it("clears the reading state and reports an extraction failure", async () => {
+    sourcesWithProject();
+    vi.spyOn(revenueApi, "extractUpload").mockRejectedValue(new Error("No text extracted; scanned PDFs require OCR, which is unsupported"));
+    render(<SourcesPage />);
+    await screen.findByText(/Drop files here for Acme · Dashboards/);
+    fireEvent.change(screen.getByLabelText("Upload documents"), { target: { files: [new File(["%PDF"], "scan.pdf")] } });
+    expect(await screen.findByText("scan.pdf: No text extracted; scanned PDFs require OCR, which is unsupported")).toBeInTheDocument();
+    expect(screen.queryByText(/Reading scan.pdf/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Drop files here for Acme · Dashboards/)).toBeInTheDocument();
+  });
+
+  it("shows a loading state until the overview arrives", async () => {
+    vi.mocked(revenueApi.overview).mockReturnValue(new Promise(() => undefined));
+    render(<SourcesPage />);
+    expect(screen.getByRole("status")).toHaveTextContent("Loading…");
   });
 });

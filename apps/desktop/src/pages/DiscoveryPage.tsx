@@ -1,4 +1,4 @@
-import { FormEvent, KeyboardEvent, useState } from "react";
+import { FormEvent, KeyboardEvent, useRef, useState } from "react";
 import { ArrowLeft, BadgeDollarSign, CalendarClock, Check, ClipboardList, FilePenLine, LoaderCircle, MessageSquare, Pause, Play, Plus, ReceiptText, SkipForward, Trash2 } from "lucide-react";
 import { EmptyState, errorMessage, PageHeader, ResourceState } from "../components/ui";
 import { MarkdownMessage } from "../components/MarkdownMessage";
@@ -47,6 +47,9 @@ export function DiscoveryPage({ threadContexts }: { threadContexts: (dashboard: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Set when the delete confirm is cancelled, so focus returns to the Delete button.
+  const refocusDelete = useRef(false);
+  const cancelDelete = () => { refocusDelete.current = true; setConfirmDelete(false); };
   const [editing, setEditing] = useState<WorkflowDocument>();
   const contexts = dashboard.data ? threadContexts(dashboard.data) : [];
   const session = sessions.data?.find((item) => item.id === selected);
@@ -147,9 +150,9 @@ export function DiscoveryPage({ threadContexts }: { threadContexts: (dashboard: 
         <header className="interview-heading">
           <button type="button" className="link-button" onClick={close}><ArrowLeft size={14} /> All interviews</button>
           <div><h2>{session.workflow.name || "Your interview"}</h2><span className={`interview-status ${session.status}`}>{STATUS_LABEL[session.status]}</span></div>
-          <div className="discovery-actions">
+          <div className="discovery-actions" onKeyDown={(event) => { if (confirmDelete && event.key === "Escape") cancelDelete(); }}>
             <button className="ghost-button" disabled={busy} onClick={() => setEditing(session.workflow)}>Review & edit</button>
-            {confirmDelete ? <><span className="field-hint">Delete the interview and what it learned?</span><button className="danger-button" disabled={busy} onClick={() => void deleteSession()}>Delete interview</button><button className="ghost-button" disabled={busy} onClick={() => setConfirmDelete(false)}>Keep interview</button></> : <button className="ghost-button" disabled={busy} onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> Delete</button>}
+            {confirmDelete ? <><span className="field-hint">Delete the interview and what it learned?</span><button className="danger-button" disabled={busy} onClick={() => void deleteSession()}>Delete interview</button><button className="ghost-button" autoFocus disabled={busy} onClick={cancelDelete}>Keep interview</button></> : <button className="ghost-button" ref={(node) => { if (node && refocusDelete.current) { refocusDelete.current = false; node.focus(); } }} disabled={busy} onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> Delete</button>}
           </div>
         </header>
         <div className="interview-layout">

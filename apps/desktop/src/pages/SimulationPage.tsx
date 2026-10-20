@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowRight, Check, ClipboardList, FileText, Hash, LoaderCircle, Mail, MonitorSmartphone, Receipt, RotateCcw } from "lucide-react";
 import { EmptyState, errorMessage, PageHeader, Segmented } from "../components/ui";
 import { useResource } from "../hooks/useResource";
@@ -46,6 +46,9 @@ export function SimulationPage() {
   const [changes, setChanges] = useState<{ title: string; lines: string[] }>();
   const [tab, setTab] = useState<Tab>("inbox");
   const [switching, setSwitching] = useState<string>();
+  // The business whose switch confirm was cancelled, so focus returns to its Choose button.
+  const refocusChoose = useRef<string>(undefined);
+  const cancelSwitch = () => { refocusChoose.current = switching; setSwitching(undefined); };
   const data = resource.data;
   const businesses = catalog.data?.businesses ?? [];
   const business = businesses.find((item) => item.id === catalog.data?.active);
@@ -105,6 +108,7 @@ export function SimulationPage() {
     <section className="simulation-businesses" aria-label="Simulated businesses">
       <h2>{business ? "Business" : "1. Choose a business"}</h2>
       <p className="field-hint">Each one is a small service business that sells project work and could lose money the way Knov looks for: unbilled extras, late promises, and milestones nobody invoiced.</p>
+      {catalog.loading && !catalog.data && <p role="status">Loading…</p>}
       <div className="business-grid">{businesses.map((item) => {
         const active = item.id === business?.id;
         const confirm = switching === item.id;
@@ -113,8 +117,8 @@ export function SimulationPage() {
           <small>{item.industry} · {item.location}</small>
           <small>{item.team} · {item.clientCount} clients · {item.currency}</small>
           {active ? <span className="step-state">Loaded</span>
-            : confirm ? <div className="business-confirm"><small>Switching clears {business?.name}'s sandbox findings, drafts, and interview.</small><button className="primary-button" disabled={Boolean(busy)} onClick={() => choose(item.id)}>Switch</button><button className="ghost-button" disabled={Boolean(busy)} onClick={() => setSwitching(undefined)}>Keep</button></div>
-            : <button className="ghost-button" disabled={Boolean(busy)} onClick={() => (hasData ? setSwitching(item.id) : choose(item.id))}>{busy === "select" ? <LoaderCircle size={14} className="spin" /> : null}Choose</button>}
+            : confirm ? <div className="business-confirm" onKeyDown={(event) => { if (event.key === "Escape") cancelSwitch(); }}><small>Switching clears {business?.name}'s sandbox findings, drafts, and interview.</small><button className="primary-button" disabled={Boolean(busy)} onClick={() => choose(item.id)}>Switch</button><button className="ghost-button" autoFocus disabled={Boolean(busy)} onClick={cancelSwitch}>Keep</button></div>
+            : <button className="ghost-button" ref={(node) => { if (node && refocusChoose.current === item.id) { refocusChoose.current = undefined; node.focus(); } }} disabled={Boolean(busy)} onClick={() => (hasData ? setSwitching(item.id) : choose(item.id))}>{busy === "select" ? <LoaderCircle size={14} className="spin" /> : null}Choose</button>}
         </article>;
       })}</div>
     </section>

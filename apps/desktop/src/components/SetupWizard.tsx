@@ -164,6 +164,7 @@ function PermissionStep() {
   const [probe, setProbe] = useState<PermissionProbe>();
   const [checking, setChecking] = useState(false);
   const [watching, setWatching] = useState(false);
+  const [openError, setOpenError] = useState("");
 
   const check = async () => {
     setChecking(true);
@@ -184,6 +185,17 @@ function PermissionStep() {
     return () => window.clearInterval(interval);
   }, [watching, probe?.windowTitles]);
 
+  const openAccessibility = async () => {
+    setOpenError("");
+    try {
+      await api.requestAccessibility();
+    } catch (cause) {
+      setOpenError(`Couldn’t open System Settings: ${errorMessage(cause)}. Open Privacy & Security → Accessibility yourself and turn on Knov.`);
+    }
+    setWatching(true);
+    void check();
+  };
+
   return (
     <div className="setup-permissions">
       <p className="status-detail">macOS asks twice: once to let Knov ask <strong>System Events</strong> which app is in front, and once for <strong>Accessibility</strong> so it can read window titles.</p>
@@ -198,9 +210,10 @@ function PermissionStep() {
           label="Window titles"
           detail="Recommended. Turn on Knov under Privacy & Security → Accessibility."
           state={probe ? probe.windowTitles : undefined}
-          action={<button className="ghost-button" onClick={() => { void api.requestAccessibility(); setWatching(true); void check(); }}>Open settings</button>}
+          action={<button className="ghost-button" onClick={() => { void openAccessibility(); }}>Open settings</button>}
         />
       </div>
+      {openError && <p className="error-message" role="alert">{openError}</p>}
       {probe?.message && !probe.foregroundApps && <p className="status-detail">{probe.message}. If you clicked “Don’t Allow”, enable Knov under System Settings → Privacy & Security → Automation.</p>}
     </div>
   );

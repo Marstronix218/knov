@@ -1,5 +1,5 @@
 import { Check, LoaderCircle, Pencil, Play, Radar, RefreshCw, Trash2, Workflow as WorkflowIcon } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { CategoryIcon, WorkflowChain } from "../components/agent/WorkflowChain";
 import { RunReview } from "../components/agent/RunReview";
 import { EmptyState, errorMessage, Modal, PageHeader, ResourceState, Segmented, Toggle } from "../components/ui";
@@ -300,7 +300,7 @@ function WorkflowCard({
             {!workflow.active && <span className="status-chip dismissed">Not seen recently</span>}
           </div>
           {renaming ? (
-            <form className="inline-rename" onSubmit={submitTitle}>
+            <form className="inline-rename" onSubmit={submitTitle} onKeyDown={(event) => { if (event.key === "Escape") { setTitle(workflow.title); setRenaming(false); } }}>
               <input aria-label="Workflow name" value={title} maxLength={80} autoFocus onChange={(event) => setTitle(event.target.value)} />
               <button className="primary-button" disabled={busy || !title.trim()}>Save</button>
               <button type="button" className="ghost-button" onClick={() => { setTitle(workflow.title); setRenaming(false); }}>Cancel</button>
@@ -406,6 +406,9 @@ function SkillCard({
   onDelete: () => void;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Set when the delete confirm is cancelled, so focus returns to the Delete button.
+  const refocusDelete = useRef(false);
+  const cancelDelete = () => { refocusDelete.current = true; setConfirmDelete(false); };
   const { stats } = skill;
   return (
     <article className={`skill-card${skill.enabled ? "" : " off"}`} aria-label={skill.name}>
@@ -433,13 +436,13 @@ function SkillCard({
         <button type="button" className="primary-button" disabled={busy} onClick={onRun}>{busy ? <LoaderCircle size={15} className="spin" /> : <Play size={15} />} Run now</button>
         <button type="button" className="ghost-button" onClick={onEdit}><Pencil size={14} /> Edit</button>
         {confirmDelete ? (
-          <span className="confirm-inline">
+          <span className="confirm-inline" onKeyDown={(event) => { if (event.key === "Escape") cancelDelete(); }}>
             Delete this skill and its permissions?
             <button type="button" className="danger-button" disabled={busy} onClick={onDelete}>Delete</button>
-            <button type="button" className="ghost-button" onClick={() => setConfirmDelete(false)}>Keep</button>
+            <button type="button" className="ghost-button" autoFocus onClick={cancelDelete}>Keep</button>
           </span>
         ) : (
-          <button type="button" className="ghost-button" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> Delete</button>
+          <button type="button" className="ghost-button" ref={(node) => { if (node && refocusDelete.current) { refocusDelete.current = false; node.focus(); } }} onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> Delete</button>
         )}
       </footer>
     </article>
@@ -467,6 +470,9 @@ function SkillEditor({
   const [includeBrief, setIncludeBrief] = useState(skill.steps.some((step) => step.id === "brief" && step.enabled));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const snapshot = JSON.stringify({ name, triggerKind, weekday, hour, onException, enabled, steps, includeBrief });
+  const [initial] = useState(snapshot);
+  const dirty = snapshot !== initial;
 
   const patchStep = (id: string, patch: Partial<SkillStepUpdate>) =>
     setSteps((current) => current.map((step) => step.id === id ? { ...step, ...patch } : step));
@@ -495,7 +501,7 @@ function SkillEditor({
   };
 
   return (
-    <Modal title={`Edit skill: ${skill.name}`} onClose={onClose} wide>
+    <Modal title={`Edit skill: ${skill.name}`} onClose={onClose} wide dirty={dirty}>
       <form className="stack-form skill-editor" onSubmit={(event) => void submit(event)}>
         <label>Name<input value={name} maxLength={80} required onChange={(event) => setName(event.target.value)} /></label>
         <fieldset>

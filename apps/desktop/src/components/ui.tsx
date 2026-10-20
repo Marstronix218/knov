@@ -1,5 +1,5 @@
 import { Brain, ChevronRight, LoaderCircle, X } from "lucide-react";
-import { ReactNode, useEffect, useRef } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import type { RangeKey } from "../types";
 
 export function PageHeader({
@@ -80,26 +80,75 @@ export function RangePicker({ value, onChange }: { value: RangeKey; onChange: (r
 
 const FOCUSABLE = "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [tabindex]:not([tabindex='-1'])";
 
+/**
+ * Open overlays (modals and the command menu). Only the most recently opened
+ * one reacts to Escape and traps Tab, so closing a stacked layer never closes
+ * the one underneath. Order is assigned at first render, which runs parent
+ * before child and earlier before later, unlike effects.
+ */
+type Layer = { kind: "modal" | "palette"; order: number };
+const layers: Layer[] = [];
+let layerOrder = 0;
+
+export function useOverlayLayer(kind: Layer["kind"]): () => boolean {
+  const layer = useRef<Layer>(undefined);
+  if (!layer.current) layer.current = { kind, order: ++layerOrder };
+  useEffect(() => {
+    const entry = layer.current!;
+    layers.push(entry);
+    return () => {
+      const index = layers.indexOf(entry);
+      if (index >= 0) layers.splice(index, 1);
+    };
+  }, []);
+  return () => layers.every((other) => other.order <= layer.current!.order);
+}
+
+export function isModalOpen(): boolean {
+  return layers.some((layer) => layer.kind === "modal");
+}
+
+export function isOverlayOpen(): boolean {
+  return layers.length > 0;
+}
+
 export function Modal({
   title,
   onClose,
   children,
   wide = false,
+  dirty = false,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
+  /** When true, Escape, the backdrop, and the close button ask before discarding changes. */
+  dirty?: boolean;
 }) {
   const dialog = useRef<HTMLElement>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const [confirming, setConfirming] = useState(false);
+  const isTop = useOverlayLayer("modal");
+  const requestClose = () => {
+    if (dirty) setConfirming(true);
+    else onClose();
+  };
+  // The focused Keep editing button unmounts with the prompt, so hand focus back to the dialog.
+  const keepEditing = () => {
+    closeButton.current?.focus();
+    setConfirming(false);
+  };
+  const latest = useRef({ requestClose, keepEditing, confirming, isTop });
+  latest.current = { requestClose, keepEditing, confirming, isTop };
 
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
     const handleKey = (event: KeyboardEvent) => {
+      if (!latest.current.isTop()) return;
       if (event.key === "Escape") {
-        onCloseRef.current();
+        if (latest.current.confirming) latest.current.keepEditing();
+        else latest.current.requestClose();
         return;
       }
       if (event.key !== "Tab" || !dialog.current) return;
@@ -123,7 +172,7 @@ export function Modal({
   }, []);
 
   return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <div className="modal-backdrop" role="presentation" onMouseDown={requestClose}>
       <section
         ref={dialog}
         className={`modal${wide ? " wide" : ""}`}
@@ -132,7 +181,14 @@ export function Modal({
         aria-label={title}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="modal-header"><h2>{title}</h2><button autoFocus aria-label="Close dialog" onClick={onClose}><X size={18} /></button></div>
+        <div className="modal-header"><h2>{title}</h2><button ref={closeButton} autoFocus aria-label="Close dialog" onClick={requestClose}><X size={18} /></button></div>
+        {confirming && (
+          <div className="confirm-inline modal-discard" role="alert">
+            Discard changes?
+            <button type="button" className="danger-button" onClick={onClose}>Discard</button>
+            <button type="button" className="ghost-button" autoFocus onClick={keepEditing}>Keep editing</button>
+          </div>
+        )}
         {children}
       </section>
     </div>

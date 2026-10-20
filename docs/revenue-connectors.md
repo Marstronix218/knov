@@ -40,6 +40,6 @@ User-selected `.txt`, `.md`, `.markdown`, `.docx`, `.doc`, `.rtf`, `.odt` and te
 - `revenue_gmail_oauth({clientId, clientSecret?:string, scope, authorized:true})` → status after browser consent, with a 180-second consent timeout.
 - `revenue_connector_sync({provider, projectId})` → `{imported, truncated}`.
 - `revenue_connector_disconnect({provider, revoke})` → void (or explicit remote-revocation failure after local disconnection).
-- `revenue_extract_document({path, authorized:true})` → `{title, text}`. Pass reviewed text into `revenue_import_agreement`.
+- `revenue_extract_upload({fileName, dataBase64})` → `{title, text}`. Sources calls this for each chosen file and shows the extracted text in an editable preview for review before import; only the reviewed text is passed to `revenue_import_agreement`. Nothing is stored until the import. `revenue_extract_document({path, authorized:true})` is the path-based equivalent for callers outside the webview.
 
 Focused offline tests cover explicit authorization, empty/oversized scope, selected channel IDs, rejection of write permissions and direct messages, literal prompt-injection text, and document validation. Live authorization, remote revocation and actual Keychain behavior require manual verification on an authorized macOS account. Core revenue tests cover retained evidence deletion and retention separately.

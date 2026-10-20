@@ -103,6 +103,28 @@ export interface CollectionStatus {
   accessibilityGranted: boolean;
   dataPath?: string;
   degradedReasons: string[];
+  /** The Chrome companion reported within the last two minutes. */
+  extensionConnected?: boolean;
+  /** Unix seconds of the companion's last report, if it ever reported. */
+  extensionLastSeenAt?: number | null;
+}
+
+/** Returned by `get_pairing_info`. */
+/** Result of `export_all_data`: a JSON file written to Downloads. */
+export interface DataExport {
+  path: string;
+  bytes: number;
+  /** Exported record count per top-level key, e.g. `activityEvents`. */
+  counts: Record<string, number>;
+}
+
+export interface PairingInfo {
+  nativeHost: string;
+  pairingToken: string;
+  localhostEndpoint: string;
+  protocolVersion: number;
+  /** False when this build was compiled without the `chrome-extension` bridge. */
+  bridgeEnabled: boolean;
 }
 
 export interface SettingsData {
@@ -121,6 +143,10 @@ export interface SettingsData {
   behavioralGuidanceEnabled: boolean;
   predictionExperimentEnabled: boolean;
   predictionDisplayThreshold: number;
+  /** Minimum minutes between automatic prediction sets (10–120). */
+  predictionCooldownMinutes?: number;
+  /** Seconds between foreground-activity samples (2–300). */
+  samplingIntervalSeconds?: number;
   agentPaused?: boolean;
   agentMaxActionsPerHour?: number;
   launchAtLogin: boolean;

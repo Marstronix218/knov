@@ -193,7 +193,7 @@ pub fn run() {
             revenue::simulation::revenue_simulation_catalog,
             revenue::simulation::revenue_simulation_select,
             revenue::simulation::revenue_simulation_interview,
-            revenue::revenue_import_upload,
+            revenue::revenue_extract_upload,
             revenue::revenue_create_project,
             revenue::revenue_import_agreement,
             revenue::revenue_update_agreement,
@@ -286,7 +286,9 @@ pub fn run() {
             commands::chat,
             commands::get_pairing_info,
             commands::install_native_host,
-            commands::delete_all_data
+            commands::delete_all_data,
+            commands::export_all_data,
+            commands::reveal_in_finder
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

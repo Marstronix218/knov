@@ -13,12 +13,14 @@ import type {
   AutonomyOverview,
   BootstrapStatus,
   BrowserProfile,
+  DataExport,
   ChatMode,
   ChatMessage,
   ChatRunResult,
   DashboardData,
   GrantRequest,
   LocalModelDetection,
+  PairingInfo,
   PermissionProbe,
   TesterSummary,
   ProfileData,
@@ -249,6 +251,25 @@ export const api = {
       },
     ),
   deleteAllData: () => call<void>("delete_all_data", undefined, undefined),
+  /** Writes a JSON export of local data to Downloads; secrets are never included. */
+  exportAllData: async () => {
+    if (!isTauri()) throw new Error("Exporting your data requires the desktop app.");
+    return invoke<DataExport>("export_all_data");
+  },
+  /** Selects a file in Finder; the desktop app accepts only files inside Downloads. */
+  revealInFinder: async (path: string) => {
+    if (!isTauri()) throw new Error("Showing files in Finder requires the desktop app.");
+    await invoke<void>("reveal_in_finder", { path });
+  },
+  getPairingInfo: async () => {
+    if (!isTauri()) throw new Error("Chrome companion pairing requires the desktop app.");
+    return invoke<PairingInfo>("get_pairing_info");
+  },
+  /** Writes the Chrome Native Messaging manifest; resolves with its path. */
+  installNativeHost: async (extensionId: string) => {
+    if (!isTauri()) throw new Error("Registering the native host requires the desktop app.");
+    return invoke<string>("install_native_host", { extensionId });
+  },
   startLocalBootstrap: () =>
     call<BootstrapStatus>("start_local_bootstrap", undefined, {
       phase: "complete",

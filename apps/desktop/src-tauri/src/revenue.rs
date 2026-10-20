@@ -61,6 +61,23 @@ fn list(conn: &Connection, kind: &str, demo: bool) -> AppResult<Vec<Value>> {
     let rows = s.query_map(params![kind, demo], |r| r.get::<_, String>(0))?;
     rows.map(|r| Ok(serde_json::from_str(&r?)?)).collect()
 }
+/// The user's live revenue records by export key; sandbox (demo) data is left out.
+pub(crate) fn export_records(conn: &Connection) -> AppResult<Vec<(&'static str, Vec<Value>)>> {
+    [
+        ("revenueClients", "client"),
+        ("revenueProjects", "project"),
+        ("revenueAgreements", "agreement"),
+        ("revenueEvidence", "evidence"),
+        ("revenueCommitments", "commitment"),
+        ("revenueFindings", "opportunity"),
+        ("revenueFeedback", "feedback"),
+        ("revenueDrafts", "draft"),
+        ("revenueOutcomes", "outcome"),
+    ]
+    .into_iter()
+    .map(|(key, kind)| Ok((key, list(conn, kind, false)?)))
+    .collect()
+}
 pub(crate) fn validate_live_project(conn: &Connection, project_id: &str) -> AppResult<()> {
     let p = get(conn, "project", project_id)?;
     if p["demo"] == true {
@@ -950,16 +967,11 @@ pub fn revenue_import_file(
     let text = document.text;
     revenue_import_agreement(state, project_id, title, text)
 }
-/// Imports a document chosen in the file picker or dropped on the window. The
-/// webview cannot see file paths, so it sends the bytes; they are written to a
-/// private temporary file only long enough to extract the text locally.
-#[tauri::command]
-pub fn revenue_import_upload(
-    state: State<'_, AppState>,
-    project_id: String,
-    file_name: String,
-    data_base64: String,
-) -> AppResult<Value> {
+/// Extracts the text of a document chosen in the file picker or dropped on the
+/// window. The webview cannot see file paths, so it sends the bytes; they are
+/// written to a private temporary file only long enough to extract the text
+/// locally. Nothing is stored, so the person can review the text first.
+fn extract_upload(file_name: &str, data_base64: &str) -> AppResult<connectors::ExtractedDocument> {
     use base64::Engine;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data_base64.as_bytes())
@@ -967,7 +979,7 @@ pub fn revenue_import_upload(
     if bytes.is_empty() || bytes.len() > 2_000_000 {
         return Err(invalid("Choose a document no larger than 2 MB."));
     }
-    let extension = std::path::Path::new(&file_name)
+    let extension = std::path::Path::new(file_name)
         .extension()
         .and_then(|value| value.to_str())
         .unwrap_or_default()
@@ -979,8 +991,24 @@ pub fn revenue_import_upload(
         .map_err(AppError::from)
         .and_then(|_| connectors::extract_document(&path));
     let _ = std::fs::remove_dir_all(&directory);
-    let title: String = file_name.chars().take(160).collect();
-    revenue_import_agreement(state, project_id, title, extracted?.text)
+    // `import_agreement` limits the title to 160 bytes, so cut on a char boundary.
+    let mut title_end = file_name.len().min(160);
+    while !file_name.is_char_boundary(title_end) {
+        title_end -= 1;
+    }
+    Ok(connectors::ExtractedDocument {
+        title: file_name[..title_end].to_string(),
+        text: extracted?.text,
+    })
+}
+/// Returns the extracted text of an uploaded document for review before
+/// `revenue_import_agreement` stores it.
+#[tauri::command]
+pub fn revenue_extract_upload(
+    file_name: String,
+    data_base64: String,
+) -> AppResult<connectors::ExtractedDocument> {
+    extract_upload(&file_name, &data_base64)
 }
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Keep the IPC field contract explicit.
@@ -1189,6 +1217,30 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let database = Database::open(tmp.path().join("test.sqlite")).unwrap();
         (tmp, database)
+    }
+    #[test]
+    fn extracts_uploaded_text_for_review_without_storing_it() {
+        use base64::Engine;
+        let data = base64::engine::general_purpose::STANDARD.encode("Scope: two dashboards.");
+        let document = extract_upload("sow.txt", &data).unwrap();
+        assert_eq!(document.title, "sow.txt");
+        assert_eq!(document.text, "Scope: two dashboards.");
+        assert!(extract_upload("sow.txt", "not base64!").is_err());
+        assert!(extract_upload("sow.exe", &data).is_err());
+    }
+    #[test]
+    fn long_multibyte_upload_titles_fit_the_import_limit() {
+        use base64::Engine;
+        let data = base64::engine::general_purpose::STANDARD.encode("Scope: two dashboards.");
+        // 100 three-byte chars: under 160 chars but 300 bytes.
+        let file_name = format!("{}.txt", "契".repeat(100));
+        let document = extract_upload(&file_name, &data).unwrap();
+        assert!(document.title.len() <= 160);
+        assert_eq!(document.title, "契".repeat(53));
+        let (_tmp, db) = db();
+        let c = db.conn();
+        let p = project(&c, "Client", "Project", "", vec![], false).unwrap();
+        import_agreement(&c, field(&p, "id"), &document.title, &document.text).unwrap();
     }
     #[test]
     fn deterministic_demo_dedupe_provenance_and_negative_approval() {

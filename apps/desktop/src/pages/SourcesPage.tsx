@@ -6,7 +6,7 @@ import { useResource } from "../hooks/useResource";
 import { isDesktopRuntime } from "../lib/api";
 import { fileToBase64, revenueApi } from "../lib/revenueApi";
 import { setSimulationMode, useSimulationMode } from "../state/simulationMode";
-import type { RevenueOverview } from "../revenueTypes";
+import type { ExtractedDocument, RevenueOverview } from "../revenueTypes";
 import "./home.css";
 import "./revenue.css";
 
@@ -65,6 +65,7 @@ export function SourcesPage() {
       {error && <p className="notice error" role="alert">{error}</p>}
       {message && <p className="notice ok" role="status">{message}</p>}
       {resource.error && <p className="notice error" role="alert">{resource.error} <button onClick={() => void resource.reload()}>Retry</button></p>}
+      {resource.loading && !data && <p role="status">Loading…</p>}
       {data && <>
         <section className="revenue-panel" aria-label="Client">
           <h2>Which client is this for?</h2>
@@ -116,30 +117,65 @@ export function SourcesPage() {
   </div>;
 }
 
+/** The revenue_import_agreement limits, which count UTF-8 bytes. */
+const MAX_AGREEMENT_BYTES = 64_000;
+const MAX_TITLE_BYTES = 160;
+const byteLength = (text: string) => new TextEncoder().encode(text).length;
+
 function DocumentUpload({ projectId, projectLabel, busy, run, onDone }: { projectId: string; projectLabel: string; busy: boolean; run: Run; onDone: (message: string) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState("");
+  const [uploadError, setUploadError] = useState("");
+  // Extracted documents waiting for review, first one shown; nothing is stored until imported.
+  const [reviews, setReviews] = useState<ExtractedDocument[]>([]);
+  const [importedCount, setImportedCount] = useState(0);
+  const current = reviews[0];
+  const tooLong = current ? byteLength(current.text) > MAX_AGREEMENT_BYTES : false;
+  const titleTooLong = current ? byteLength(current.title.trim()) > MAX_TITLE_BYTES : false;
 
   const upload = async (files: File[]) => {
     if (!projectId || !files.length) return;
-    let imported = 0;
+    setUploadError("");
+    const extracted: ExtractedDocument[] = [];
     for (const file of files) {
       setUploading(file.name);
-      const data = await fileToBase64(file);
-      if (await run(() => revenueApi.importUpload(projectId, file.name, data))) imported += 1;
-      else break;
+      try {
+        const data = await fileToBase64(file);
+        extracted.push(await revenueApi.extractUpload(file.name, data));
+      } catch (cause) {
+        setUploadError(`${file.name}: ${errorMessage(cause)}`);
+        break;
+      }
     }
     setUploading("");
-    if (imported) {
+    if (extracted.length) setReviews((queue) => [...queue, ...extracted]);
+  };
+
+  const advance = async (imported: boolean) => {
+    const count = importedCount + (imported ? 1 : 0);
+    // Functional update: files dropped while this one was importing stay queued.
+    setReviews((queue) => queue.slice(1));
+    if (reviews.length > 1) { setImportedCount(count); return; }
+    setImportedCount(0);
+    if (count) {
       await run(() => revenueApi.analyze(false));
-      onDone(`Imported ${imported} ${imported === 1 ? "document" : "documents"} for ${projectLabel}. Home shows anything Knov found.`);
+      onDone(`Imported ${count} ${count === 1 ? "document" : "documents"} for ${projectLabel}. Home shows anything Knov found.`);
     }
   };
+
+  const importReviewed = async () => {
+    if (!current || tooLong || titleTooLong || !current.text.trim()) return;
+    if (await run(() => revenueApi.importAgreement(projectId, current.title.trim() || "Imported agreement", current.text))) await advance(true);
+  };
+
+  const editCurrent = (changes: Partial<ExtractedDocument>) => setReviews(([first, ...rest]) => [{ ...first, ...changes }, ...rest]);
 
   const drop = (event: DragEvent) => {
     event.preventDefault();
     setDragging(false);
+    // Same guard as the Choose files button.
+    if (busy || uploading) return;
     void upload([...event.dataTransfer.files]);
   };
 
@@ -150,9 +186,23 @@ function DocumentUpload({ projectId, projectLabel, busy, run, onDone }: { projec
       {uploading ? <LoaderCircle className="spin" size={22} /> : <FileUp size={22} />}
       <strong>{uploading ? `Reading ${uploading}…` : projectId ? `Drop files here for ${projectLabel}` : "Add a client first"}</strong>
       <small>PDF, Word, RTF, or text, up to 2 MB each. Scanned PDFs without a text layer can't be read yet.</small>
-      <button type="button" className="primary-button" disabled={busy || !projectId} onClick={() => input.current?.click()}>Choose files</button>
+      <button type="button" className="primary-button" disabled={busy || !projectId || Boolean(uploading)} onClick={() => input.current?.click()}>Choose files</button>
       <input ref={input} type="file" multiple accept={ACCEPTED} hidden aria-label="Upload documents" onChange={(event) => { void upload([...(event.target.files ?? [])]); event.target.value = ""; }} />
     </div>
+    {uploadError && <p className="notice error" role="alert">{uploadError}</p>}
+    {current && <section className="stack-form" aria-label="Review extracted text">
+      <h3>Review the extracted text{reviews.length > 1 ? ` (1 of ${reviews.length})` : ""}</h3>
+      <p className="field-hint">Nothing is saved yet. Fix anything the extractor got wrong, then import it for {projectLabel}.</p>
+      <label>Document title<input value={current.title} maxLength={160} onChange={(event) => editCurrent({ title: event.target.value })} /></label>
+      <label>Extracted text<textarea value={current.text} rows={12} onChange={(event) => editCurrent({ text: event.target.value })} /></label>
+      <small aria-live="polite">{current.text.length.toLocaleString()} characters</small>
+      {titleTooLong && <p className="notice error" role="alert">This title is longer than the 160-byte import limit. Shorten it; characters outside basic Latin count as more than one byte.</p>}
+      {tooLong && <p className="notice error" role="alert">This text is longer than the 64,000-byte import limit. Trim it to the parts that describe scope, milestones, and payment terms.</p>}
+      <div className="revenue-actions">
+        <button type="button" className="primary-button" disabled={busy || tooLong || titleTooLong || !current.text.trim() || !projectId} onClick={() => void importReviewed()}>Import this text</button>
+        <button type="button" className="ghost-button" disabled={busy} onClick={() => void advance(false)}>Cancel</button>
+      </div>
+    </section>}
     <details><summary>Or paste the text instead</summary>
       <form className="stack-form" onSubmit={(event) => { event.preventDefault(); const form = event.currentTarget; const fields = new FormData(form); void run(() => revenueApi.importAgreement(projectId, String(fields.get("title")), String(fields.get("text")))).then((result) => { if (result) { form.reset(); onDone("Document saved."); } }); }}>
         <label>Document title<input name="title" required maxLength={160} /></label>

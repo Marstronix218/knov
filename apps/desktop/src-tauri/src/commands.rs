@@ -978,6 +978,7 @@ pub fn save_settings(
     {
         current.prediction_display_threshold = threshold.clamp(0.0, 1.0);
     }
+    apply_cadence_settings(&mut current, &settings);
     if let Some(budget) = settings
         .get("agentMaxActionsPerHour")
         .and_then(Value::as_i64)
@@ -1020,6 +1021,20 @@ pub fn save_settings(
         .providers
         .configure_local(local_model_config(&current));
     settings_to_ui(&state)
+}
+
+/// Applies the collector sampling interval and prediction cooldown, clamped to
+/// the ranges the collector and scheduler actually honor.
+fn apply_cadence_settings(current: &mut Settings, input: &Value) {
+    // Accept any JSON number (a caller may send 12.5) and round it, so a value
+    // reported as saved is always persisted.
+    let whole = |key: &str| input.get(key).and_then(Value::as_f64).map(f64::round);
+    if let Some(seconds) = whole("samplingIntervalSeconds") {
+        current.sampling_interval_seconds = seconds.clamp(2.0, 300.0) as u64;
+    }
+    if let Some(minutes) = whole("predictionCooldownMinutes") {
+        current.prediction_cooldown_minutes = minutes.clamp(10.0, 120.0) as i64;
+    }
 }
 
 pub fn local_model_config(settings: &Settings) -> LocalModelConfig {
@@ -1617,7 +1632,9 @@ pub fn get_pairing_info(state: State<'_, AppState>) -> AppResult<Value> {
         "nativeHost":"com.knov.companion",
         "pairingToken":ensure_pairing_token(&state.db)?,
         "localhostEndpoint":"http://127.0.0.1:48321",
-        "protocolVersion":1
+        "protocolVersion":1,
+        // The localhost and native-socket bridge only runs in builds with this feature.
+        "bridgeEnabled":cfg!(feature = "chrome-extension")
     }))
 }
 
@@ -1688,6 +1705,184 @@ pub fn delete_all_data(state: State<'_, AppState>) -> AppResult<()> {
         }
     }
     Ok(())
+}
+
+/// Version of the export file layout; bump when keys change meaning.
+const EXPORT_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataExport {
+    path: String,
+    bytes: u64,
+    counts: BTreeMap<String, usize>,
+}
+
+/// Writes the user's local data to a JSON file in Downloads. Provider keys
+/// and connector tokens live in Keychain and are never read; the extension
+/// pairing token and other bookkeeping tables are not exported.
+#[tauri::command]
+pub async fn export_all_data(state: State<'_, AppState>) -> AppResult<DataExport> {
+    let db = state.db.clone();
+    blocking(move || write_data_export(&db, &downloads_dir()?, Local::now())).await
+}
+
+/// Selects an exported file in Finder. Only files inside Downloads are accepted.
+#[tauri::command]
+pub fn reveal_in_finder(path: String) -> AppResult<()> {
+    let target = revealable_path(&downloads_dir()?, &path)?;
+    if Command::new("/usr/bin/open")
+        .arg("-R")
+        .arg(&target)
+        .status()?
+        .success()
+    {
+        Ok(())
+    } else {
+        Err(AppError::InvalidInput(
+            "Finder could not show the file.".into(),
+        ))
+    }
+}
+
+fn downloads_dir() -> AppResult<PathBuf> {
+    dirs::download_dir()
+        .or_else(|| dirs::home_dir().map(|home| home.join("Downloads")))
+        .ok_or_else(|| AppError::InvalidInput("The Downloads folder is unavailable.".into()))
+}
+
+fn revealable_path(downloads: &Path, path: &str) -> AppResult<PathBuf> {
+    let outside =
+        || AppError::InvalidInput("Only files in your Downloads folder can be shown.".into());
+    let downloads = downloads.canonicalize().map_err(|_| outside())?;
+    let target = Path::new(path).canonicalize().map_err(|_| outside())?;
+    if target.starts_with(&downloads) && target.is_file() {
+        Ok(target)
+    } else {
+        Err(outside())
+    }
+}
+
+/// Streams every activity event from SQLite into the export as one array.
+struct ActivityStream<'a> {
+    db: &'a Database,
+    count: std::cell::Cell<usize>,
+}
+
+impl Serialize for ActivityStream<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::{Error, SerializeSeq};
+        let mut sequence = serializer.serialize_seq(None)?;
+        let mut failure = None;
+        self.db
+            .each_activity_event(|event| match sequence.serialize_element(&event) {
+                Ok(()) => {
+                    self.count.set(self.count.get() + 1);
+                    true
+                }
+                Err(error) => {
+                    failure = Some(error);
+                    false
+                }
+            })
+            .map_err(S::Error::custom)?;
+        if let Some(error) = failure {
+            return Err(error);
+        }
+        sequence.end()
+    }
+}
+
+fn write_data_export(
+    db: &Database,
+    directory: &Path,
+    now: chrono::DateTime<Local>,
+) -> AppResult<DataExport> {
+    use serde::ser::{SerializeMap, Serializer as _};
+    use std::io::Write;
+
+    let settings = db.settings()?;
+    let mut sections: Vec<(&str, Vec<Value>)> = vec![
+        ("browserProfiles", db.export_rows("chrome_profiles")?),
+        ("profileVersions", db.export_rows("profile_versions")?),
+        ("profileCorrections", to_values(db.corrections()?)?),
+        ("recommendations", to_values(db.recommendations(true)?)?),
+        (
+            "discoveryInterviews",
+            to_values(crate::discovery::sessions_in_scope(db, false)?)?,
+        ),
+        (
+            "discoveredWorkflows",
+            to_values(crate::discovery::workflows(db)?)?,
+        ),
+        ("agentWorkflows", db.export_rows("workflows")?),
+        ("agentSkills", to_values(db.skills()?)?),
+        ("agentGoalReviews", db.export_rows("goal_reviews")?),
+        ("agentRuns", db.export_rows("agent_runs")?),
+        ("agentActions", db.export_rows("agent_actions")?),
+        ("autonomyGrants", db.export_rows("autonomy_grants")?),
+        ("approvedWorkspaces", to_values(db.approved_workspaces()?)?),
+        ("predictions", db.export_rows("predictions")?),
+    ];
+    sections.extend(crate::revenue::export_records(&db.conn())?);
+
+    fs::create_dir_all(directory)?;
+    let path = directory.join(format!("knov-export-{}.json", now.format("%Y%m%d-%H%M%S")));
+    let partial = path.with_extension("json.partial");
+    let activity = ActivityStream {
+        db,
+        count: std::cell::Cell::new(0),
+    };
+    let written = (|| -> AppResult<()> {
+        let file = fs::File::create(&partial)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        }
+        let mut writer = std::io::BufWriter::new(file);
+        {
+            let mut serializer = serde_json::Serializer::with_formatter(
+                &mut writer,
+                serde_json::ser::PrettyFormatter::new(),
+            );
+            let mut map = serializer.serialize_map(None)?;
+            map.serialize_entry("schemaVersion", &EXPORT_SCHEMA_VERSION)?;
+            map.serialize_entry("appVersion", env!("CARGO_PKG_VERSION"))?;
+            map.serialize_entry("exportedAt", &now.to_rfc3339())?;
+            map.serialize_entry("settings", &settings)?;
+            map.serialize_entry("activityEvents", &activity)?;
+            for (key, values) in &sections {
+                map.serialize_entry(key, values)?;
+            }
+            map.end()?;
+        }
+        writer.flush()?;
+        writer.get_ref().sync_all()?;
+        Ok(())
+    })();
+    if let Err(error) = written.and_then(|()| fs::rename(&partial, &path).map_err(AppError::from)) {
+        let _ = fs::remove_file(&partial);
+        return Err(error);
+    }
+
+    let mut counts = sections
+        .iter()
+        .map(|(key, values)| (key.to_string(), values.len()))
+        .collect::<BTreeMap<_, _>>();
+    counts.insert("activityEvents".into(), activity.count.get());
+    Ok(DataExport {
+        bytes: fs::metadata(&path)?.len(),
+        path: path.to_string_lossy().into_owned(),
+        counts,
+    })
+}
+
+fn to_values<T: Serialize>(items: Vec<T>) -> AppResult<Vec<Value>> {
+    items
+        .into_iter()
+        .map(|item| Ok(serde_json::to_value(item)?))
+        .collect()
 }
 
 pub fn start_scheduler(state: Arc<AppState>) {
@@ -1782,6 +1977,8 @@ fn settings_to_ui(state: &AppState) -> AppResult<Value> {
         "behavioralGuidanceEnabled":settings.behavioral_guidance_enabled,
         "predictionExperimentEnabled":settings.prediction_experiment_enabled,
         "predictionDisplayThreshold":settings.prediction_display_threshold,
+        "predictionCooldownMinutes":settings.prediction_cooldown_minutes,
+        "samplingIntervalSeconds":settings.sampling_interval_seconds,
         "agentPaused":settings.agent_paused,
         "agentMaxActionsPerHour":settings.agent_max_actions_per_hour,
         "launchAtLogin":settings.launch_at_login,
@@ -1792,6 +1989,8 @@ fn settings_to_ui(state: &AppState) -> AppResult<Value> {
             "enabled":status.enabled,
             "accessibilityGranted":status.accessibility_available,
             "dataPath":status.data_path,
+            "extensionConnected":status.extension_connected,
+            "extensionLastSeenAt":status.extension_last_seen_at,
             "degradedReasons":status.accessibility_message.into_iter().collect::<Vec<String>>()
         }
     }))
@@ -2283,6 +2482,39 @@ mod tests {
     }
 
     #[test]
+    fn cadence_settings_round_trip_and_clamp_to_honored_ranges() {
+        let db = Database::in_memory().unwrap();
+        let mut settings = db.settings().unwrap();
+        apply_cadence_settings(
+            &mut settings,
+            &json!({"samplingIntervalSeconds":30,"predictionCooldownMinutes":45}),
+        );
+        db.save_settings(&settings).unwrap();
+        let loaded = db.settings().unwrap();
+        assert_eq!(loaded.sampling_interval_seconds, 30);
+        assert_eq!(loaded.prediction_cooldown_minutes, 45);
+
+        let mut settings = loaded;
+        apply_cadence_settings(
+            &mut settings,
+            &json!({"samplingIntervalSeconds":1,"predictionCooldownMinutes":5000}),
+        );
+        assert_eq!(settings.sampling_interval_seconds, 2);
+        assert_eq!(settings.prediction_cooldown_minutes, 120);
+        apply_cadence_settings(&mut settings, &json!({}));
+        assert_eq!(settings.sampling_interval_seconds, 2);
+
+        apply_cadence_settings(
+            &mut settings,
+            &json!({"samplingIntervalSeconds":12.5,"predictionCooldownMinutes":44.4}),
+        );
+        db.save_settings(&settings).unwrap();
+        let loaded = db.settings().unwrap();
+        assert_eq!(loaded.sampling_interval_seconds, 13);
+        assert_eq!(loaded.prediction_cooldown_minutes, 44);
+    }
+
+    #[test]
     fn scheduled_refresh_waits_for_bootstrap_and_runs_once_per_day() {
         let mut settings = Settings::default();
         assert!(!scheduled_refresh_due(&settings, "2026-07-27"));
@@ -2619,6 +2851,115 @@ mod tests {
         );
         assert!(selected.len() > RECENT_ACTIVITY_LIMIT);
     }
+
+    #[test]
+    fn data_export_includes_user_data_and_never_credentials() {
+        let directory = tempfile::tempdir().unwrap();
+        let db = Database::in_memory().unwrap();
+        db.set_pairing_token("pairing-secret-7f3a").unwrap();
+        // Connector credentials live in Keychain; a stray settings row shaped
+        // like one must still never reach the export.
+        db.set_setting(
+            "revenue_connector_gmail",
+            &json!({"token":"oauth-secret-9c1d","refreshToken":"refresh-secret-2b8e"}),
+        )
+        .unwrap();
+        db.save_settings(&Settings {
+            excluded_domains: vec!["bank.example".into()],
+            ..Settings::default()
+        })
+        .unwrap();
+        let event = ActivityEvent {
+            id: None,
+            occurred_at: 1_800_000_000,
+            ended_at: None,
+            duration_seconds: 60,
+            app_name: "Google Chrome".into(),
+            window_title: Some("Quarterly plan".into()),
+            url: Some("https://docs.example/plan".into()),
+            page_title: Some("Quarterly plan".into()),
+            search_query: None,
+            browser_profile_id: Some("Default".into()),
+            source: ActivitySource::ChromeHistory,
+            is_bootstrap: false,
+        };
+        db.insert_event(&event, "export-fingerprint").unwrap();
+        db.upsert_correction(&UserCorrection {
+            id: "correction-1".into(),
+            subject: "Role".into(),
+            value: "Founder".into(),
+            created_at: 1,
+            updated_at: 1,
+        })
+        .unwrap();
+        db.conn()
+            .execute_batch(
+                "INSERT INTO revenue_records(kind,id,demo,document,updated_at) VALUES
+                 ('agreement','live',0,'{\"id\":\"live\",\"title\":\"Retainer\"}',1),
+                 ('agreement','demo',1,'{\"id\":\"demo\",\"title\":\"Sandbox\"}',1);",
+            )
+            .unwrap();
+
+        let now = Local.with_ymd_and_hms(2026, 10, 20, 9, 5, 7).unwrap();
+        let export = write_data_export(&db, directory.path(), now).unwrap();
+
+        assert_eq!(
+            Path::new(&export.path).file_name().unwrap(),
+            "knov-export-20261020-090507.json"
+        );
+        let raw = fs::read_to_string(&export.path).unwrap();
+        assert_eq!(export.bytes, raw.len() as u64);
+        for secret in [
+            "pairing-secret-7f3a",
+            "oauth-secret-9c1d",
+            "refresh-secret-2b8e",
+        ] {
+            assert!(!raw.contains(secret), "export leaked {secret}");
+        }
+        let parsed: Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(parsed["schemaVersion"], EXPORT_SCHEMA_VERSION);
+        assert_eq!(parsed["appVersion"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(
+            parsed["settings"]["excludedDomains"],
+            json!(["bank.example"])
+        );
+        assert_eq!(parsed["activityEvents"][0]["windowTitle"], "Quarterly plan");
+        assert_eq!(parsed["profileCorrections"][0]["value"], "Founder");
+        assert_eq!(
+            parsed["revenueAgreements"],
+            json!([{"id":"live","title":"Retainer"}])
+        );
+        assert_eq!(export.counts["activityEvents"], 1);
+        assert_eq!(export.counts["profileCorrections"], 1);
+        assert_eq!(export.counts["revenueAgreements"], 1);
+        assert_eq!(export.counts["agentRuns"], 0);
+        for (key, count) in &export.counts {
+            assert_eq!(parsed[key].as_array().map(Vec::len), Some(*count), "{key}");
+        }
+        let leftovers = fs::read_dir(directory.path()).unwrap().count();
+        assert_eq!(leftovers, 1, "the partial file is renamed into place");
+    }
+
+    #[test]
+    fn reveal_accepts_only_files_inside_downloads() {
+        let downloads = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let inside_file = downloads.path().join("knov-export-20261020-090507.json");
+        let outside_file = outside.path().join("notes.txt");
+        fs::write(&inside_file, "{}").unwrap();
+        fs::write(&outside_file, "x").unwrap();
+
+        assert!(revealable_path(downloads.path(), inside_file.to_str().unwrap()).is_ok());
+        assert!(revealable_path(downloads.path(), outside_file.to_str().unwrap()).is_err());
+        // Both temporary folders share a parent, so `..` walks out of Downloads.
+        let escape = downloads
+            .path()
+            .join("..")
+            .join(outside.path().file_name().unwrap())
+            .join("notes.txt");
+        assert!(revealable_path(downloads.path(), escape.to_str().unwrap()).is_err());
+        assert!(revealable_path(downloads.path(), downloads.path().to_str().unwrap()).is_err());
+    }
 }
 
 #[tauri::command]
@@ -2650,11 +2991,12 @@ pub async fn advance_discovery_interview(
     state: State<'_, AppState>,
 ) -> AppResult<crate::discovery::InterviewSession> {
     // Ending locally and scripted sandbox interviews never contact a provider.
-    let provider = if action == "end" || crate::discovery::runs_without_provider(&state.db, &session_id)? {
-        String::new()
-    } else {
-        selected_provider(&state.db)?
-    };
+    let provider =
+        if action == "end" || crate::discovery::runs_without_provider(&state.db, &session_id)? {
+            String::new()
+        } else {
+            selected_provider(&state.db)?
+        };
     crate::discovery::advance(
         &state.db,
         &state.providers,

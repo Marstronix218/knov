@@ -40,3 +40,6 @@ export interface RevenueOverview {
   opportunities: RevenueOpportunity[]; drafts: RevenueDraft[]; outcomes: RevenueOutcome[];
   metrics: { open: number; needsClarification: number; draftsAwaitingReview: number; resolved: number; potentialByCurrency: Record<string, number>; verifiedRecoveredByCurrency: Record<string, number>; reviewed: number; confirmed: number; dismissed: number; draftsApproved: number; actionsRecorded: number; paymentsConfirmed: number };
 }
+
+/** Text extracted from an uploaded document, for review before import. */
+export interface ExtractedDocument { title: string; text: string }

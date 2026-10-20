@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isDesktopRuntime } from "./api";
 import type { InterviewSession } from "../types";
-import type { RevenueOverview, SimulationCatalog } from "../revenueTypes";
+import type { ExtractedDocument, RevenueOverview, SimulationCatalog } from "../revenueTypes";
 async function call(command: string, args?: Record<string, unknown>): Promise<RevenueOverview> {
   if (!isDesktopRuntime()) throw new Error("Revenue Intelligence requires the desktop app. Browser preview does not save, analyze, or synchronize commercial data.");
   return invoke<RevenueOverview>(command, args);
@@ -23,10 +23,13 @@ export const revenueApi = {
     if (!isDesktopRuntime()) throw new Error("The simulated interview requires the desktop app.");
     return invoke<InterviewSession>("revenue_simulation_interview");
   },
-  importUpload: (projectId: string, fileName: string, dataBase64: string) => call("revenue_import_upload", { projectId, fileName, dataBase64 }),
+  /** Extracts an uploaded document's text without storing it, so it can be reviewed before `importAgreement`. */
+  extractUpload: async (fileName: string, dataBase64: string): Promise<ExtractedDocument> => {
+    if (!isDesktopRuntime()) throw new Error("Reading documents requires the desktop app.");
+    return invoke<ExtractedDocument>("revenue_extract_upload", { fileName, dataBase64 });
+  },
   createProject: (clientName: string, name: string, description: string, threadIds: string[]) => call("revenue_create_project", { clientName, name, description, threadIds }),
   importAgreement: (projectId: string, title: string, text: string) => call("revenue_import_agreement", { projectId, title, text }),
-  importFile: (projectId: string, title: string, path: string) => call("revenue_import_file", { projectId, title, path }),
   analyze: (demo: boolean) => call("revenue_analyze", { demo }),
   review: (opportunityId: string, decision: "confirm" | "dismiss" | "correct" | "clarify", answer: string | null = null) => call("revenue_review", { opportunityId, decision, answer }),
   prepare: (opportunityId: string) => call("revenue_prepare_action", { opportunityId }),
@@ -37,7 +40,7 @@ export const revenueApi = {
 
 export type SimulationStep = "contracts" | "gmail" | "slack" | "work" | "billing";
 
-/** Reads a picked or dropped file for `importUpload`; the webview never sees file paths. */
+/** Reads a picked or dropped file for `extractUpload`; the webview never sees file paths. */
 export function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

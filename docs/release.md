@@ -26,8 +26,17 @@ How to publish a downloadable Knov build for early-access testers.
 
 ## Each release
 
-1. Bump the version in `apps/desktop/src-tauri/tauri.conf.json`,
-   `apps/desktop/src-tauri/Cargo.toml`, and both `package.json` files.
+1. Bump the version in all of these files:
+   - `package.json` (repository root)
+   - `apps/desktop/package.json`
+   - `apps/desktop/src-tauri/Cargo.toml`
+   - `apps/desktop/src-tauri/tauri.conf.json`
+
+   The Chrome extension is versioned independently (`version` in
+   `apps/extension/package.json` and `apps/extension/public/manifest.json`);
+   change it only when the extension changes.
+
+   Add the release's entry to `CHANGELOG.md`, and use it for the release notes.
 2. Commit, then tag and push:
 
    ```sh
@@ -36,8 +45,10 @@ How to publish a downloadable Knov build for early-access testers.
    ```
 
 3. The **Release macOS build** workflow runs the tests and builds a universal
-   (Apple Silicon and Intel) DMG. It creates a **draft** release.
-4. Open the draft under *Releases*, check the notes, and click **Publish**.
+   (Apple Silicon and Intel) DMG with a macOS 13 minimum. It creates a **draft**
+   release. Only Apple Silicon on macOS 26 is tested and supported; the Intel
+   slice and older macOS releases may launch but are untested and unsupported.
+4. Open the draft under *Releases*, check the notes against `CHANGELOG.md`, and click **Publish**.
    Share `https://github.com/Marstronix218/knov/releases/latest` together with
    `TESTERS.md`.
 

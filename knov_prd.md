@@ -245,7 +245,7 @@ Requirements are identified as FR-n. Priority is Must (required for MVP), Should
 
 | ID | Requirement | Priority |
 |---|---|---|
-| FR-50 | Build and run the alpha natively on Apple Silicon (`arm64`) Macs running macOS 26; Intel Mac, universal-binary, Windows, and Linux support are out of scope. | Must |
+| FR-50 | The supported alpha target is Apple Silicon (`arm64`) Macs running macOS 26. Release builds are universal with a macOS 13 minimum (`tauri.conf.json`, release workflow), so the app may launch on Intel Macs or older macOS, but those setups are untested and unsupported. Windows and Linux are out of scope. | Must |
 | FR-51 | Support older Apple Silicon macOS releases only when doing so requires no separate compatibility code path, no material additional testing burden, and no delay to the macOS 26 alpha. | Should |
 
 ### 4.9 Retention and deletion
@@ -394,7 +394,7 @@ Because chat turns, relevant profile context, and minimized activity digests are
 | NFR-9 | Setup | Baseline technical-user setup must be documented and reproducible, including Mac permissions, Chrome-profile selection, and in-app API-key validation. Optional extension installation and pairing must be documented separately. |
 | NFR-10 | Baseline operation | The Mac app must provide onboarding, history bootstrap, and foreground app/window collection without the extension; optional live-tab timing must be labeled separately. |
 | NFR-11 | Credential security | Provider credentials must be retrieved from macOS Keychain only when needed and must be redacted from logs, error reports, UI diagnostics, and exported data. |
-| NFR-12 | OS compatibility | macOS 26 is the required and fully tested target. Any older Apple Silicon support is best-effort and must not introduce alternate product behavior or delay the required target. |
+| NFR-12 | OS compatibility | macOS 26 is the required and fully tested target. Any older Apple Silicon support is best-effort and must not introduce alternate product behavior or delay the required target. Note: the universal build's macOS 13 minimum lets the app launch on older macOS or Intel, but that is untested and unsupported. |
 | NFR-13 | Technology footprint | Normal application use must not require Docker, a local Postgres server, a Supabase stack, Python, Node.js, or other separately installed runtimes. Required runtimes must be packaged into the application or compiled into the native bundle. |
 | NFR-14 | Browser compatibility | Chrome local history import is the browser release gate. Extension-based live timing and Safari or Firefox compatibility are optional and must not delay baseline collection, privacy controls, or verification. |
 | NFR-15 | Scheduling | Nightly and catch-up refreshes must be idempotent: interruptions, sleep/wake cycles, and application restarts must not produce duplicate profiles or duplicate recommendation sets for the same run. |

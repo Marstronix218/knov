@@ -6,7 +6,7 @@ This is an early test version. Some things will be rough, and your feedback deci
 
 ## What you need
 
-- A Mac with macOS 13 (Ventura) or later
+- A Mac. Knov is tested on Apple Silicon Macs running macOS 26. The app is built to open on macOS 13 (Ventura) or later, including Intel Macs. Those setups are untested and unsupported, so expect surprises.
 - About 5 minutes to set it up
 - Optional: [Ollama](https://ollama.com/download) for free AI that runs on your Mac, or an OpenAI or Anthropic API key
 

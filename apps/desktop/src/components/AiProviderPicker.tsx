@@ -92,7 +92,7 @@ export function AiProviderPicker({
         <div className="cloud-setup">
           <div className="provider-tabs">
             {cloudProviders.map((item) => (
-              <button type="button" className={cloudProvider === item ? "selected" : ""} key={item} onClick={() => { setCloudProvider(item); setStatus(undefined); }}>
+              <button type="button" aria-pressed={cloudProvider === item} className={cloudProvider === item ? "selected" : ""} key={item} onClick={() => { setCloudProvider(item); setStatus(undefined); }}>
                 {providerLabel(item)}
               </button>
             ))}
@@ -159,6 +159,7 @@ function LocalModelSetup({
   const [detecting, setDetecting] = useState(false);
   const [model, setModel] = useState(settings.localModel ?? "");
   const [copied, setCopied] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   const detect = useCallback(async (address?: string) => {
     setDetecting(true);
@@ -179,8 +180,21 @@ function LocalModelSetup({
 
   const pullCommand = `ollama pull ${SUGGESTED_LOCAL_MODEL}`;
   const copyPull = async () => {
-    await navigator.clipboard.writeText(pullCommand);
-    setCopied(true);
+    setActionError("");
+    try {
+      await navigator.clipboard.writeText(pullCommand);
+      setCopied(true);
+    } catch (cause) {
+      setActionError(`Couldn’t copy the command: ${errorMessage(cause)}. Select it and copy it yourself.`);
+    }
+  };
+  const openDownload = async () => {
+    setActionError("");
+    try {
+      await api.openResource(OLLAMA_DOWNLOAD_URL);
+    } catch (cause) {
+      setActionError(`Couldn’t open the download page: ${errorMessage(cause)}. Visit ${OLLAMA_DOWNLOAD_URL} in your browser.`);
+    }
   };
 
   const ready = Boolean(detection?.reachable && detection.models.length);
@@ -221,7 +235,7 @@ function LocalModelSetup({
             {!detection?.reachable && (
               <li>
                 Install and open <strong>Ollama</strong>.{" "}
-                <button type="button" className="link-button" onClick={() => void api.openResource(OLLAMA_DOWNLOAD_URL)}>Download Ollama</button>
+                <button type="button" className="link-button" onClick={() => void openDownload()}>Download Ollama</button>
               </li>
             )}
             <li>
@@ -229,6 +243,7 @@ function LocalModelSetup({
               <span className="command-copy"><code>{pullCommand}</code><button type="button" className="link-button" onClick={() => void copyPull()}>{copied ? <Check size={13} /> : <Copy size={13} />}{copied ? "Copied" : "Copy"}</button></span>
             </li>
           </ol>
+          {actionError && <p className="error-message" role="alert">{actionError}</p>}
           <button type="button" className="ghost-button" disabled={detecting} onClick={() => void detect(baseUrl)}>
             <RefreshCw size={14} className={detecting ? "spin" : ""} /> Check again
           </button>

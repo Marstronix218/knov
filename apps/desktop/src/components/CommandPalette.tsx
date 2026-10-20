@@ -1,5 +1,7 @@
-import { Command, CornerDownLeft, Search } from "lucide-react";
+import { Command, CornerDownLeft, LoaderCircle, Search } from "lucide-react";
 import { KeyboardEvent as ReactKeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { notifyError } from "../lib/notices";
+import { errorMessage, useOverlayLayer } from "./ui";
 
 export interface PaletteCommand {
   id: string;
@@ -13,6 +15,10 @@ export interface PaletteCommand {
 export function CommandPalette({ commands, onClose }: { commands: PaletteCommand[]; onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  const [running, setRunning] = useState<string>();
+  const [error, setError] = useState("");
+  const mounted = useRef(true);
+  useOverlayLayer("palette");
   const input = useRef<HTMLInputElement>(null);
   const previous = useRef<HTMLElement | null>(
     document.activeElement instanceof HTMLElement ? document.activeElement : null,
@@ -27,19 +33,53 @@ export function CommandPalette({ commands, onClose }: { commands: PaletteCommand
   }, [commands, query]);
 
   useEffect(() => {
+    mounted.current = true;
     input.current?.focus();
     const restore = previous.current;
-    return () => restore?.focus();
+    return () => {
+      mounted.current = false;
+      restore?.focus();
+    };
   }, []);
   useEffect(() => setActive(0), [query]);
   useEffect(() => {
     document.getElementById(`palette-${results[active]?.id}`)?.scrollIntoView?.({ block: "nearest" });
   }, [active, results]);
 
-  const runCommand = (command?: PaletteCommand) => {
-    if (!command) return;
-    onClose();
-    void command.run();
+  /**
+   * Synchronous commands (navigation, opening a dialog) close the menu right
+   * away. Async ones keep it open until they finish so a failure is shown here
+   * instead of disappearing; if the menu was closed meanwhile, it becomes an
+   * app-wide notice.
+   */
+  const runCommand = async (command?: PaletteCommand) => {
+    if (!command || running) return;
+    setError("");
+    const report = (cause: unknown) => {
+      const text = `${command.label} failed: ${errorMessage(cause)}`;
+      if (mounted.current) setError(text);
+      else notifyError(text);
+    };
+    let result: void | Promise<void>;
+    try {
+      result = command.run();
+    } catch (cause) {
+      report(cause);
+      return;
+    }
+    if (!(result instanceof Promise)) {
+      onClose();
+      return;
+    }
+    setRunning(command.id);
+    try {
+      await result;
+      if (mounted.current) onClose();
+    } catch (cause) {
+      report(cause);
+    } finally {
+      if (mounted.current) setRunning(undefined);
+    }
   };
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
@@ -51,9 +91,11 @@ export function CommandPalette({ commands, onClose }: { commands: PaletteCommand
       setActive((index) => Math.max(index - 1, 0));
     } else if (event.key === "Enter") {
       event.preventDefault();
-      runCommand(results[active]);
+      void runCommand(results[active]);
     } else if (event.key === "Escape") {
+      // Keep Escape from also reaching a dialog underneath the menu.
       event.preventDefault();
+      event.stopPropagation();
       onClose();
     }
   };
@@ -87,14 +129,15 @@ export function CommandPalette({ commands, onClose }: { commands: PaletteCommand
               aria-selected={index === active}
               className={index === active ? "active" : ""}
               onMouseEnter={() => setActive(index)}
-              onClick={() => runCommand(command)}
+              onClick={() => void runCommand(command)}
             >
-              <span>{command.label}</span>
+              <span>{running === command.id && <LoaderCircle size={13} className="spin" aria-label="Running" />}{command.label}</span>
               <small>{command.group}</small>
               {command.hint && <kbd>{command.hint}</kbd>}
             </li>
           ))}
         </ul>
+        {error && <p className="notice error palette-error" role="alert">{error}</p>}
         <footer className="palette-footer">
           <span><Command size={12} aria-hidden="true" />K toggles this menu</span>
           <span><CornerDownLeft size={12} aria-hidden="true" /> to run</span>

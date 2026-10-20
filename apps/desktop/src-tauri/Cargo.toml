@@ -3,6 +3,7 @@ name = "appsdesktop"
 version = "0.2.0"
 description = "Knov desktop app"
 authors = ["Noriaki Kishida"]
+license-file = "../../../LICENSE"
 edition = "2021"
 default-run = "appsdesktop"
 

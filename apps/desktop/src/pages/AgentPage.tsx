@@ -340,7 +340,7 @@ function InsightsPanel({
         {goals.length ? goals.map((goal) => (
           <article className="goal-row" key={goal.id}>
             {renaming === goal.id ? (
-              <form className="inline-rename" onSubmit={(event) => { event.preventDefault(); void review(goal, "confirmed", title); }}>
+              <form className="inline-rename" onSubmit={(event) => { event.preventDefault(); void review(goal, "confirmed", title); }} onKeyDown={(event) => { if (event.key === "Escape") setRenaming(undefined); }}>
                 <input aria-label="Goal name" value={title} maxLength={100} autoFocus onChange={(event) => setTitle(event.target.value)} />
                 <button className="primary-button" disabled={!title.trim() || busy === goal.id}>Save</button>
                 <button type="button" className="ghost-button" onClick={() => setRenaming(undefined)}>Cancel</button>

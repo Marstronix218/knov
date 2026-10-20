@@ -57,6 +57,19 @@ Provider keys are stored separately in macOS Keychain. The Chrome pairing token
 is stored in SQLite and in the extension's local Chrome storage; it is not a
 provider credential.
 
+### Export your data
+
+Settings → **Export my data** writes one pretty-printed JSON file,
+`knov-export-YYYYMMDD-HHMMSS.json`, to your Downloads folder (readable only by
+your macOS user). It contains activity events, browser profile selections,
+profile versions and corrections, recommendations, non-secret settings,
+interviews and workflow documents, learned workflows, skills, goal reviews,
+permissions, approved folders, the action journal, predictions, and live
+revenue records; sandbox data is left out. Provider API keys, connector OAuth
+tokens, and anything else in Keychain are never read, and the Chrome pairing
+token is not exported. The file is a plain copy outside Knov: retention and
+**Delete everything** no longer apply to it.
+
 ## What leaves the Mac
 
 | Action | Data sent directly to provider |

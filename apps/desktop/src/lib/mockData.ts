@@ -222,6 +222,8 @@ export const mockSettings: SettingsData = {
   behavioralGuidanceEnabled: true,
   predictionExperimentEnabled: false,
   predictionDisplayThreshold: 0.65,
+  predictionCooldownMinutes: 15,
+  samplingIntervalSeconds: 5,
   agentPaused: false,
   agentMaxActionsPerHour: 30,
   launchAtLogin: false,

@@ -1355,6 +1355,110 @@ impl Database {
     }
 }
 
+/// Tables read whole by the user's data export. The extension pairing state,
+/// telemetry, and internal bookkeeping tables are deliberately absent.
+const EXPORT_TABLES: &[&str] = &[
+    "chrome_profiles",
+    "profile_versions",
+    "workflows",
+    "goal_reviews",
+    "agent_runs",
+    "agent_actions",
+    "autonomy_grants",
+    "predictions",
+];
+
+/// Read helpers for `export_all_data`, used where the regular readers are
+/// capped or omit history.
+impl Database {
+    /// Visits every activity event, oldest first, without loading them all
+    /// into memory. Stops early when `visit` returns false.
+    pub(crate) fn each_activity_event(
+        &self,
+        mut visit: impl FnMut(ActivityEvent) -> bool,
+    ) -> AppResult<()> {
+        let conn = self.conn();
+        let mut statement = conn.prepare(
+            "SELECT id,occurred_at,ended_at,duration_seconds,app_name,window_title,url,page_title,
+                    search_query,browser_profile_id,source,is_bootstrap
+             FROM activity_events ORDER BY occurred_at,id",
+        )?;
+        for event in statement.query_map([], map_activity)? {
+            if !visit(event?) {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// Every row of an export table as a camelCase JSON object. JSON columns
+    /// are embedded as JSON, and credential-named columns are never read.
+    pub(crate) fn export_rows(&self, table: &str) -> AppResult<Vec<serde_json::Value>> {
+        if !EXPORT_TABLES.contains(&table) {
+            return Err(AppError::InvalidInput(format!(
+                "{table} is not an exportable table."
+            )));
+        }
+        let conn = self.conn();
+        let mut statement = conn.prepare(&format!("SELECT * FROM {table}"))?;
+        let columns = statement
+            .column_names()
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let mut rows = statement.query([])?;
+        let mut values = Vec::new();
+        while let Some(row) = rows.next()? {
+            let mut object = serde_json::Map::new();
+            for (index, column) in columns.iter().enumerate() {
+                if is_credential_column(column) {
+                    continue;
+                }
+                let embedded_json = column.ends_with("_json") || column == "document";
+                let value = match row.get_ref(index)? {
+                    rusqlite::types::ValueRef::Null => serde_json::Value::Null,
+                    rusqlite::types::ValueRef::Integer(value) => value.into(),
+                    rusqlite::types::ValueRef::Real(value) => value.into(),
+                    rusqlite::types::ValueRef::Text(bytes) => {
+                        let text = String::from_utf8_lossy(bytes).into_owned();
+                        match embedded_json.then(|| serde_json::from_str(&text)) {
+                            Some(Ok(parsed)) => parsed,
+                            _ => text.into(),
+                        }
+                    }
+                    rusqlite::types::ValueRef::Blob(_) => continue,
+                };
+                object.insert(export_key(column), value);
+            }
+            values.push(serde_json::Value::Object(object));
+        }
+        Ok(values)
+    }
+}
+
+fn is_credential_column(column: &str) -> bool {
+    ["token", "secret", "api_key", "credential", "password"]
+        .iter()
+        .any(|marker| column.contains(marker))
+}
+
+/// `steps_json` becomes `steps`, `first_seen_at` becomes `firstSeenAt`.
+fn export_key(column: &str) -> String {
+    let mut key = String::with_capacity(column.len());
+    let mut upper = false;
+    for character in column.trim_end_matches("_json").chars() {
+        if character == '_' {
+            upper = true;
+        } else if upper {
+            key.push(character.to_ascii_uppercase());
+            upper = false;
+        } else {
+            key.push(character);
+        }
+    }
+    key
+}
+
 fn upsert_event(conn: &Connection, event: &ActivityEvent, fingerprint: &str) -> AppResult<bool> {
     let deleted_by_user: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM deleted_activity_fingerprints WHERE fingerprint=?1)",
@@ -1740,7 +1844,11 @@ mod tests {
         db.purge_expired(5_000 + 31 * 86_400, true).unwrap();
         let tombstones: i64 = db
             .conn()
-            .query_row("SELECT COUNT(*) FROM deleted_activity_fingerprints", [], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM deleted_activity_fingerprints",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         assert_eq!(tombstones, 0);
     }

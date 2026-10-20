@@ -36,6 +36,8 @@ jobs:
         run: |
           npm run typecheck
           npm test
+          npm run typecheck:extension
+          npm run test:extension
           npm run test:rust
 
       # Optional: with an Apple Developer ID the app is signed and notarized, so

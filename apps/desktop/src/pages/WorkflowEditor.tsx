@@ -30,6 +30,8 @@ export function WorkflowEditor({ workflow, onClose, onSaved }: { workflow: Workf
   const [draft, setDraft] = useState(() => structuredClone(workflow));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [initial] = useState(() => JSON.stringify(workflow));
+  const dirty = JSON.stringify(draft) !== initial;
   const patch = (value: Partial<WorkflowDocument>) => setDraft((current) => ({ ...current, ...value }));
   const patchStep = (id: string, value: Partial<DiscoveredStep>) => setDraft((current) => ({ ...current, steps: current.steps.map((step) => step.id === id ? { ...step, ...value } : step) }));
   const move = (index: number, delta: number) => {
@@ -45,7 +47,7 @@ export function WorkflowEditor({ workflow, onClose, onSaved }: { workflow: Workf
     catch (cause) { setError(errorMessage(cause)); }
     finally { setSaving(false); }
   };
-  return <Modal title={`Review workflow: ${workflow.name || "Untitled"}`} wide onClose={() => { if (!saving) onClose(); }}>
+  return <Modal title={`Review workflow: ${workflow.name || "Untitled"}`} wide dirty={dirty} onClose={() => { if (!saving) onClose(); }}>
     <form className="stack-form discovery-editor" onSubmit={(event) => void submit(event)}>
       <p className="field-hint">Changes are saved locally as user corrections. Review conclusions before confirming. This does not authorize an automation.</p>
       <fieldset disabled={saving}><legend>Workflow understanding</legend><div className="discovery-field-grid">{textFields.map(([key, label]) => <label key={key}>{label}<textarea rows={key === "description" ? 3 : 2} required={key === "name"} maxLength={4000} value={draft[key]} onChange={(event) => patch({ [key]: event.target.value })} /></label>)}<label>Estimated minutes per run<input type="number" min="0" max="100000" value={draft.estimatedMinutes ?? ""} onChange={(event) => patch({ estimatedMinutes: event.target.value === "" ? null : Number(event.target.value) })} /></label></div></fieldset>

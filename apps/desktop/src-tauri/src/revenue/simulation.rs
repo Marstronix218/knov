@@ -136,8 +136,7 @@ const ACTIVE: &str = "active";
 
 /// The business currently loaded in the sandbox, if one was chosen.
 pub(super) fn active(conn: &Connection) -> AppResult<Option<&'static Business>> {
-    Ok(super::find(conn, "simulation", ACTIVE)?
-        .and_then(|v| business(field(&v, "business"))))
+    Ok(super::find(conn, "simulation", ACTIVE)?.and_then(|v| business(field(&v, "business"))))
 }
 
 /// Summary of the active business for the overview, or null outside the sandbox.
@@ -431,8 +430,20 @@ mod tests {
                     .find(|o| field(o, "clientName") == e.client && field(o, "type") == e.kind)
                     .unwrap_or_else(|| panic!("{}: expected {} for {}", b.id, e.kind, e.client));
                 assert_eq!(o["status"], e.status, "{}: {} status", b.id, e.client);
-                assert_eq!(o["amountCents"], json!(e.amount_cents), "{}: {} amount", b.id, e.client);
-                assert_eq!(o["currency"], json!(e.currency), "{}: {} currency", b.id, e.client);
+                assert_eq!(
+                    o["amountCents"],
+                    json!(e.amount_cents),
+                    "{}: {} amount",
+                    b.id,
+                    e.client
+                );
+                assert_eq!(
+                    o["currency"],
+                    json!(e.currency),
+                    "{}: {} currency",
+                    b.id,
+                    e.client
+                );
                 seen.insert(field(o, "id").to_string());
             }
             let extra: Vec<_> = found
@@ -440,7 +451,12 @@ mod tests {
                 .filter(|o| !seen.contains(field(o, "id")))
                 .map(|o| format!("{} {}", field(o, "clientName"), field(o, "type")))
                 .collect();
-            assert!(extra.is_empty(), "{}: unexpected findings {:?}", b.id, extra);
+            assert!(
+                extra.is_empty(),
+                "{}: unexpected findings {:?}",
+                b.id,
+                extra
+            );
             for e in list(&c, "evidence", true).unwrap() {
                 if e["amountCents"].is_number() {
                     assert_eq!(e["currency"], b.currency, "{}: currency", b.id);
@@ -494,7 +510,9 @@ mod tests {
         for step in STEPS {
             load(&db.conn(), step).unwrap();
         }
-        let session = discovery::start_scripted(&db, "lanternwood", interview_script("lanternwood").unwrap()).unwrap();
+        let session =
+            discovery::start_scripted(&db, "lanternwood", interview_script("lanternwood").unwrap())
+                .unwrap();
         assert!(catalog(&db).unwrap()["interview"]["sessionId"].is_string());
         assert_eq!(catalog(&db).unwrap()["active"], "lanternwood");
         assert!(discovery::sessions_in_scope(&db, false).unwrap().is_empty());

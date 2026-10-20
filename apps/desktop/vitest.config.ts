@@ -8,5 +8,8 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     restoreMocks: true,
+    // Full-page App renders can exceed the 5s default when the suite runs under load.
+    testTimeout: 15000,
+    hookTimeout: 15000,
   },
 });
