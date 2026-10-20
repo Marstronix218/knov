@@ -13,12 +13,18 @@ npm run dev:desktop
 ```
 
 Complete the normal first-run setup (choose **Explore a simulated business**), or
-open **Simulation** from the sidebar. Connect the simulated contracts, Gmail, Slack,
-work activity, and billing one at a time; after each step the page lists how the
-findings changed, and **Home** shows each problem, its evidence, and the recommended
-action. **Connect everything at once** loads the whole business. No AI-provider key
-or Gmail/Slack account is required for the deterministic commercial review loop. Fixtures are isolated from real data
-and use a fixed reference clock, so an overdue proposal remains reproducible.
+open **Simulation** from the sidebar. Choose one of the ten fictional businesses
+described in [Customer profiles](customer-profiles.md), then connect its
+contracts, Gmail, Slack, work activity, and billing one at a time; after each step
+the page lists how the findings changed, and **Home** shows each problem, its
+evidence, and the recommended action. **Connect everything at once** loads the
+whole business. The **Interview** step starts a scripted owner interview on the AI
+interview page; it needs no provider because the questions are fixed, and the
+answers are saved as sandbox records. No AI-provider key or Gmail/Slack account is
+required for the deterministic commercial review loop. Fixtures are isolated from
+real data and use a fixed reference clock, so an overdue proposal remains
+reproducible. Switching businesses clears the previous sandbox, including its
+interviews.
 
 The Acme Analytics agreement covers two dashboards. The third-dashboard request
 and explicitly linked work support a possible scope change; absent approval is
@@ -107,8 +113,9 @@ retrieval so fictional truths do not enter actual memory.
 Payment metrics count one latest user-attested receipt per opportunity, with
 identical receipt references counted once across links. Split payments, refunds,
 and accounting reconciliation are not implemented. Detection is a conservative
-heuristic for reviewed evidence, not general contract understanding: it supports
-the dashboard scope example and recognizable subject matches; ambiguous or
-complex terms require manual review. Synced messages first need a user-reviewed
+heuristic for reviewed evidence, not general contract understanding: a request
+is a scope candidate only when it names a documented agreement exclusion (or the
+two-versus-third dashboard example), and work and approvals must name that same
+excluded subject; ambiguous or complex terms require manual review. Synced messages first need a user-reviewed
 classification, preserving their original source references. No revenue source
 content is sent to a model by this subsystem.

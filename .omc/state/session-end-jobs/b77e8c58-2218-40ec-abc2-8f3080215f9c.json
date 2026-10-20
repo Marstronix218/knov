@@ -1,0 +1,368 @@
+{
+  "version": 1,
+  "jobId": "3a037ca6-e51e-418b-8119-d5e87c1179f5",
+  "sessionId": "b77e8c58-2218-40ec-abc2-8f3080215f9c",
+  "scopeKey": "0b65ab84edca7cefc2adeafc1130a756d9f1b7dd6c3ac41459dc9f263fce1e36",
+  "revision": 60,
+  "createdAt": "2026-10-20T09:23:13.929Z",
+  "updatedAt": "2026-10-20T09:23:46.610Z",
+  "producerGraceExpiresAt": "2026-10-20T09:23:43.930Z",
+  "bestEffortDeadlineAt": "2026-10-20T09:24:36.930Z",
+  "producers": {
+    "core": {
+      "state": "sealed",
+      "intentKey": "8a7ab7cae78575123513653b05412de9095a9935011622904e73d485a66b83cd",
+      "payloadDigest": "8a7ab7cae78575123513653b05412de9095a9935011622904e73d485a66b83cd",
+      "sealedAt": "2026-10-20T09:23:44.644Z",
+      "sealedBy": "recovery"
+    },
+    "wiki": {
+      "state": "no-op",
+      "sealedAt": "2026-10-20T09:23:44.644Z",
+      "sealedBy": "recovery"
+    }
+  },
+  "actions": {
+    "foreground-cleanup": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "9bae82f06cd47b9dcf484ccf94ac27d79c01d3c89259e06c6deeefa5792b4846",
+      "payload": {
+        "transcriptPath": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+        "cwd": "/Users/nori/Desktop/knov",
+        "reason": "other",
+        "input": {
+          "session_id": "b77e8c58-2218-40ec-abc2-8f3080215f9c",
+          "transcript_path": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+          "cwd": "/Users/nori/Desktop/knov",
+          "scratchpad_dir": "/private/tmp/claude-502/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c/scratchpad",
+          "hook_event_name": "SessionEnd",
+          "reason": "other"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {},
+        "metrics": {
+          "session_id": "b77e8c58-2218-40ec-abc2-8f3080215f9c",
+          "ended_at": "2026-10-20T09:23:44.347Z",
+          "reason": "other",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        }
+      },
+      "budgetMs": 9000,
+      "claimedAt": "2026-10-20T09:23:44.055Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "084a0d71-39a6-4d9d-9c11-ca4ed839dfec",
+        "phase": "terminal",
+        "deadlineAt": "2026-10-20T09:23:53.931Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-10-20T09:23:44.628Z"
+    },
+    "wiki-capture": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 0,
+      "idempotencyKey": "e21a1e79615d8e7c0b6a746c9866de4e271af749ae73200fedfb42f467c5fc3a",
+      "payload": {
+        "transcriptPath": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+        "cwd": "/Users/nori/Desktop/knov",
+        "reason": "other",
+        "input": {
+          "session_id": "b77e8c58-2218-40ec-abc2-8f3080215f9c",
+          "transcript_path": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+          "cwd": "/Users/nori/Desktop/knov",
+          "scratchpad_dir": "/private/tmp/claude-502/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c/scratchpad",
+          "hook_event_name": "SessionEnd",
+          "reason": "other"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {}
+      },
+      "budgetMs": 9000,
+      "completedAt": "2026-10-20T09:23:44.644Z",
+      "lastOutcomeCode": "producer-absent"
+    },
+    "team-cleanup": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "b9d9b04ced1209c2c6c01ce8cafd692ee51a348c2c21152b1085246b52d79916",
+      "payload": {
+        "transcriptPath": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+        "cwd": "/Users/nori/Desktop/knov",
+        "reason": "other",
+        "input": {
+          "session_id": "b77e8c58-2218-40ec-abc2-8f3080215f9c",
+          "transcript_path": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+          "cwd": "/Users/nori/Desktop/knov",
+          "scratchpad_dir": "/private/tmp/claude-502/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c/scratchpad",
+          "hook_event_name": "SessionEnd",
+          "reason": "other"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {},
+        "metrics": {
+          "session_id": "b77e8c58-2218-40ec-abc2-8f3080215f9c",
+          "ended_at": "2026-10-20T09:23:44.347Z",
+          "reason": "other",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        }
+      },
+      "budgetMs": 9000,
+      "claimedAt": "2026-10-20T09:23:44.674Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "4581ae8d-fb30-40d6-a55e-1eac5829a9a3",
+        "phase": "terminal",
+        "deadlineAt": "2026-10-20T09:23:53.931Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-10-20T09:23:44.937Z"
+    },
+    "python-cleanup": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "c81b728bc1c71f7d759aa585ef00f14356a7933024a8d7b474383c5545fbe89b",
+      "payload": {
+        "transcriptPath": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+        "cwd": "/Users/nori/Desktop/knov",
+        "reason": "other",
+        "input": {
+          "session_id": "b77e8c58-2218-40ec-abc2-8f3080215f9c",
+          "transcript_path": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+          "cwd": "/Users/nori/Desktop/knov",
+          "scratchpad_dir": "/private/tmp/claude-502/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c/scratchpad",
+          "hook_event_name": "SessionEnd",
+          "reason": "other"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {},
+        "metrics": {
+          "session_id": "b77e8c58-2218-40ec-abc2-8f3080215f9c",
+          "ended_at": "2026-10-20T09:23:44.347Z",
+          "reason": "other",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        }
+      },
+      "budgetMs": 9000,
+      "claimedAt": "2026-10-20T09:23:44.965Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "a83ac12a-7d02-45f0-83e3-692685a31a44",
+        "phase": "terminal",
+        "deadlineAt": "2026-10-20T09:23:53.931Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-10-20T09:23:45.193Z"
+    },
+    "reply-cleanup": {
+      "class": "required",
+      "phase": "deferred-required",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "a32bef7fa43769c6e7d4616c3de513ea7891215f89c97e731d59d0159c319200",
+      "payload": {
+        "transcriptPath": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+        "cwd": "/Users/nori/Desktop/knov",
+        "reason": "other",
+        "input": {
+          "session_id": "b77e8c58-2218-40ec-abc2-8f3080215f9c",
+          "transcript_path": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+          "cwd": "/Users/nori/Desktop/knov",
+          "scratchpad_dir": "/private/tmp/claude-502/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c/scratchpad",
+          "hook_event_name": "SessionEnd",
+          "reason": "other"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {}
+      },
+      "budgetMs": 9000,
+      "claimedAt": "2026-10-20T09:23:45.220Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "5b768396-56bb-48a7-8deb-cc9566e05f6a",
+        "phase": "terminal",
+        "deadlineAt": "2026-10-20T09:23:53.931Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-10-20T09:23:45.437Z"
+    },
+    "callback": {
+      "class": "best-effort",
+      "phase": "deferred-best-effort",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "0307aa055fe4ecfdb6780e8c9f8af338187d3ba81cbc675472db44b5e97e3710",
+      "payload": {
+        "transcriptPath": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+        "cwd": "/Users/nori/Desktop/knov",
+        "reason": "other",
+        "input": {
+          "session_id": "b77e8c58-2218-40ec-abc2-8f3080215f9c",
+          "transcript_path": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+          "cwd": "/Users/nori/Desktop/knov",
+          "scratchpad_dir": "/private/tmp/claude-502/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c/scratchpad",
+          "hook_event_name": "SessionEnd",
+          "reason": "other"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {},
+        "metrics": {
+          "session_id": "b77e8c58-2218-40ec-abc2-8f3080215f9c",
+          "ended_at": "2026-10-20T09:23:44.347Z",
+          "reason": "other",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        }
+      },
+      "budgetMs": 2000,
+      "claimedAt": "2026-10-20T09:23:45.466Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "eb3720af-ba17-4278-886d-d2927b13dde5",
+        "phase": "terminal",
+        "deadlineAt": "2026-10-20T09:23:53.931Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-10-20T09:23:45.659Z"
+    },
+    "notification": {
+      "class": "best-effort",
+      "phase": "deferred-best-effort",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "bf0efb5d1ead09e3e2f00019eaef81354a5cb58494ac013ac5e3e93774a8b911",
+      "payload": {
+        "transcriptPath": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+        "cwd": "/Users/nori/Desktop/knov",
+        "reason": "other",
+        "input": {
+          "session_id": "b77e8c58-2218-40ec-abc2-8f3080215f9c",
+          "transcript_path": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+          "cwd": "/Users/nori/Desktop/knov",
+          "scratchpad_dir": "/private/tmp/claude-502/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c/scratchpad",
+          "hook_event_name": "SessionEnd",
+          "reason": "other"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {},
+        "metrics": {
+          "session_id": "b77e8c58-2218-40ec-abc2-8f3080215f9c",
+          "ended_at": "2026-10-20T09:23:44.347Z",
+          "reason": "other",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        }
+      },
+      "budgetMs": 2000,
+      "claimedAt": "2026-10-20T09:23:45.685Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "fa6e44b7-80f3-444c-819f-371474f34302",
+        "phase": "terminal",
+        "deadlineAt": "2026-10-20T09:23:53.931Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-10-20T09:23:45.887Z"
+    },
+    "openclaw": {
+      "class": "best-effort",
+      "phase": "deferred-best-effort",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "dc70b80df051eee93a46f955017afe1495d41387c527caf93ae9c67800b8f156",
+      "payload": {
+        "transcriptPath": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+        "cwd": "/Users/nori/Desktop/knov",
+        "reason": "other",
+        "input": {
+          "session_id": "b77e8c58-2218-40ec-abc2-8f3080215f9c",
+          "transcript_path": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+          "cwd": "/Users/nori/Desktop/knov",
+          "scratchpad_dir": "/private/tmp/claude-502/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c/scratchpad",
+          "hook_event_name": "SessionEnd",
+          "reason": "other"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {},
+        "metrics": {
+          "session_id": "b77e8c58-2218-40ec-abc2-8f3080215f9c",
+          "ended_at": "2026-10-20T09:23:44.347Z",
+          "reason": "other",
+          "agents_spawned": 0,
+          "agents_completed": 0,
+          "modes_used": []
+        }
+      },
+      "budgetMs": 2000,
+      "claimedAt": "2026-10-20T09:23:45.920Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "58f79470-a92a-4611-bcf3-7d9cc804922f",
+        "phase": "terminal",
+        "deadlineAt": "2026-10-20T09:23:53.931Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-10-20T09:23:46.244Z"
+    },
+    "spawn-next": {
+      "class": "best-effort",
+      "phase": "deferred-best-effort",
+      "status": "completed",
+      "attempts": 1,
+      "idempotencyKey": "6a2e3ddaf22b07f61427dfaf2d7e44694b5da3a20ad63b2fd02ec40d6fc77d6f",
+      "payload": {
+        "transcriptPath": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+        "cwd": "/Users/nori/Desktop/knov",
+        "reason": "other",
+        "input": {
+          "session_id": "b77e8c58-2218-40ec-abc2-8f3080215f9c",
+          "transcript_path": "/Users/nori/.claude/projects/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c.jsonl",
+          "cwd": "/Users/nori/Desktop/knov",
+          "scratchpad_dir": "/private/tmp/claude-502/-Users-nori-Desktop-knov/b77e8c58-2218-40ec-abc2-8f3080215f9c/scratchpad",
+          "hook_event_name": "SessionEnd",
+          "reason": "other"
+        },
+        "initialTeamNames": [],
+        "openClawRouting": {}
+      },
+      "budgetMs": 2000,
+      "claimedAt": "2026-10-20T09:23:46.283Z",
+      "runner": {
+        "attempt": 1,
+        "runnerNonce": "4475469d-7aae-467e-a722-bc6e84f0672f",
+        "phase": "terminal",
+        "deadlineAt": "2026-10-20T09:23:53.931Z"
+      },
+      "lastOutcomeCode": "completed",
+      "completedAt": "2026-10-20T09:23:46.556Z"
+    }
+  },
+  "owner": null,
+  "phase": "complete",
+  "recoverableFailure": {
+    "reason": "actions-settled",
+    "releasedAt": "2026-10-20T09:23:46.584Z",
+    "ownerNonce": "b2307e4c-edd1-45f6-afe9-df5c8af78c27"
+  },
+  "completion": {
+    "completedAt": "2026-10-20T09:23:46.584Z",
+    "terminalDigest": "34d7c57dca83e136a661de8da9baf980d389fc868fdbc95ea142fec8fb551a01",
+    "terminalRevision": 59
+  }
+}

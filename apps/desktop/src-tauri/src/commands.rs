@@ -391,6 +391,27 @@ fn activity_history_to_ui(
         .collect())
 }
 
+/// Deletes the selected activity events from the local database. Returns the
+/// number of rows removed; ids that no longer exist are skipped.
+#[tauri::command]
+pub async fn delete_activity_events(
+    ids: Vec<String>,
+    state: State<'_, AppState>,
+) -> AppResult<usize> {
+    let parsed = ids
+        .iter()
+        .map(|id| id.trim().parse::<i64>())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| AppError::InvalidInput("Activity ids must be numeric.".into()))?;
+    if parsed.is_empty() {
+        return Err(AppError::InvalidInput(
+            "Select at least one activity to delete.".into(),
+        ));
+    }
+    let db = state.db.clone();
+    blocking(move || db.delete_events(&parsed, unix_now())).await
+}
+
 static ACTIVITY_ICON_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -2602,9 +2623,10 @@ mod tests {
 
 #[tauri::command]
 pub fn get_discovery_sessions(
+    demo: Option<bool>,
     state: State<'_, AppState>,
 ) -> AppResult<Vec<crate::discovery::InterviewSession>> {
-    crate::discovery::sessions(&state.db)
+    crate::discovery::sessions_in_scope(&state.db, demo.unwrap_or(false))
 }
 #[tauri::command]
 pub fn start_discovery_interview(
@@ -2627,7 +2649,8 @@ pub async fn advance_discovery_interview(
     answer: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<crate::discovery::InterviewSession> {
-    let provider = if action == "end" {
+    // Ending locally and scripted sandbox interviews never contact a provider.
+    let provider = if action == "end" || crate::discovery::runs_without_provider(&state.db, &session_id)? {
         String::new()
     } else {
         selected_provider(&state.db)?

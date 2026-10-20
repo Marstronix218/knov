@@ -1,0 +1,82 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1792488190224,
+  "projectRoot": "/Users/nori/Desktop/knov",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "npm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "npm run build",
+    "testCommand": "npm test",
+    "lintCommand": null,
+    "devCommand": "npm run dev",
+    "scripts": {
+      "dev": "npm run dev --workspace @knov/desktop",
+      "dev:desktop": "npm run tauri dev --workspace @knov/desktop",
+      "dev:with-extension": "npm run dev:with-extension --workspace @knov/desktop",
+      "build": "npm run build --workspace @knov/desktop",
+      "build:desktop": "npm run bundle --workspace @knov/desktop",
+      "build:extension": "npm run build --workspace @knov/chrome-extension",
+      "typecheck": "npm run typecheck --workspace @knov/desktop",
+      "typecheck:extension": "npm run typecheck --workspace @knov/chrome-extension",
+      "test": "npm run test --workspace @knov/desktop",
+      "test:extension": "npm run test --workspace @knov/chrome-extension",
+      "check:rust": "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml",
+      "test:rust": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": true,
+    "workspaces": [
+      "apps/desktop",
+      "apps/extension"
+    ],
+    "mainDirectories": [
+      "docs"
+    ],
+    "gitBranches": null
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "apps": {
+      "path": "apps",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1792488190044,
+      "keyFiles": []
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 13,
+      "lastAccessed": 1792488190047,
+      "keyFiles": [
+        "alpha-setup.md",
+        "architecture.md",
+        "autonomous-agent.md",
+        "customer-profiles.md",
+        "prediction-engine.md"
+      ]
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}

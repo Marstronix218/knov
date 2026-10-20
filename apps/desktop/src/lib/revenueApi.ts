@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isDesktopRuntime } from "./api";
-import type { RevenueOverview } from "../revenueTypes";
+import type { InterviewSession } from "../types";
+import type { RevenueOverview, SimulationCatalog } from "../revenueTypes";
 async function call(command: string, args?: Record<string, unknown>): Promise<RevenueOverview> {
   if (!isDesktopRuntime()) throw new Error("Revenue Intelligence requires the desktop app. Browser preview does not save, analyze, or synchronize commercial data.");
   return invoke<RevenueOverview>(command, args);
@@ -8,8 +9,20 @@ async function call(command: string, args?: Record<string, unknown>): Promise<Re
 export const revenueApi = {
   overview: (demo: boolean) => call("revenue_overview", { demo }),
   seedDemo: () => call("revenue_seed_demo"),
-  simulationLoad: (step: SimulationStep | "all") => call("revenue_simulation_load", { step }),
+  simulationLoad: (step: SimulationStep | "all", business?: string) => call("revenue_simulation_load", business ? { step, business } : { step }),
   simulationReset: () => call("revenue_simulation_reset"),
+  /** The ten fictional businesses, which one is loaded, and its interview. */
+  simulationCatalog: async (): Promise<SimulationCatalog> => {
+    if (!isDesktopRuntime()) return { active: null, businesses: [], interview: null };
+    return invoke<SimulationCatalog>("revenue_simulation_catalog");
+  },
+  /** Switches the sandbox to another business, clearing the previous one. */
+  simulationSelect: (business: string) => call("revenue_simulation_select", { business }),
+  /** Starts (or resumes) the scripted interview for the loaded business; no AI key needed. */
+  simulationInterview: async (): Promise<InterviewSession> => {
+    if (!isDesktopRuntime()) throw new Error("The simulated interview requires the desktop app.");
+    return invoke<InterviewSession>("revenue_simulation_interview");
+  },
   importUpload: (projectId: string, fileName: string, dataBase64: string) => call("revenue_import_upload", { projectId, fileName, dataBase64 }),
   createProject: (clientName: string, name: string, description: string, threadIds: string[]) => call("revenue_create_project", { clientName, name, description, threadIds }),
   importAgreement: (projectId: string, title: string, text: string) => call("revenue_import_agreement", { projectId, title, text }),

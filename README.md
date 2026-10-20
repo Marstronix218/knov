@@ -68,13 +68,19 @@ notes.
 
 ### Revenue intelligence demo
 
-Run `npm install` and `npm run dev:desktop`, then open **Simulation** and connect
-the fictional agency's sources one at a time, or choose **Explore a simulated
-business** during setup. **Home** then lists each problem Knov found, the evidence,
-and the recommended action. It uses isolated fictional agency records and requires
-no connector credentials. Review the Acme third-dashboard candidate, answer its
-clarification, prepare and approve an internal change-order draft, and record
-outcomes separately. Approval never sends a message or issues an invoice.
+Run `npm install` and `npm run dev:desktop`, then open **Simulation**, choose one
+of ten fictional businesses (a web agency, a video studio, an architecture
+practice, a consultancy, a bookkeeper, a software shop, a marketing agency, an
+interior designer, a managed IT provider, and a translation studio), and connect
+its sources one at a time, or choose **Explore a simulated business** during
+setup. **Home** then lists each problem Knov found, the evidence, and the
+recommended action. Each business also has a scripted owner interview that runs
+without an AI key. The records are isolated from actual data and need no
+connector credentials. Review a scope candidate, answer its clarification,
+prepare and approve an internal change-order draft, and record outcomes
+separately. Approval never sends a message or issues an invoice. See
+[Customer profiles](docs/customer-profiles.md) for who the businesses represent
+and what Knov should find in each.
 
 ### Knov-provided AI and cost tracking (development)
 

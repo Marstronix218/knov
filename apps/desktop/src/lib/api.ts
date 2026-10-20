@@ -88,7 +88,8 @@ export const api = {
   interviewGraphHistory: (sessionId: string) => discoveryCall<GraphRevision[]>("get_discovery_graph_history", { sessionId }),
   interviewGraph: (sessionId: string, revision?: number) => discoveryCall<InterviewGraph>("get_discovery_graph", { sessionId, revision }),
   deleteDiscovery: (sessionId: string) => discoveryCall<void>("delete_discovery_interview", { sessionId }),
-  discoverySessions: () => discoveryCall<InterviewSession[]>("get_discovery_sessions"),
+  /** Interviews in one scope: actual (default) or the simulated business. */
+  discoverySessions: (demo = false) => discoveryCall<InterviewSession[]>("get_discovery_sessions", { demo }),
   startDiscovery: (description: string, threadContext?: ThreadContext, topic?: string) => discoveryCall<InterviewSession>("start_discovery_interview", { description, threadContext, topic }),
   advanceDiscovery: (sessionId: string, action: "answer" | "skip" | "end", answer?: string) => discoveryCall<InterviewSession>("advance_discovery_interview", { sessionId, action, answer }),
   setDiscoveryStatus: (sessionId: string, status: "paused" | "active") => discoveryCall<InterviewSession>("set_discovery_interview_status", { sessionId, status }),
@@ -117,6 +118,9 @@ export const api = {
     call<DashboardData>("get_dashboard", { range }, { ...mockDashboard, range }),
   activity: (range: RangeKey, query = "") =>
     call<ActivityEvent[]>("get_activity_history", { range, query }, mockActivity),
+  /** Removes the selected events from the local database. Resolves with the number deleted. */
+  deleteActivity: (ids: string[]) =>
+    call<number>("delete_activity_events", { ids }, ids.length),
   profile: () => call<ProfileData>("get_profile", undefined, mockProfile),
   settings: () => call<SettingsData>("get_settings", undefined, mockSettings),
   predictionsDashboard: () =>

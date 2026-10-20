@@ -9,7 +9,7 @@ import { SourcesPage } from "./pages/SourcesPage";
 import { focusOpportunity, revenueApi } from "./lib/revenueApi";
 import { api } from "./lib/api";
 import { setSimulationMode } from "./state/simulationMode";
-import type { RevenueOverview } from "./revenueTypes";
+import type { RevenueOverview, SimulationBusiness, SimulationCatalog } from "./revenueTypes";
 const fixture: RevenueOverview = {
   demo: false,
   clients: [{ id: "client", name: "Acme", demo: true }], projects: [], agreements: [], commitments: [],
@@ -221,16 +221,52 @@ describe("Home", () => {
 });
 
 describe("Simulation", () => {
+  const brightline: SimulationBusiness = { id: "brightline", name: "Brightline Studio", industry: "Web agency", location: "Portland, OR", team: "6 people", currency: "USD", owner: { name: "Jordan Park", email: "you@brightline.studio" }, tools: ["Gmail", "QuickBooks"], profile: "A six-person web agency.", whatToExpect: ["Acme asked for a third dashboard."], expected: [], clientCount: 4, interviewTopic: "change_requests", interviewName: "Change requests and extra work" };
+  const lanternwood: SimulationBusiness = { ...brightline, id: "lanternwood", name: "Lanternwood Creative", industry: "Video studio", location: "Austin, TX", team: "3 people", clientCount: 3 };
+  const catalog: SimulationCatalog = { active: "brightline", businesses: [brightline, lanternwood], interview: null };
+
   it("connects one simulated source and explains how the findings changed", async () => {
-    const before: RevenueOverview = { ...structuredClone(fixture), demo: true, opportunities: [], evidence: [], projects: [{ id: "project", clientId: "client", name: "Dashboards", description: "", threadIds: [], demo: true }] };
-    const after: RevenueOverview = { ...structuredClone(fixture), demo: true, projects: before.projects, evidence: [{ id: "slack", projectId: "project", source: "demo_slack", sourceRef: "acme-request", excerpt: "Please build a third dashboard", occurredAt: 200, provenance: "observed", kind: "request", demo: true, meta: { channel: "#acme", author: "Dana" } }] };
+    const before: RevenueOverview = { ...structuredClone(fixture), demo: true, business: brightline, opportunities: [], evidence: [], projects: [{ id: "project", clientId: "client", name: "Dashboards", description: "", threadIds: [], demo: true }] };
+    const after: RevenueOverview = { ...structuredClone(fixture), demo: true, business: brightline, projects: before.projects, evidence: [{ id: "slack", projectId: "project", source: "demo_slack", sourceRef: "acme-request", excerpt: "Please build a third dashboard", occurredAt: 200, provenance: "observed", kind: "request", demo: true, meta: { channel: "#acme", author: "Dana" } }] };
     vi.mocked(revenueApi.overview).mockResolvedValue(before);
+    vi.spyOn(revenueApi, "simulationCatalog").mockResolvedValue(catalog);
     const load = vi.spyOn(revenueApi, "simulationLoad").mockResolvedValue(after);
     render(<SimulationPage />);
+    expect(await screen.findByRole("heading", { name: "Simulation: Brightline Studio" })).toBeInTheDocument();
     // Contracts are loaded, so the first "Connect" is Gmail.
     fireEvent.click((await screen.findAllByRole("button", { name: "Connect" }))[0]);
     await waitFor(() => expect(load).toHaveBeenCalledWith("gmail"));
     expect(await screen.findByText("New problem: Unbilled extra work at Acme")).toBeInTheDocument();
+    expect(localStorage.getItem("knov.simulation-mode")).toBe("true");
+  });
+
+  it("lists the simulated businesses and switches only after confirming when data is loaded", async () => {
+    const loaded: RevenueOverview = { ...structuredClone(fixture), demo: true, business: brightline, projects: [{ id: "project", clientId: "client", name: "Dashboards", description: "", threadIds: [], demo: true }] };
+    vi.mocked(revenueApi.overview).mockResolvedValue(loaded);
+    const catalogCall = vi.spyOn(revenueApi, "simulationCatalog").mockResolvedValue(catalog);
+    const select = vi.spyOn(revenueApi, "simulationSelect").mockResolvedValue({ ...structuredClone(fixture), demo: true, business: lanternwood, projects: [], evidence: [], opportunities: [] });
+    render(<SimulationPage />);
+    const businesses = await screen.findByRole("region", { name: "Simulated businesses" });
+    expect(within(businesses).getByText("Lanternwood Creative")).toBeInTheDocument();
+    expect(within(businesses).getByText("Loaded")).toBeInTheDocument();
+    fireEvent.click(within(businesses).getByRole("button", { name: "Choose" }));
+    expect(select).not.toHaveBeenCalled();
+    expect(within(businesses).getByText(/Switching clears Brightline Studio/)).toBeInTheDocument();
+    fireEvent.click(within(businesses).getByRole("button", { name: "Switch" }));
+    await waitFor(() => expect(select).toHaveBeenCalledWith("lanternwood"));
+    await waitFor(() => expect(catalogCall).toHaveBeenCalledTimes(2));
+  });
+
+  it("starts the scripted interview for the loaded business and opens it in simulation mode", async () => {
+    vi.mocked(revenueApi.overview).mockResolvedValue({ ...structuredClone(fixture), demo: true, business: brightline, projects: [{ id: "project", clientId: "client", name: "Dashboards", description: "", threadIds: [], demo: true }] });
+    vi.spyOn(revenueApi, "simulationCatalog").mockResolvedValue(catalog);
+    const interview = vi.spyOn(revenueApi, "simulationInterview").mockResolvedValue({ id: "scripted", status: "active", threadContext: null, messages: [], workflow: { id: "w", sessionId: "scripted", name: "Change requests", description: "", businessGoal: "", trigger: "", actors: [], steps: [], applications: [], resources: [], inputs: [], outputs: [], decisions: [], dependencies: [], approvals: [], exceptions: [], bottlenecks: [], frequency: "", estimatedMinutes: null, desiredOutcome: "", automationOpportunities: [], evidence: [], confidence: 0, confirmed: false, updatedAt: 1, commercialContext: { demo: true, simulation: "brightline", turn: 0 } }, missingInformation: [], createdAt: 1, updatedAt: 1, revision: 0 });
+    render(<SimulationPage />);
+    const steps = await screen.findByRole("region", { name: "Simulated sources" });
+    expect(within(steps).getByText(/Knov interviews Jordan Park/)).toBeInTheDocument();
+    fireEvent.click(within(steps).getByRole("button", { name: "Start" }));
+    await waitFor(() => expect(interview).toHaveBeenCalled());
+    expect(window.location.hash).toBe("#/discovery");
     expect(localStorage.getItem("knov.simulation-mode")).toBe("true");
   });
 });

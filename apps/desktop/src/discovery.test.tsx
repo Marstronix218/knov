@@ -4,6 +4,8 @@ import { DiscoveryPage } from "./pages/DiscoveryPage";
 import { KnowledgePage } from "./pages/KnowledgePage";
 import { WorkflowEditor } from "./pages/WorkflowEditor";
 import { api } from "./lib/api";
+import { revenueApi } from "./lib/revenueApi";
+import { setSimulationMode } from "./state/simulationMode";
 import { mockDashboard, mockSettings } from "./lib/mockData";
 import type { InterviewGraph, InterviewSession, ThreadContext, WorkflowDocument } from "./types";
 
@@ -117,6 +119,24 @@ describe("Workflow Discovery", () => {
     expect(within(panel).getAllByText("Not yet known")).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: /All interviews/ }));
     expect(await screen.findByRole("button", { name: /Change requests and extra work/ })).toBeInTheDocument();
+  });
+
+  it("runs a scripted sandbox interview without a provider key in simulation mode", async () => {
+    setSimulationMode(true);
+    vi.spyOn(api, "settings").mockResolvedValue({ ...mockSettings, hasProviderKey: false });
+    const scripted: InterviewSession = { ...session, id: "scripted", suggestedAnswers: ["We send a quote first"], workflow: { ...workflow, sessionId: "scripted", name: "Change requests and extra work", commercialContext: { demo: true, simulation: "brightline", turn: 0 } } };
+    const sessions = vi.spyOn(api, "discoverySessions").mockResolvedValue([scripted]);
+    vi.spyOn(revenueApi, "simulationCatalog").mockResolvedValue({ active: "brightline", interview: { sessionId: "scripted", status: "active" }, businesses: [{ id: "brightline", name: "Brightline Studio", industry: "Web agency", location: "Portland, OR", team: "6 people", currency: "USD", owner: { name: "Jordan Park", email: "you@brightline.studio" }, tools: [], profile: "A web agency.", whatToExpect: [], expected: [], clientCount: 4, interviewTopic: "change_requests", interviewName: "Change requests and extra work" }] });
+    const advance = vi.spyOn(api, "advanceDiscovery").mockResolvedValue({ ...scripted, messages: [...scripted.messages, { role: "user", content: "We send a quote first", createdAt: 101 }, { role: "assistant", content: "Who decides whether that extra work is billable?", createdAt: 101 }] });
+    renderDiscovery();
+    expect(await screen.findByText(/Interviews here are scripted for Brightline Studio/)).toBeInTheDocument();
+    await waitFor(() => expect(sessions).toHaveBeenCalledWith(true));
+    fireEvent.click(await screen.findByRole("button", { name: /Change requests and extra work.*in progress/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "We send a quote first" }));
+    await screen.findByText("Who decides whether that extra work is billable?");
+    expect(advance).toHaveBeenCalledWith("scripted", "answer", "We send a quote first");
+    expect(screen.getAllByText(/nothing is sent to an AI provider/).length).toBeGreaterThan(0);
+    setSimulationMode(false);
   });
 
   it("discloses browser unavailability without offering fake persistence", async () => {

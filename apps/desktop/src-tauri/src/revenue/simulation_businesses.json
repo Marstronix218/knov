@@ -1,0 +1,1075 @@
+{
+  "_comment": "Ten fictional Knov customers. Every record is sandbox data: it never mixes with actual data and never leaves the Mac. Dates are relative to the fixed simulation clock (2025-10-10). Each business is documented in docs/customer-profiles.md.",
+  "businesses": [
+    {
+      "id": "brightline",
+      "name": "Brightline Studio",
+      "industry": "Web design and development agency",
+      "location": "Portland, OR",
+      "team": "6 people",
+      "currency": "USD",
+      "owner": { "name": "Jordan Park", "email": "you@brightline.studio" },
+      "tools": ["Gmail", "Slack Connect", "QuickBooks", "Figma", "VS Code"],
+      "profile": "A six-person web agency that sells fixed-fee projects: dashboards, portals, and discovery workshops. Requests arrive in shared Slack channels, approvals and sign-offs by email, and the owner invoices from QuickBooks after each milestone.",
+      "whatToExpect": [
+        "Acme Analytics asked for a third dashboard that the contract excludes, and the team built it with no change order.",
+        "Northstar Labs was promised an updated proposal by October 8 and it has not gone out.",
+        "Atlas Systems accepted the USD 5,000 portal milestone, and billing shows no invoice for it once QuickBooks is connected.",
+        "Harbor Goods also asked for a third dashboard, but it was approved in writing: Knov should not raise it."
+      ],
+      "engagements": [
+        { "client": "Acme Analytics", "project": "Analytics dashboards", "description": "Two analytics dashboards for the sales team", "threads": ["demo-third-dashboard-thread"], "agreementTitle": "Acme statement of work", "agreement": "Scope: Build two dashboards.\nExclusions: third dashboard\nProject fee USD 12000.\nPayment: invoice after milestone acceptance." },
+        { "client": "Northstar Labs", "project": "Discovery proposal", "description": "Discovery workshop and written proposal", "threads": [], "agreementTitle": "Northstar engagement letter", "agreement": "Scope: Discovery workshop and a written proposal.\nFee: USD 4500 on signature." },
+        { "client": "Atlas Systems", "project": "Portal delivery", "description": "Client portal build", "threads": [], "agreementTitle": "Atlas agreement", "agreement": "Scope: Client portal.\nMilestone: acceptance of portal.\nPayment: USD 5000 after milestone acceptance." },
+        { "client": "Harbor Goods", "project": "Inventory dashboards", "description": "Inventory dashboards with an approved expansion", "threads": [], "agreementTitle": "Harbor Goods statement of work", "agreement": "Scope: Build two dashboards." }
+      ],
+      "records": {
+        "gmail": [
+          { "project": "Analytics dashboards", "kind": "communication", "reference": "acme-feedback", "text": "The two dashboards look great. The sales team already loves the filters.", "daysAgo": 9, "meta": { "from": "Priya Shah <priya@acmeanalytics.com>", "to": "you@brightline.studio", "subject": "Dashboards 1 & 2 feedback" } },
+          { "project": "Discovery proposal", "kind": "commitment", "reference": "northstar-promise", "text": "Thanks for the workshop, Maya. I will send the updated proposal by 2025-10-08T17:00:00-07:00.", "daysAgo": 5, "dueDaysAgo": 1, "meta": { "from": "You <you@brightline.studio>", "to": "Maya Chen <maya@northstarlabs.io>", "subject": "Re: Discovery proposal next steps" } },
+          { "project": "Discovery proposal", "kind": "communication", "reference": "northstar-board", "text": "Our board meets next Tuesday. We'd love to review the revised proposal before then.", "daysAgo": 2, "meta": { "from": "Maya Chen <maya@northstarlabs.io>", "to": "you@brightline.studio", "subject": "Board meeting next Tuesday" } },
+          { "project": "Portal delivery", "kind": "milestone_accepted", "reference": "atlas-acceptance", "text": "The portal milestone is accepted. Great work, the team is already using it.", "daysAgo": 2, "amountCents": 500000, "meta": { "from": "Luis Ortega <luis@atlassystems.com>", "to": "you@brightline.studio", "subject": "Portal sign-off" } },
+          { "project": "Inventory dashboards", "kind": "approval", "reference": "approved-order", "text": "Approved: go ahead with the third dashboard change order for USD 2,000.", "daysAgo": 6, "amountCents": 200000, "meta": { "from": "Sam Rivera <sam@harborgoods.com>", "to": "you@brightline.studio", "subject": "Change order #7 approved" } }
+        ],
+        "slack": [
+          { "project": "Analytics dashboards", "kind": "request", "reference": "acme-request", "text": "Please build a third dashboard for the sales team, same style as the first two.", "daysAgo": 7, "meta": { "channel": "#acme-dashboards", "author": "Dana Lee (Acme)" } },
+          { "project": "Analytics dashboards", "kind": "communication", "reference": "acme-thanks", "text": "Thanks for the quick turnaround on the filter fix!", "daysAgo": 8, "meta": { "channel": "#acme-dashboards", "author": "Dana Lee (Acme)" } },
+          { "project": "Inventory dashboards", "kind": "request", "reference": "approved-request", "text": "Please build a third dashboard for inventory forecasting.", "daysAgo": 7, "meta": { "channel": "#harbor-goods", "author": "Sam Rivera (Harbor Goods)" } },
+          { "project": "Portal delivery", "kind": "communication", "reference": "atlas-live", "text": "Atlas portal is live. Nice work, everyone!", "daysAgo": 2, "meta": { "channel": "#team", "author": "Jordan Park (Brightline)" } }
+        ],
+        "work": [
+          { "project": "Analytics dashboards", "kind": "activity", "reference": "demo-third-dashboard-thread", "text": "Implemented the third dashboard (sales) in the linked developer thread.", "daysAgo": 4, "meta": { "apps": "VS Code, Figma, Chrome", "hours": 11.5, "thread": "acme-sales-dashboard" } },
+          { "project": "Inventory dashboards", "kind": "activity", "reference": "approved-work", "text": "Third dashboard implemented for Harbor inventory forecasting.", "daysAgo": 4, "meta": { "apps": "VS Code, Chrome", "hours": 7.0, "thread": "harbor-inventory-dashboard" } }
+        ],
+        "billing": [
+          { "project": "Analytics dashboards", "kind": "invoice", "reference": "INV-1041", "text": "Invoice INV-1041 · Acme Analytics · Dashboards 1 and 2 · paid in full.", "daysAgo": 10, "amountCents": 1200000, "meta": { "number": "INV-1041", "status": "Paid", "customer": "Acme Analytics" } },
+          { "project": "Portal delivery", "kind": "invoice", "reference": "INV-1038", "text": "Invoice INV-1038 · Atlas Systems · Discovery phase · paid.", "daysAgo": 30, "amountCents": 300000, "meta": { "number": "INV-1038", "status": "Paid", "customer": "Atlas Systems" } },
+          { "project": "Portal delivery", "kind": "billing_complete", "reference": "atlas-billing-sync", "text": "QuickBooks sync covers every Atlas Systems invoice through 2025-10-10.", "daysAgo": 0, "meta": { "status": "Sync complete", "customer": "Atlas Systems" } },
+          { "project": "Inventory dashboards", "kind": "invoice", "reference": "INV-1043", "text": "Invoice INV-1043 · Harbor Goods · Change order #7 (third dashboard) · sent.", "daysAgo": 5, "amountCents": 200000, "meta": { "number": "INV-1043", "status": "Sent", "customer": "Harbor Goods" } }
+        ]
+      },
+      "expected": [
+        { "client": "Acme Analytics", "type": "scope_change", "status": "needs_clarification" },
+        { "client": "Northstar Labs", "type": "overdue_commitment", "status": "needs_clarification" },
+        { "client": "Atlas Systems", "type": "unbilled_milestone", "status": "needs_clarification", "amountCents": 500000, "currency": "USD" }
+      ],
+      "interview": {
+        "topic": "change_requests",
+        "name": "Change requests and extra work",
+        "description": "How Brightline handles client requests for extra or changed work.",
+        "turns": [
+          {
+            "question": "When a client asks for something new in the middle of a project, what usually happens next? A recent example helps.",
+            "suggestedAnswers": ["We usually just build it if it's small", "We send a quote first", "It depends on who asks"],
+            "learned": {
+              "businessGoal": "Get paid for every piece of extra work a client asks for",
+              "trigger": "A client asks for something that is not in the statement of work, usually in the shared Slack channel",
+              "actors": ["Client", "Project lead", "Owner"],
+              "applications": ["Slack", "Gmail"],
+              "steps": [{ "id": "request", "name": "Client asks for extra work", "description": "The client posts a request in the shared Slack channel, for example a third dashboard.", "actor": "Client", "application": "Slack", "outputs": ["Request message"] }]
+            }
+          },
+          {
+            "question": "Who decides whether that extra work is billable, and how do they decide?",
+            "suggestedAnswers": ["I decide, mostly by gut feel", "Anything over a day gets a change order", "The project lead decides"],
+            "learned": {
+              "decisions": ["Extra work estimated above one day needs a written change order before it starts"],
+              "approvals": ["The owner approves the price on every change order"],
+              "steps": [{ "id": "estimate", "name": "Estimate the request", "description": "The project lead sizes the request against the statement of work.", "actor": "Project lead", "application": "Notion", "inputs": ["Request message", "Statement of work"], "outputs": ["Estimate"], "dependsOn": ["request"], "decision": "Is this more than a day of work?" }]
+            }
+          },
+          {
+            "question": "Where does the client's approval get recorded: email, Slack, a signed change order, or somewhere else?",
+            "suggestedAnswers": ["A thumbs-up in Slack", "An email saying go ahead", "A signed change order PDF"],
+            "learned": {
+              "inputs": ["Change order draft"],
+              "outputs": ["Approved change order"],
+              "exceptions": ["Small fixes under two hours are done without a change order"],
+              "steps": [{ "id": "approve", "name": "Client approves the change order", "description": "The client replies by email or in Slack to approve the change order.", "actor": "Client", "application": "Gmail", "inputs": ["Change order draft"], "outputs": ["Approved change order"], "dependsOn": ["estimate"], "requiresApproval": true }]
+            }
+          },
+          {
+            "question": "How does an approved change order make it onto the invoice? Walk me through the last one.",
+            "suggestedAnswers": ["I add it to the next milestone invoice", "Separate invoice right away", "Honestly, sometimes it doesn't"],
+            "learned": {
+              "applications": ["QuickBooks"],
+              "frequency": "Two or three extra requests a month across active projects",
+              "estimatedMinutes": 45,
+              "bottlenecks": ["Approved extras are added to the next milestone invoice from memory, so some are forgotten", "Work often starts before the change order is approved"],
+              "steps": [{ "id": "invoice", "name": "Add the change order to the next invoice", "description": "The owner adds the approved extra to the next milestone invoice in QuickBooks.", "actor": "Owner", "application": "QuickBooks", "inputs": ["Approved change order"], "outputs": ["Invoice line"], "dependsOn": ["approve"] }]
+            }
+          },
+          {
+            "question": "Thinking about the last six months, where did money slip through? Any extra work you never billed?",
+            "suggestedAnswers": ["A few small things", "One big one: a third dashboard", "Nothing I know of"],
+            "learned": {
+              "desiredOutcome": "Every approved extra appears on an invoice in the same month it was approved",
+              "bottlenecks": ["Requests arrive in Slack where nobody checks them against the contract"],
+              "automationOpportunities": ["Flag a Slack request that matches a contract exclusion", "Draft the change order from the request and the contract"]
+            }
+          }
+        ],
+        "closing": "Thanks, that's clear. Knov now knows that extra work over a day needs a written change order, that approvals arrive by email or Slack, and that approved extras are added to the next milestone invoice from memory. Review what it learned and correct anything that's off."
+      }
+    },
+    {
+      "id": "lanternwood",
+      "name": "Lanternwood Creative",
+      "industry": "Brand and video studio",
+      "location": "Austin, TX",
+      "team": "3 people",
+      "currency": "USD",
+      "owner": { "name": "Jess Alvarado", "email": "jess@lanternwood.co" },
+      "tools": ["Gmail", "Slack Connect", "FreshBooks", "Premiere Pro", "Figma", "Notion"],
+      "profile": "A three-person studio making brand films and social video for local businesses. Fixed-price packages with a set number of revision rounds. The owner edits, sells, and invoices; extras are agreed in chat and often forgotten.",
+      "whatToExpect": [
+        "Copperhead Brewing asked for drone footage, which the package excludes, and it was shot and edited without a quote.",
+        "Hollow Oak Foundation was promised a revised proposal by October 8 and it is late.",
+        "Riverbend Dental accepted the final video, and FreshBooks has no invoice for the USD 4,000 delivery milestone.",
+        "Hollow Oak's same-day social edits were approved by email at USD 600, so Knov should not raise them."
+      ],
+      "engagements": [
+        { "client": "Copperhead Brewing", "project": "Launch video", "description": "One 90-second brand video and two 15-second social cuts", "threads": [], "agreementTitle": "Copperhead launch video package", "agreement": "Scope: one 90-second brand video and two 15-second social cuts.\nIncludes two rounds of revisions.\nExcluded: drone footage\nFee: USD 8500, 50% deposit and 50% on final delivery." },
+        { "client": "Riverbend Dental", "project": "Patient welcome video", "description": "A two-minute welcome video for new patients", "threads": [], "agreementTitle": "Riverbend Dental agreement", "agreement": "Scope: one 2-minute patient welcome video.\nExcluded: additional languages\nMilestone: final video delivered and approved.\nPayment: USD 4000 after the delivery milestone is accepted." },
+        { "client": "Hollow Oak Foundation", "project": "Gala highlight reel", "description": "Event coverage and a three-minute highlight reel", "threads": [], "agreementTitle": "Hollow Oak gala agreement", "agreement": "Scope: event coverage and a 3-minute highlight reel.\nExcluded: same-day social edits\nFee: USD 3200 on delivery of the highlight reel." }
+      ],
+      "records": {
+        "gmail": [
+          { "project": "Launch video", "kind": "communication", "reference": "copperhead-roughcut", "text": "Loved the rough cut. A few small notes attached, nothing major.", "daysAgo": 12, "meta": { "from": "Tom Beck <tom@copperheadbrewing.com>", "to": "jess@lanternwood.co", "subject": "Rough cut notes" } },
+          { "project": "Patient welcome video", "kind": "milestone_accepted", "reference": "riverbend-approval", "text": "Final video approved, this is exactly what we wanted. Consider the delivery milestone accepted.", "daysAgo": 10, "amountCents": 400000, "meta": { "from": "Dr. Lena Park <lena@riverbenddental.com>", "to": "jess@lanternwood.co", "subject": "Welcome video: approved!" } },
+          { "project": "Gala highlight reel", "kind": "commitment", "reference": "hollowoak-promise", "text": "Thanks, Maria. I will send the revised proposal for the spring campaign by 2025-10-08.", "daysAgo": 6, "dueDaysAgo": 2, "meta": { "from": "Jess Alvarado <jess@lanternwood.co>", "to": "Maria Okafor <maria@hollowoak.org>", "subject": "Re: Spring campaign ideas" } },
+          { "project": "Gala highlight reel", "kind": "approval", "reference": "hollowoak-approval", "text": "Confirmed, please go ahead with the same-day social edits at the USD 600 you quoted.", "daysAgo": 8, "amountCents": 60000, "meta": { "from": "Maria Okafor <maria@hollowoak.org>", "to": "jess@lanternwood.co", "subject": "Re: Gala social clips" } }
+        ],
+        "slack": [
+          { "project": "Launch video", "kind": "request", "reference": "copperhead-drone", "text": "Can you add some drone footage of the taproom patio? Would make the opener pop.", "daysAgo": 8, "meta": { "channel": "#copperhead-launch", "author": "Tom Beck (Copperhead)" } },
+          { "project": "Gala highlight reel", "kind": "request", "reference": "hollowoak-request", "text": "Could you also do same-day social edits during the gala? Three or four clips.", "daysAgo": 9, "meta": { "channel": "#hollow-oak-gala", "author": "Maria Okafor (Hollow Oak)" } },
+          { "project": "Patient welcome video", "kind": "communication", "reference": "riverbend-thanks", "text": "The front desk team loves the video. Thank you!", "daysAgo": 9, "meta": { "channel": "#riverbend", "author": "Dr. Lena Park (Riverbend)" } }
+        ],
+        "work": [
+          { "project": "Launch video", "kind": "activity", "reference": "copperhead-drone-work", "text": "Shot and edited drone footage for the Copperhead taproom opener.", "daysAgo": 6, "meta": { "apps": "Premiere Pro, Finder, Chrome", "hours": 9.0, "thread": "copperhead-drone-opener" } },
+          { "project": "Gala highlight reel", "kind": "activity", "reference": "hollowoak-social-work", "text": "Cut same-day social edits during the Hollow Oak gala.", "daysAgo": 5, "meta": { "apps": "Premiere Pro, Slack", "hours": 4.5, "thread": "hollow-oak-gala-clips" } }
+        ],
+        "billing": [
+          { "project": "Launch video", "kind": "invoice", "reference": "INV-0228", "text": "Invoice INV-0228 · Copperhead Brewing · Launch video deposit · paid.", "daysAgo": 25, "amountCents": 425000, "meta": { "number": "INV-0228", "status": "Paid", "customer": "Copperhead Brewing" } },
+          { "project": "Gala highlight reel", "kind": "invoice", "reference": "INV-0231", "text": "Invoice INV-0231 · Hollow Oak Foundation · Same-day social edits · sent.", "daysAgo": 3, "amountCents": 60000, "meta": { "number": "INV-0231", "status": "Sent", "customer": "Hollow Oak Foundation" } },
+          { "project": "Patient welcome video", "kind": "billing_complete", "reference": "riverbend-billing-sync", "text": "FreshBooks sync covers every Riverbend Dental invoice through 2025-10-10.", "daysAgo": 0, "meta": { "status": "Sync complete", "customer": "Riverbend Dental" } }
+        ]
+      },
+      "expected": [
+        { "client": "Copperhead Brewing", "type": "scope_change", "status": "needs_clarification" },
+        { "client": "Hollow Oak Foundation", "type": "overdue_commitment", "status": "needs_clarification" },
+        { "client": "Riverbend Dental", "type": "unbilled_milestone", "status": "needs_clarification", "amountCents": 400000, "currency": "USD" }
+      ],
+      "interview": {
+        "topic": "change_requests",
+        "name": "Change requests and extra work",
+        "description": "How Lanternwood handles requests for extra footage, cuts, and revisions.",
+        "turns": [
+          {
+            "question": "When a client asks for something new in the middle of a project, what usually happens next? A recent example helps.",
+            "suggestedAnswers": ["We usually just do it to keep them happy", "We mention a price in the Slack thread", "It depends on the client"],
+            "learned": {
+              "businessGoal": "Stop giving away extra footage and revision rounds for free",
+              "trigger": "A client asks for extra footage or another revision in the shared Slack channel",
+              "actors": ["Client", "Owner", "Editor"],
+              "applications": ["Slack", "Gmail"],
+              "steps": [{ "id": "request", "name": "Client asks for an extra", "description": "The client asks in Slack for extra footage, another cut, or one more revision round.", "actor": "Client", "application": "Slack", "outputs": ["Request message"] }]
+            }
+          },
+          {
+            "question": "What does the package say is included, and who checks a request against it?",
+            "suggestedAnswers": ["Two revision rounds; I check from memory", "It's in the agreement PDF, nobody checks", "The editor flags it if it feels big"],
+            "learned": {
+              "inputs": ["Package agreement"],
+              "decisions": ["Anything beyond two revision rounds or outside the listed deliverables is billable"],
+              "steps": [{ "id": "check", "name": "Check the request against the package", "description": "The owner compares the request with the package deliverables and revision rounds.", "actor": "Owner", "application": "Notion", "inputs": ["Request message", "Package agreement"], "outputs": ["Billable or included decision"], "dependsOn": ["request"], "decision": "Is this outside the package deliverables?" }]
+            }
+          },
+          {
+            "question": "When it's billable, how do you quote it and where does the client say yes?",
+            "suggestedAnswers": ["I reply with a price in Slack", "I email a short quote", "We talk on the phone"],
+            "learned": {
+              "approvals": ["The client confirms the quoted price by email or Slack before the extra is shot or cut"],
+              "outputs": ["Quoted price", "Client confirmation"],
+              "steps": [{ "id": "quote", "name": "Quote the extra", "description": "The owner replies with a price and waits for the client to confirm.", "actor": "Owner", "application": "Gmail", "inputs": ["Billable or included decision"], "outputs": ["Client confirmation"], "dependsOn": ["check"], "requiresApproval": true }]
+            }
+          },
+          {
+            "question": "How does the agreed extra get onto the invoice? What happened with the last one?",
+            "suggestedAnswers": ["Added to the final invoice in FreshBooks", "Separate invoice when I remember", "It got lost in the thread"],
+            "learned": {
+              "applications": ["FreshBooks"],
+              "frequency": "About one extra request per project, two or three a month",
+              "estimatedMinutes": 30,
+              "bottlenecks": ["Extras agreed in Slack are not written anywhere else, so the final invoice misses them", "Shooting starts before the price is confirmed"],
+              "steps": [{ "id": "invoice", "name": "Add the extra to the final invoice", "description": "The owner adds the agreed extra as a line on the final FreshBooks invoice.", "actor": "Owner", "application": "FreshBooks", "inputs": ["Client confirmation"], "outputs": ["Invoice line"], "dependsOn": ["quote"] }]
+            }
+          },
+          {
+            "question": "Over the last few months, which extras did you end up doing for free?",
+            "suggestedAnswers": ["Drone shots, more than once", "Extra revision rounds", "Rush edits for events"],
+            "learned": {
+              "desiredOutcome": "Every extra that the client said yes to is on an invoice within a week of delivery",
+              "exceptions": ["Tiny tweaks under 30 minutes are free"],
+              "bottlenecks": ["Drone footage and extra revision rounds are the most common unbilled extras"],
+              "automationOpportunities": ["Flag a Slack request that matches a package exclusion", "Draft a quote from the request and the package terms"]
+            }
+          }
+        ],
+        "closing": "Got it. Knov now knows that extras beyond the package are billable, that clients confirm prices in Slack or email, and that agreed extras are added to the final FreshBooks invoice from memory. Review what it learned and correct anything that's off."
+      }
+    },
+    {
+      "id": "gridline",
+      "name": "Gridline Architects",
+      "industry": "Architecture practice",
+      "location": "Vancouver, BC",
+      "team": "8 people",
+      "currency": "CAD",
+      "owner": { "name": "Priya Nair", "email": "priya@gridlinearch.ca" },
+      "tools": ["Gmail", "Slack", "QuickBooks", "Revit", "Bluebeam"],
+      "profile": "An eight-person architecture practice doing residential and small commercial work. Fees are fixed per phase with milestone payments. Clients email the principal directly, and extra drawings are often produced to keep a permit moving.",
+      "whatToExpect": [
+        "The Okonkwo family asked for landscape drawings, which the agreement excludes, and the team produced them with no fee agreed.",
+        "Sora Ramen accepted the issued-for-construction milestone (CAD 18,000); billing shows no invoice and the QuickBooks sync does not cover Sora, so Knov asks you to verify rather than claiming money is owed.",
+        "Westgate Developments was promised a massing proposal by October 7. Work activity shows it was sent, so Knov resolves the overdue promise on its own."
+      ],
+      "engagements": [
+        { "client": "Okonkwo Residence", "project": "Laneway house design", "description": "Schematic design, design development, and permit drawings for a laneway house", "threads": [], "agreementTitle": "Okonkwo design services agreement", "agreement": "Scope: schematic design, design development, and permit drawings for a laneway house.\nIncludes two rounds of design revisions.\nExcluded: interior design services\nExcluded: landscape drawings\nFee: CAD 42000 in three milestone payments.\nMilestone: permit set issued." },
+        { "client": "Sora Ramen", "project": "Restaurant fit-out", "description": "Tenant improvement drawings for an 1,800 sq ft restaurant", "threads": [], "agreementTitle": "Sora Ramen fit-out agreement", "agreement": "Scope: tenant improvement drawings for an 1,800 sq ft restaurant.\nExcluded: kitchen equipment specification\nMilestone: issued-for-construction set accepted.\nPayment: CAD 18000 after the issued-for-construction milestone is accepted." },
+        { "client": "Westgate Developments", "project": "Townhouse feasibility", "description": "Feasibility study and massing options for a six-unit townhouse site", "threads": [], "agreementTitle": "Westgate feasibility letter", "agreement": "Scope: feasibility study and massing options.\nFee: CAD 9500 on delivery of the study." }
+      ],
+      "records": {
+        "gmail": [
+          { "project": "Laneway house design", "kind": "request", "reference": "okonkwo-landscape", "text": "Could your team also prepare the landscape drawings? The city asked for them with the permit package.", "daysAgo": 11, "meta": { "from": "Ada Okonkwo <ada.okonkwo@gmail.com>", "to": "priya@gridlinearch.ca", "subject": "Permit package: landscape drawings" } },
+          { "project": "Restaurant fit-out", "kind": "milestone_accepted", "reference": "sora-ifc", "text": "We've accepted the issued-for-construction milestone. Contractor starts Monday.", "daysAgo": 4, "amountCents": 1800000, "meta": { "from": "Kenji Sato <kenji@soraramen.ca>", "to": "priya@gridlinearch.ca", "subject": "IFC set accepted" } },
+          { "project": "Townhouse feasibility", "kind": "commitment", "reference": "westgate-promise", "text": "Thanks for the site walk, Daniel. I'll send the massing proposal by 2025-10-07.", "daysAgo": 9, "dueDaysAgo": 3, "meta": { "from": "Priya Nair <priya@gridlinearch.ca>", "to": "Daniel Reyes <daniel@westgatedev.ca>", "subject": "Re: Site walk follow-up" } },
+          { "project": "Laneway house design", "kind": "communication", "reference": "okonkwo-thanks", "text": "Thank you for turning the revisions around so quickly. We're excited.", "daysAgo": 14, "meta": { "from": "Ada Okonkwo <ada.okonkwo@gmail.com>", "to": "priya@gridlinearch.ca", "subject": "Re: Design development revisions" } }
+        ],
+        "slack": [
+          { "project": "Restaurant fit-out", "kind": "communication", "reference": "sora-out", "text": "Sora IFC set is out the door. Nice work, team.", "daysAgo": 6, "meta": { "channel": "#studio", "author": "Priya Nair (Gridline)" } },
+          { "project": "Laneway house design", "kind": "communication", "reference": "okonkwo-permit", "text": "Okonkwo permit package goes to the city Thursday. Landscape sheets are in.", "daysAgo": 5, "meta": { "channel": "#studio", "author": "Theo Lam (Gridline)" } }
+        ],
+        "work": [
+          { "project": "Laneway house design", "kind": "activity", "reference": "okonkwo-landscape-work", "text": "Prepared landscape drawings for the Okonkwo laneway permit package.", "daysAgo": 7, "meta": { "apps": "Revit, Bluebeam, Chrome", "hours": 14.0, "thread": "okonkwo-landscape-sheets" } },
+          { "project": "Townhouse feasibility", "kind": "activity", "reference": "westgate-proposal-sent", "text": "Sent the massing proposal to Daniel Reyes at Westgate.", "daysAgo": 3, "meta": { "apps": "Gmail, Revit, Preview", "hours": 6.0, "thread": "westgate-massing-options" } }
+        ],
+        "billing": [
+          { "project": "Townhouse feasibility", "kind": "invoice", "reference": "INV-2041", "text": "Invoice INV-2041 · Westgate Developments · Feasibility study · paid.", "daysAgo": 12, "amountCents": 950000, "meta": { "number": "INV-2041", "status": "Paid", "customer": "Westgate Developments" } },
+          { "project": "Laneway house design", "kind": "invoice", "reference": "INV-2044", "text": "Invoice INV-2044 · Okonkwo Residence · Design development milestone · paid.", "daysAgo": 20, "amountCents": 1400000, "meta": { "number": "INV-2044", "status": "Paid", "customer": "Okonkwo Residence" } },
+          { "project": "Laneway house design", "kind": "billing_complete", "reference": "okonkwo-billing-sync", "text": "QuickBooks sync covers every Okonkwo Residence invoice through 2025-10-10.", "daysAgo": 0, "meta": { "status": "Sync complete", "customer": "Okonkwo Residence" } }
+        ]
+      },
+      "expected": [
+        { "client": "Okonkwo Residence", "type": "scope_change", "status": "needs_clarification" },
+        { "client": "Sora Ramen", "type": "billing_verification", "status": "needs_clarification" },
+        { "client": "Westgate Developments", "type": "overdue_commitment", "status": "resolved" }
+      ],
+      "interview": {
+        "topic": "invoicing",
+        "name": "Invoicing and getting paid",
+        "description": "How Gridline invoices phases and milestones.",
+        "turns": [
+          {
+            "question": "What tells you it's time to send an invoice: a milestone, the end of the month, or something else?",
+            "suggestedAnswers": ["When a phase is accepted by the client", "End of the month", "When I remember"],
+            "learned": {
+              "businessGoal": "Invoice every accepted phase on time",
+              "trigger": "The client accepts a phase deliverable, for example the issued-for-construction set",
+              "actors": ["Principal", "Project architect", "Client"],
+              "applications": ["Gmail", "QuickBooks"],
+              "steps": [{ "id": "accept", "name": "Client accepts the phase", "description": "The client confirms by email that the phase deliverable is accepted.", "actor": "Client", "application": "Gmail", "outputs": ["Acceptance email"] }]
+            }
+          },
+          {
+            "question": "Who notices that a phase was accepted, and how does the office find out?",
+            "suggestedAnswers": ["The client emails me and I forward it", "The project architect mentions it in Slack", "Nobody tracks it formally"],
+            "learned": {
+              "inputs": ["Acceptance email", "Fee schedule"],
+              "bottlenecks": ["Acceptance emails go to the principal's inbox and are not tracked anywhere"],
+              "steps": [{ "id": "notice", "name": "Record the acceptance", "description": "The principal forwards the acceptance email or mentions it in the studio channel.", "actor": "Principal", "application": "Slack", "inputs": ["Acceptance email"], "outputs": ["Acceptance noted"], "dependsOn": ["accept"] }]
+            }
+          },
+          {
+            "question": "Walk me through the last invoice you sent: who prepared it, where, and how long after acceptance?",
+            "suggestedAnswers": ["I did it in QuickBooks a few weeks later", "The bookkeeper does it at month end", "Same day, I'm strict about it"],
+            "learned": {
+              "frequency": "Four to six milestone invoices a month",
+              "estimatedMinutes": 25,
+              "decisions": ["Each phase is invoiced for the fee-schedule amount after written acceptance"],
+              "steps": [{ "id": "invoice", "name": "Prepare the invoice", "description": "The principal prepares the milestone invoice in QuickBooks from the fee schedule.", "actor": "Principal", "application": "QuickBooks", "inputs": ["Acceptance noted", "Fee schedule"], "outputs": ["Invoice"], "dependsOn": ["notice"] }]
+            }
+          },
+          {
+            "question": "What are your payment terms, and what happens when a client is late?",
+            "suggestedAnswers": ["Net 30, I chase by email", "Net 15, nobody chases", "Due on receipt"],
+            "learned": {
+              "approvals": ["The principal reviews every invoice before it is sent"],
+              "exceptions": ["Repeat developer clients are invoiced monthly instead of per phase"],
+              "outputs": ["Invoice", "Payment"],
+              "steps": [{ "id": "chase", "name": "Chase late payment", "description": "The principal emails a reminder when an invoice passes net 30.", "actor": "Principal", "application": "Gmail", "inputs": ["Invoice"], "outputs": ["Reminder email"], "dependsOn": ["invoice"] }]
+            }
+          },
+          {
+            "question": "Which accepted phases, if any, were invoiced late or not at all in the past year?",
+            "suggestedAnswers": ["At least one IFC set slipped a month", "Not sure, I'd have to check", "None"],
+            "learned": {
+              "desiredOutcome": "Every accepted phase is invoiced within a week and paid within 30 days",
+              "bottlenecks": ["Busy permit weeks push invoicing back by a month or more"],
+              "automationOpportunities": ["Match an acceptance email to the fee schedule and draft the invoice details", "Show accepted phases with no matching invoice"]
+            }
+          }
+        ],
+        "closing": "Thanks. Knov now knows that phases are invoiced after written acceptance, that acceptance lands in the principal's inbox without being tracked, and that busy permit weeks delay invoices. Review what it learned and correct anything that's off."
+      }
+    },
+    {
+      "id": "kestrel",
+      "name": "Kestrel Advisory",
+      "industry": "Operations consulting",
+      "location": "Chicago, IL",
+      "team": "2 people",
+      "currency": "USD",
+      "owner": { "name": "Marcus Hale", "email": "marcus@kestreladvisory.com" },
+      "tools": ["Gmail", "Slack Connect", "Wave", "Google Docs", "Notion", "Zoom"],
+      "profile": "A two-person consultancy selling workshop-and-report engagements to mid-sized companies. Proposals are the sales pipeline, and the owner writes them between client days, so they slip. Clients often ask the consultant to stay on after the report.",
+      "whatToExpect": [
+        "Fairway Logistics asked Kestrel to stay on for implementation support, which the engagement excludes, and three on-site days were delivered with no fee agreed.",
+        "Fairway also accepted the final report milestone; the matching invoice is in Wave, so Knov resolves that one when billing connects.",
+        "Bluefin was promised a pricing proposal by October 9 and it has not gone out.",
+        "Orchard Health's staff training sessions were approved by email, so Knov should not raise them."
+      ],
+      "engagements": [
+        { "client": "Fairway Logistics", "project": "Warehouse ops review", "description": "Two on-site workshops and a written recommendations report", "threads": [], "agreementTitle": "Fairway engagement letter", "agreement": "Scope: two on-site workshops and a written recommendations report.\nExcluded: implementation support\nMilestone: final report delivered and accepted.\nPayment: USD 15000 after the final report milestone is accepted." },
+        { "client": "Bluefin SaaS", "project": "Pricing strategy sprint", "description": "Two-week pricing sprint with two workshops", "threads": [], "agreementTitle": "Bluefin sprint agreement", "agreement": "Scope: pricing sprint with two workshops and a recommendation memo.\nFee: USD 8000 on signature." },
+        { "client": "Orchard Health Clinics", "project": "Front desk process redesign", "description": "Process mapping and SOP drafts for two clinics", "threads": [], "agreementTitle": "Orchard Health engagement letter", "agreement": "Scope: process mapping and SOP drafts for two clinics.\nExcluded: staff training sessions\nFee: USD 6500, half on signature and half on delivery." }
+      ],
+      "records": {
+        "gmail": [
+          { "project": "Warehouse ops review", "kind": "milestone_accepted", "reference": "fairway-report", "text": "The final report milestone is accepted by our leadership team. Great work.", "daysAgo": 13, "amountCents": 1500000, "meta": { "from": "Elena Ruiz <elena.ruiz@fairwaylogistics.com>", "to": "marcus@kestreladvisory.com", "subject": "Final report: accepted" } },
+          { "project": "Pricing strategy sprint", "kind": "commitment", "reference": "bluefin-promise", "text": "Great session today, Nate. I'll send the pricing proposal by 2025-10-09.", "daysAgo": 7, "dueDaysAgo": 1, "meta": { "from": "Marcus Hale <marcus@kestreladvisory.com>", "to": "Nate Collins <nate@bluefin.io>", "subject": "Re: Workshop 2 recap" } },
+          { "project": "Pricing strategy sprint", "kind": "communication", "reference": "bluefin-nudge", "text": "Any update on the proposal? The board wants numbers on Friday.", "daysAgo": 2, "meta": { "from": "Nate Collins <nate@bluefin.io>", "to": "marcus@kestreladvisory.com", "subject": "Proposal timing" } },
+          { "project": "Front desk process redesign", "kind": "approval", "reference": "orchard-approval", "text": "Approved: two staff training sessions at USD 1,200 each as quoted.", "daysAgo": 8, "amountCents": 240000, "meta": { "from": "Dr. Amy Chen <amy.chen@orchardhealth.org>", "to": "marcus@kestreladvisory.com", "subject": "Re: Training before go-live" } }
+        ],
+        "slack": [
+          { "project": "Warehouse ops review", "kind": "request", "reference": "fairway-request", "text": "Could you stay on for implementation support with the new pick process for a few weeks?", "daysAgo": 10, "meta": { "channel": "#fairway-ops", "author": "Elena Ruiz (Fairway)" } },
+          { "project": "Front desk process redesign", "kind": "request", "reference": "orchard-request", "text": "Could you run staff training sessions at both clinics before go-live?", "daysAgo": 9, "meta": { "channel": "#orchard-frontdesk", "author": "Dr. Amy Chen (Orchard)" } },
+          { "project": "Warehouse ops review", "kind": "communication", "reference": "fairway-thanks", "text": "The pick rate is already up 12%. Team is thrilled.", "daysAgo": 3, "meta": { "channel": "#fairway-ops", "author": "Elena Ruiz (Fairway)" } }
+        ],
+        "work": [
+          { "project": "Warehouse ops review", "kind": "activity", "reference": "fairway-impl-work", "text": "Implementation support sessions for Fairway's new pick process (3 on-site days).", "daysAgo": 6, "meta": { "apps": "Google Docs, Zoom, Chrome", "hours": 22.0, "thread": "fairway-pick-process" } },
+          { "project": "Front desk process redesign", "kind": "activity", "reference": "orchard-training-work", "text": "Delivered staff training sessions at Orchard's Lincoln Park clinic.", "daysAgo": 4, "meta": { "apps": "Google Slides, Zoom", "hours": 7.0, "thread": "orchard-training" } }
+        ],
+        "billing": [
+          { "project": "Warehouse ops review", "kind": "invoice", "reference": "INV-114", "text": "Invoice INV-114 · Fairway Logistics · Final report milestone · sent.", "daysAgo": 11, "amountCents": 1500000, "meta": { "number": "INV-114", "status": "Sent", "customer": "Fairway Logistics" } },
+          { "project": "Front desk process redesign", "kind": "invoice", "reference": "INV-117", "text": "Invoice INV-117 · Orchard Health Clinics · Staff training sessions · sent.", "daysAgo": 3, "amountCents": 240000, "meta": { "number": "INV-117", "status": "Sent", "customer": "Orchard Health Clinics" } },
+          { "project": "Pricing strategy sprint", "kind": "invoice", "reference": "INV-112", "text": "Invoice INV-112 · Bluefin SaaS · Pricing sprint · paid.", "daysAgo": 18, "amountCents": 800000, "meta": { "number": "INV-112", "status": "Paid", "customer": "Bluefin SaaS" } }
+        ]
+      },
+      "expected": [
+        { "client": "Fairway Logistics", "type": "scope_change", "status": "needs_clarification" },
+        { "client": "Fairway Logistics", "type": "billing_verification", "status": "resolved" },
+        { "client": "Bluefin SaaS", "type": "overdue_commitment", "status": "needs_clarification" }
+      ],
+      "interview": {
+        "topic": "follow_ups",
+        "name": "Proposals and follow-ups",
+        "description": "The promises Kestrel makes to clients and how they are tracked.",
+        "turns": [
+          {
+            "question": "When you promise a client a proposal or a follow-up, where does that promise get written down?",
+            "suggestedAnswers": ["Nowhere, it's in the email thread", "A Notion to-do list", "My calendar"],
+            "learned": {
+              "businessGoal": "Send every promised proposal on the day it was promised",
+              "trigger": "A workshop or call ends with a promise to send a proposal by a specific date",
+              "actors": ["Owner", "Client"],
+              "applications": ["Gmail", "Notion"],
+              "steps": [{ "id": "promise", "name": "Promise a proposal", "description": "The owner emails the client after a workshop and names a date for the proposal.", "actor": "Owner", "application": "Gmail", "outputs": ["Promise email with a date"] }]
+            }
+          },
+          {
+            "question": "How do you decide the date you promise, and how often does it hold?",
+            "suggestedAnswers": ["Usually a week; it holds about half the time", "I say 'soon' to stay safe", "Depends on travel"],
+            "learned": {
+              "decisions": ["Proposals are promised one week out unless the owner is travelling"],
+              "bottlenecks": ["Client days leave no writing time, so proposals slip a few days past the promised date"],
+              "frequency": "Three or four proposals a month"
+            }
+          },
+          {
+            "question": "Who writes the proposal, with what, and what does it need before it can go out?",
+            "suggestedAnswers": ["I write it in Google Docs from a template", "My associate drafts, I review", "Each one from scratch"],
+            "learned": {
+              "applications": ["Google Docs"],
+              "inputs": ["Workshop notes", "Proposal template"],
+              "outputs": ["Proposal PDF"],
+              "steps": [{ "id": "draft", "name": "Draft the proposal", "description": "The associate drafts the proposal in Google Docs from the template and workshop notes.", "actor": "Associate", "application": "Google Docs", "inputs": ["Workshop notes", "Proposal template"], "outputs": ["Proposal draft"], "dependsOn": ["promise"] }, { "id": "review", "name": "Review and send", "description": "The owner reviews the pricing and sends the proposal PDF to the client.", "actor": "Owner", "application": "Gmail", "inputs": ["Proposal draft"], "outputs": ["Proposal PDF"], "dependsOn": ["draft"], "requiresApproval": true }],
+              "approvals": ["The owner approves pricing before any proposal is sent"]
+            }
+          },
+          {
+            "question": "What happens after you send it? Is there a follow-up rhythm if the client goes quiet?",
+            "suggestedAnswers": ["I follow up after a week", "I wait for them", "No rhythm, it varies"],
+            "learned": {
+              "estimatedMinutes": 180,
+              "steps": [{ "id": "followup", "name": "Follow up on the proposal", "description": "The owner emails a short follow-up one week after sending.", "actor": "Owner", "application": "Gmail", "inputs": ["Proposal PDF"], "outputs": ["Follow-up email"], "dependsOn": ["review"] }],
+              "exceptions": ["Existing clients get a call instead of a written proposal"]
+            }
+          },
+          {
+            "question": "Think of a deal you lost or nearly lost because a proposal was late. What happened?",
+            "suggestedAnswers": ["A board meeting came and went", "The client went with someone faster", "Can't think of one"],
+            "learned": {
+              "desiredOutcome": "No proposal goes out later than promised, and every sent proposal gets a follow-up",
+              "bottlenecks": ["Promised dates live only in email threads, so there is nothing to remind the owner"],
+              "automationOpportunities": ["Pull promised dates out of sent emails and show which ones are overdue", "Draft the follow-up email from the original promise"]
+            }
+          }
+        ],
+        "closing": "Thanks. Knov now knows that proposals are promised a week out by email, drafted in Google Docs, and reviewed by the owner, and that promised dates are tracked nowhere but the thread. Review what it learned and correct anything that's off."
+      }
+    },
+    {
+      "id": "harborlight",
+      "name": "Harborlight Bookkeeping",
+      "industry": "Bookkeeping and payroll services",
+      "location": "Tampa, FL",
+      "team": "4 people",
+      "currency": "USD",
+      "owner": { "name": "Dana Whitfield", "email": "dana@harborlightbooks.com" },
+      "tools": ["Gmail", "Slack Connect", "QuickBooks Online", "Gusto", "Karbon"],
+      "profile": "A four-person bookkeeping firm on monthly retainers with restaurants, e-commerce shops, and a law practice. Retainers are invoiced on the first of the month. One-off cleanups and filings get done because the client is anxious, and are rarely priced.",
+      "whatToExpect": [
+        "Salt & Ember asked for catch-up bookkeeping, which the retainer excludes, and 16 hours of recoding were done with no price agreed.",
+        "Palmetto Law Group accepted the payroll setup milestone and QuickBooks shows no invoice for the USD 2,500 setup fee.",
+        "Driftwood Outfitters was promised an inventory reconciliation proposal by October 8 and it is late.",
+        "Driftwood's sales tax filings were approved by email at USD 300, so Knov should not raise them."
+      ],
+      "engagements": [
+        { "client": "Salt & Ember Restaurant Group", "project": "Monthly bookkeeping retainer", "description": "Monthly bookkeeping for three locations", "threads": [], "agreementTitle": "Salt & Ember retainer agreement", "agreement": "Scope: monthly bookkeeping for three locations, bank reconciliation, and monthly financial statements.\nExcluded: catch-up bookkeeping\nExcluded: sales tax filings\nFee: USD 1800 per month, invoiced on the 1st." },
+        { "client": "Palmetto Law Group", "project": "Payroll setup and monthly close", "description": "Payroll setup in Gusto and monthly close", "threads": [], "agreementTitle": "Palmetto Law engagement letter", "agreement": "Scope: payroll setup in Gusto and monthly close.\nExcluded: 1099 contractor filings\nMilestone: payroll setup complete and first payroll run accepted.\nPayment: USD 2500 after the setup milestone is accepted, then USD 650 per month." },
+        { "client": "Driftwood Outfitters", "project": "Monthly bookkeeping", "description": "Monthly bookkeeping and inventory reconciliation for an online store", "threads": [], "agreementTitle": "Driftwood retainer agreement", "agreement": "Scope: monthly bookkeeping and inventory reconciliation.\nExcluded: sales tax filings\nFee: USD 950 per month." }
+      ],
+      "records": {
+        "gmail": [
+          { "project": "Monthly bookkeeping retainer", "kind": "request", "reference": "saltember-catchup", "text": "Our old bookkeeper left Q4 2024 a mess. Can you do catch-up bookkeeping for October through December before the bank meeting?", "daysAgo": 14, "meta": { "from": "Luis Moreno <luis@saltandember.com>", "to": "dana@harborlightbooks.com", "subject": "Q4 cleanup before the bank meeting" } },
+          { "project": "Payroll setup and monthly close", "kind": "milestone_accepted", "reference": "palmetto-payroll", "text": "First payroll ran cleanly. We accept the setup milestone, thank you.", "daysAgo": 9, "amountCents": 250000, "meta": { "from": "Renee Caldwell <renee@palmettolaw.com>", "to": "dana@harborlightbooks.com", "subject": "Payroll setup: accepted" } },
+          { "project": "Monthly bookkeeping", "kind": "approval", "reference": "driftwood-approval", "text": "Yes, go ahead with the sales tax filings at the USD 300 per quarter we discussed.", "daysAgo": 11, "amountCents": 30000, "meta": { "from": "Kim Tran <kim@driftwoodoutfitters.com>", "to": "dana@harborlightbooks.com", "subject": "Re: Florida sales tax" } },
+          { "project": "Monthly bookkeeping", "kind": "commitment", "reference": "driftwood-promise", "text": "I'll send the inventory reconciliation proposal by 2025-10-08 so you can review it before month end.", "daysAgo": 5, "dueDaysAgo": 2, "meta": { "from": "Dana Whitfield <dana@harborlightbooks.com>", "to": "Kim Tran <kim@driftwoodoutfitters.com>", "subject": "Re: Inventory counts" } }
+        ],
+        "slack": [
+          { "project": "Monthly bookkeeping retainer", "kind": "communication", "reference": "saltember-thanks", "text": "Bank meeting went well, thanks for cleaning things up!", "daysAgo": 7, "meta": { "channel": "#salt-ember", "author": "Luis Moreno (Salt & Ember)" } },
+          { "project": "Monthly bookkeeping", "kind": "request", "reference": "driftwood-request", "text": "Can you handle our Florida sales tax filings this quarter too?", "daysAgo": 12, "meta": { "channel": "#driftwood", "author": "Kim Tran (Driftwood)" } },
+          { "project": "Payroll setup and monthly close", "kind": "communication", "reference": "palmetto-question", "text": "Quick one: can partners be paid on a different schedule from staff?", "daysAgo": 6, "meta": { "channel": "#palmetto-law", "author": "Renee Caldwell (Palmetto)" } }
+        ],
+        "work": [
+          { "project": "Monthly bookkeeping retainer", "kind": "activity", "reference": "saltember-catchup-work", "text": "Catch-up bookkeeping for Salt & Ember, October to December 2024: 212 transactions recoded.", "daysAgo": 8, "meta": { "apps": "QuickBooks Online, Chrome, Excel", "hours": 16.0, "thread": "salt-ember-q4-cleanup" } },
+          { "project": "Monthly bookkeeping", "kind": "activity", "reference": "driftwood-tax-work", "text": "Prepared and submitted Driftwood's Q3 Florida sales tax filings.", "daysAgo": 5, "meta": { "apps": "Chrome, QuickBooks Online", "hours": 2.5, "thread": "driftwood-sales-tax" } }
+        ],
+        "billing": [
+          { "project": "Monthly bookkeeping retainer", "kind": "invoice", "reference": "INV-3310", "text": "Invoice INV-3310 · Salt & Ember Restaurant Group · September bookkeeping · paid.", "daysAgo": 9, "amountCents": 180000, "meta": { "number": "INV-3310", "status": "Paid", "customer": "Salt & Ember Restaurant Group" } },
+          { "project": "Monthly bookkeeping", "kind": "invoice", "reference": "INV-3312", "text": "Invoice INV-3312 · Driftwood Outfitters · Q3 sales tax filings · sent.", "daysAgo": 4, "amountCents": 30000, "meta": { "number": "INV-3312", "status": "Sent", "customer": "Driftwood Outfitters" } },
+          { "project": "Monthly bookkeeping", "kind": "invoice", "reference": "INV-3313", "text": "Invoice INV-3313 · Driftwood Outfitters · September bookkeeping · paid.", "daysAgo": 9, "amountCents": 95000, "meta": { "number": "INV-3313", "status": "Paid", "customer": "Driftwood Outfitters" } },
+          { "project": "Payroll setup and monthly close", "kind": "billing_complete", "reference": "palmetto-billing-sync", "text": "QuickBooks sync covers every Palmetto Law Group invoice through 2025-10-10.", "daysAgo": 0, "meta": { "status": "Sync complete", "customer": "Palmetto Law Group" } }
+        ]
+      },
+      "expected": [
+        { "client": "Salt & Ember Restaurant Group", "type": "scope_change", "status": "needs_clarification" },
+        { "client": "Palmetto Law Group", "type": "unbilled_milestone", "status": "needs_clarification", "amountCents": 250000, "currency": "USD" },
+        { "client": "Driftwood Outfitters", "type": "overdue_commitment", "status": "needs_clarification" }
+      ],
+      "interview": {
+        "topic": "invoicing",
+        "name": "Invoicing and getting paid",
+        "description": "How Harborlight invoices retainers, setups, and one-off work.",
+        "turns": [
+          {
+            "question": "What tells you it's time to send an invoice: a milestone, the end of the month, or something else?",
+            "suggestedAnswers": ["Retainers on the 1st, setups when done", "Everything at month end", "Whenever the work finishes"],
+            "learned": {
+              "businessGoal": "Invoice every retainer, setup fee, and one-off job without missing any",
+              "trigger": "The 1st of the month for retainers, and acceptance of a setup or cleanup for one-off fees",
+              "actors": ["Owner", "Bookkeeper", "Client"],
+              "applications": ["QuickBooks Online", "Karbon"],
+              "steps": [{ "id": "retainer", "name": "Send monthly retainer invoices", "description": "Recurring retainer invoices go out automatically from QuickBooks on the 1st.", "actor": "QuickBooks Online", "application": "QuickBooks Online", "outputs": ["Retainer invoices"] }]
+            }
+          },
+          {
+            "question": "How do one-off jobs like a cleanup or a payroll setup get invoiced? Take the most recent one.",
+            "suggestedAnswers": ["I add a line to the next retainer invoice", "Separate invoice when the client signs off", "Often it just gets absorbed"],
+            "learned": {
+              "decisions": ["One-off fees are invoiced separately once the client confirms the work is done"],
+              "bottlenecks": ["Setup and cleanup fees are invoiced from memory, so a busy month-end can skip one"],
+              "steps": [{ "id": "oneoff", "name": "Invoice a one-off job", "description": "The owner creates a separate QuickBooks invoice after the client accepts the setup or cleanup.", "actor": "Owner", "application": "QuickBooks Online", "inputs": ["Client acceptance email", "Engagement letter"], "outputs": ["One-off invoice"], "dependsOn": ["retainer"] }]
+            }
+          },
+          {
+            "question": "What's included in a retainer, and what happens when a client asks for something outside it?",
+            "suggestedAnswers": ["Monthly books only; extras should be quoted", "We help first and talk price later", "Depends how stressed the client is"],
+            "learned": {
+              "inputs": ["Engagement letter"],
+              "exceptions": ["Quick questions under 15 minutes are part of the retainer"],
+              "approvals": ["The owner quotes any work outside the engagement letter, and the client approves by email"],
+              "steps": [{ "id": "extra", "name": "Quote work outside the retainer", "description": "The owner emails a price for cleanup or filings the engagement letter excludes.", "actor": "Owner", "application": "Gmail", "inputs": ["Client request", "Engagement letter"], "outputs": ["Quote email"], "dependsOn": ["oneoff"], "decision": "Is the request excluded by the engagement letter?", "requiresApproval": true }]
+            }
+          },
+          {
+            "question": "What are your payment terms, and who chases late invoices?",
+            "suggestedAnswers": ["Net 15, QuickBooks reminders chase", "Autopay for most clients", "I chase personally"],
+            "learned": {
+              "frequency": "About 30 invoices a month, mostly recurring",
+              "estimatedMinutes": 20,
+              "outputs": ["Retainer invoices", "One-off invoice", "Payment"],
+              "steps": [{ "id": "chase", "name": "Chase late payments", "description": "QuickBooks sends automatic reminders at net 15 and the owner follows up by email.", "actor": "Owner", "application": "QuickBooks Online", "inputs": ["One-off invoice"], "outputs": ["Reminder"], "dependsOn": ["extra"] }]
+            }
+          },
+          {
+            "question": "In the last year, which setup fees, cleanups, or filings did you do and never invoice?",
+            "suggestedAnswers": ["A couple of cleanups", "A payroll setup, probably", "Nothing comes to mind"],
+            "learned": {
+              "desiredOutcome": "Every one-off job is invoiced within a week of the client accepting it",
+              "bottlenecks": ["Cleanups done urgently before a client's bank meeting are the most common unbilled work"],
+              "automationOpportunities": ["Show accepted setups and cleanups that have no matching invoice", "Flag a client request that matches an exclusion in the engagement letter"]
+            }
+          }
+        ],
+        "closing": "Thanks. Knov now knows that retainers are invoiced automatically on the 1st, that one-off fees are invoiced from memory after acceptance, and that urgent cleanups are the work most often left unbilled. Review what it learned and correct anything that's off."
+      }
+    },
+    {
+      "id": "pinecone",
+      "name": "Pinecone Software Co.",
+      "industry": "Custom software development",
+      "location": "Denver, CO",
+      "team": "10 people",
+      "currency": "USD",
+      "owner": { "name": "Ravi Menon", "email": "ravi@pineconesoftware.dev" },
+      "tools": ["Gmail", "Slack Connect", "Jira", "GitHub", "Xero", "VS Code"],
+      "profile": "A ten-person development shop building portals and integrations on fixed-price statements of work with milestone payments. Project managers run shared Slack channels; the founder prices everything. Scope grows in Slack faster than change orders are written.",
+      "whatToExpect": [
+        "Summit Credit Union asked for a Plaid integration, which the SOW excludes, and 38 hours were built with no change order.",
+        "Summit also accepted the secure messaging milestone and Xero has no invoice for the USD 32,000 payment.",
+        "Alpine Freight was promised a revised proposal by October 6; work activity shows it was sent, so Knov resolves it.",
+        "Redwood Health's EHR integration was approved as change order #3, so Knov should not raise it."
+      ],
+      "engagements": [
+        { "client": "Summit Credit Union", "project": "Member portal phase 2", "description": "Account dashboard and secure messaging for the member portal", "threads": [], "agreementTitle": "Summit CU statement of work, phase 2", "agreement": "Scope: member portal phase 2, account dashboard and secure messaging.\nExcluded: mobile app\nExcluded: Plaid integration\nFee: USD 96000.\nMilestone: account dashboard release accepted.\nMilestone: secure messaging release accepted.\nPayment: USD 32000 after each accepted milestone." },
+        { "client": "Alpine Freight", "project": "Dispatch API", "description": "Dispatch API and driver app integration", "threads": [], "agreementTitle": "Alpine Freight statement of work", "agreement": "Scope: dispatch API and driver app integration.\nFee: USD 48000.\nMilestone: API in production.\nPayment: 50% deposit, 50% after the production milestone." },
+        { "client": "Redwood Health", "project": "Patient intake forms", "description": "Digital patient intake forms", "threads": [], "agreementTitle": "Redwood Health statement of work", "agreement": "Scope: digital intake forms for new patients.\nExcluded: EHR integration\nFee: USD 22000." }
+      ],
+      "records": {
+        "gmail": [
+          { "project": "Member portal phase 2", "kind": "milestone_accepted", "reference": "summit-messaging", "text": "Secure messaging milestone accepted after UAT. Please proceed with the invoice.", "daysAgo": 3, "amountCents": 3200000, "meta": { "from": "Carla Nguyen <cnguyen@summitcu.org>", "to": "ravi@pineconesoftware.dev", "subject": "UAT sign-off: secure messaging" } },
+          { "project": "Dispatch API", "kind": "commitment", "reference": "alpine-promise", "text": "I'll send the revised proposal for the driver app phase by 2025-10-06.", "daysAgo": 8, "dueDaysAgo": 4, "meta": { "from": "Ravi Menon <ravi@pineconesoftware.dev>", "to": "Omar Haddad <omar@alpinefreight.com>", "subject": "Re: Driver app next phase" } },
+          { "project": "Patient intake forms", "kind": "approval", "reference": "redwood-co3", "text": "Change order #3 approved: EHR integration for USD 9,500.", "daysAgo": 9, "amountCents": 950000, "meta": { "from": "Dr. Sam Okoro <sokoro@redwoodhealth.org>", "to": "ravi@pineconesoftware.dev", "subject": "Change order #3" } },
+          { "project": "Member portal phase 2", "kind": "communication", "reference": "summit-kickoff", "text": "Thanks for the phase 2 kickoff. The dashboard demo went over well with the board.", "daysAgo": 20, "meta": { "from": "Carla Nguyen <cnguyen@summitcu.org>", "to": "ravi@pineconesoftware.dev", "subject": "Board feedback" } }
+        ],
+        "slack": [
+          { "project": "Member portal phase 2", "kind": "request", "reference": "summit-plaid", "text": "Our CFO wants the Plaid integration in this phase so members can link outside accounts. Can your team add it?", "daysAgo": 12, "meta": { "channel": "#summit-portal", "author": "Carla Nguyen (Summit CU)" } },
+          { "project": "Patient intake forms", "kind": "request", "reference": "redwood-request", "text": "Can you connect the forms to our EHR integration so the data lands in the chart automatically?", "daysAgo": 10, "meta": { "channel": "#redwood-intake", "author": "Dr. Sam Okoro (Redwood)" } },
+          { "project": "Dispatch API", "kind": "communication", "reference": "alpine-prod", "text": "Dispatch API has been stable in production for two weeks. Drivers are happy.", "daysAgo": 4, "meta": { "channel": "#alpine-dispatch", "author": "Omar Haddad (Alpine)" } }
+        ],
+        "work": [
+          { "project": "Member portal phase 2", "kind": "activity", "reference": "summit-plaid-work", "text": "Built the Plaid integration for Summit's member portal (link flow and balance sync).", "daysAgo": 6, "meta": { "apps": "VS Code, GitHub, Chrome", "hours": 38.0, "thread": "summit-plaid-link" } },
+          { "project": "Dispatch API", "kind": "activity", "reference": "alpine-proposal-sent", "text": "Sent the revised driver app proposal to Omar Haddad at Alpine Freight.", "daysAgo": 2, "meta": { "apps": "Google Docs, Gmail", "hours": 3.0, "thread": "alpine-driver-app-proposal" } },
+          { "project": "Patient intake forms", "kind": "activity", "reference": "redwood-ehr-work", "text": "Implemented the EHR integration for Redwood's intake forms (HL7 feed).", "daysAgo": 5, "meta": { "apps": "VS Code, GitHub, Postman", "hours": 19.0, "thread": "redwood-hl7" } }
+        ],
+        "billing": [
+          { "project": "Member portal phase 2", "kind": "invoice", "reference": "INV-0882", "text": "Invoice INV-0882 · Summit Credit Union · Account dashboard milestone · paid.", "daysAgo": 28, "amountCents": 3200000, "meta": { "number": "INV-0882", "status": "Paid", "customer": "Summit Credit Union" } },
+          { "project": "Member portal phase 2", "kind": "billing_complete", "reference": "summit-billing-sync", "text": "Xero sync covers every Summit Credit Union invoice through 2025-10-10.", "daysAgo": 0, "meta": { "status": "Sync complete", "customer": "Summit Credit Union" } },
+          { "project": "Dispatch API", "kind": "invoice", "reference": "INV-0885", "text": "Invoice INV-0885 · Alpine Freight · Dispatch API deposit · paid.", "daysAgo": 40, "amountCents": 2400000, "meta": { "number": "INV-0885", "status": "Paid", "customer": "Alpine Freight" } },
+          { "project": "Patient intake forms", "kind": "invoice", "reference": "INV-0890", "text": "Invoice INV-0890 · Redwood Health · Change order #3 (EHR integration) · sent.", "daysAgo": 2, "amountCents": 950000, "meta": { "number": "INV-0890", "status": "Sent", "customer": "Redwood Health" } }
+        ]
+      },
+      "expected": [
+        { "client": "Summit Credit Union", "type": "scope_change", "status": "needs_clarification" },
+        { "client": "Summit Credit Union", "type": "unbilled_milestone", "status": "needs_clarification", "amountCents": 3200000, "currency": "USD" },
+        { "client": "Alpine Freight", "type": "overdue_commitment", "status": "resolved" }
+      ],
+      "interview": {
+        "topic": "pricing",
+        "name": "Pricing and quoting",
+        "description": "How Pinecone prices work and how a quote becomes a statement of work.",
+        "turns": [
+          {
+            "question": "How do you price a new project today: hourly, fixed fee, or a mix? Take the last one you quoted.",
+            "suggestedAnswers": ["Fixed fee per milestone", "Hourly with a cap", "Fixed fee, hourly for extras"],
+            "learned": {
+              "businessGoal": "Price every project and every change so margins hold",
+              "trigger": "A prospect or client asks for a quote on new or additional work",
+              "actors": ["Founder", "Project manager", "Tech lead", "Client"],
+              "applications": ["Google Docs", "Jira"],
+              "steps": [{ "id": "estimate", "name": "Estimate the work", "description": "The tech lead breaks the request into Jira epics and estimates hours.", "actor": "Tech lead", "application": "Jira", "inputs": ["Client request"], "outputs": ["Hour estimate"] }]
+            }
+          },
+          {
+            "question": "Who turns the estimate into a price, and what rate or margin do they use?",
+            "suggestedAnswers": ["I do, at USD 165 an hour plus 20%", "The PM uses a spreadsheet", "Gut feel against past projects"],
+            "learned": {
+              "decisions": ["Fixed fees are the hour estimate at USD 165 per hour plus a 20% contingency"],
+              "approvals": ["The founder approves every price before it goes to a client"],
+              "steps": [{ "id": "price", "name": "Set the price", "description": "The founder applies the blended rate and contingency to the estimate.", "actor": "Founder", "application": "Google Sheets", "inputs": ["Hour estimate"], "outputs": ["Price"], "dependsOn": ["estimate"], "requiresApproval": true }]
+            }
+          },
+          {
+            "question": "How does the quote become the contract? What does the statement of work say is excluded?",
+            "suggestedAnswers": ["SOW lists milestones and exclusions", "We send a proposal, then a SOW", "The proposal is the contract"],
+            "learned": {
+              "inputs": ["Price", "SOW template"],
+              "outputs": ["Signed statement of work"],
+              "steps": [{ "id": "sow", "name": "Write the statement of work", "description": "The PM writes the SOW with milestones, payments, and an exclusions list.", "actor": "Project manager", "application": "Google Docs", "inputs": ["Price", "SOW template"], "outputs": ["Signed statement of work"], "dependsOn": ["price"] }]
+            }
+          },
+          {
+            "question": "When a client asks for something the SOW excludes, how is it priced and who signs off?",
+            "suggestedAnswers": ["Change order at the same rate", "We often just fold it in", "Depends on the size"],
+            "learned": {
+              "exceptions": ["Requests under four hours are absorbed without a change order"],
+              "bottlenecks": ["Developers start on Slack requests before a change order exists", "Change orders are priced by the founder, who is the bottleneck"],
+              "frequency": "Two new quotes and three or four change orders a month",
+              "estimatedMinutes": 120,
+              "steps": [{ "id": "change", "name": "Price a change order", "description": "The founder prices the excluded request as a change order and the client approves by email.", "actor": "Founder", "application": "Gmail", "inputs": ["Client request", "Signed statement of work"], "outputs": ["Approved change order"], "dependsOn": ["sow"], "decision": "Is the request on the SOW exclusions list?", "requiresApproval": true }]
+            }
+          },
+          {
+            "question": "Which project in the last year ended with the worst margin, and what pushed it there?",
+            "suggestedAnswers": ["An integration nobody priced", "Underestimated UAT", "Can't say"],
+            "learned": {
+              "desiredOutcome": "No excluded work starts without a priced and approved change order",
+              "automationOpportunities": ["Flag a Slack request that matches a SOW exclusion before work starts", "Draft the change order with the estimate and standard rate"]
+            }
+          }
+        ],
+        "closing": "Thanks. Knov now knows that fixed fees come from hour estimates at a blended rate, that the founder approves every price, and that developers often start on excluded requests before a change order exists. Review what it learned and correct anything that's off."
+      }
+    },
+    {
+      "id": "meridian",
+      "name": "Meridian Growth",
+      "industry": "Digital marketing agency",
+      "location": "Atlanta, GA",
+      "team": "7 people",
+      "currency": "USD",
+      "owner": { "name": "Tasha Brooks", "email": "tasha@meridiangrowth.co" },
+      "tools": ["Gmail", "Slack Connect", "HubSpot", "Google Ads", "Bill.com"],
+      "profile": "A seven-person marketing agency with monthly retainers for SEO and content plus project work for launches and brand refreshes. Account managers live in Slack with clients. Retainers are invoiced automatically; everything outside them depends on someone remembering.",
+      "whatToExpect": [
+        "IronWorks Gyms asked Meridian to take over paid ads management, which the retainer excludes, and campaigns were launched with no fee agreed.",
+        "Glow Skincare was promised a Q4 campaign proposal by October 7 and it has not gone out.",
+        "Beacon Realty accepted the website launch milestone and the matching invoice exists in Bill.com, so Knov resolves it.",
+        "Glow's product photography was approved by email at USD 1,500, so Knov should not raise it."
+      ],
+      "engagements": [
+        { "client": "IronWorks Gyms", "project": "SEO and content retainer", "description": "Monthly SEO and four blog posts per month", "threads": [], "agreementTitle": "IronWorks retainer agreement", "agreement": "Scope: monthly SEO and four blog posts per month.\nExcluded: paid ads management\nFee: USD 3500 per month." },
+        { "client": "Beacon Realty", "project": "Brand refresh and website", "description": "Brand refresh and a new website", "threads": [], "agreementTitle": "Beacon Realty project agreement", "agreement": "Scope: brand refresh and website.\nExcluded: photography\nMilestone: website launch accepted.\nPayment: USD 12000 after launch acceptance." },
+        { "client": "Glow Skincare", "project": "Launch campaign", "description": "Launch campaign strategy and three email sequences", "threads": [], "agreementTitle": "Glow Skincare launch agreement", "agreement": "Scope: launch campaign strategy and three email sequences.\nExcluded: product photography\nFee: USD 6000." }
+      ],
+      "records": {
+        "gmail": [
+          { "project": "Brand refresh and website", "kind": "milestone_accepted", "reference": "beacon-launch", "text": "The site is live and we're thrilled. Launch milestone accepted.", "daysAgo": 6, "amountCents": 1200000, "meta": { "from": "Monica Hale <monica@beaconrealty.com>", "to": "tasha@meridiangrowth.co", "subject": "We're live!" } },
+          { "project": "Launch campaign", "kind": "commitment", "reference": "glow-promise", "text": "I'll send the Q4 campaign proposal by 2025-10-07, right after the photoshoot.", "daysAgo": 10, "dueDaysAgo": 3, "meta": { "from": "Tasha Brooks <tasha@meridiangrowth.co>", "to": "Jade Lin <jade@glowskincare.com>", "subject": "Re: Q4 plans" } },
+          { "project": "Launch campaign", "kind": "approval", "reference": "glow-photo-approval", "text": "Approved, please book the product photography day at USD 1,500.", "daysAgo": 8, "amountCents": 150000, "meta": { "from": "Jade Lin <jade@glowskincare.com>", "to": "tasha@meridiangrowth.co", "subject": "Re: Product shots" } },
+          { "project": "SEO and content retainer", "kind": "communication", "reference": "ironworks-report", "text": "September report looks great. Organic traffic up 18%.", "daysAgo": 7, "meta": { "from": "Greg Patel <greg@ironworksgyms.com>", "to": "tasha@meridiangrowth.co", "subject": "Re: September SEO report" } }
+        ],
+        "slack": [
+          { "project": "SEO and content retainer", "kind": "request", "reference": "ironworks-ads", "text": "Can you take over paid ads management for the January promo? Budget's about 5k a month.", "daysAgo": 13, "meta": { "channel": "#ironworks", "author": "Greg Patel (IronWorks)" } },
+          { "project": "Launch campaign", "kind": "request", "reference": "glow-photo-request", "text": "Can you add product photography for the launch? We don't have any assets yet.", "daysAgo": 9, "meta": { "channel": "#glow-launch", "author": "Jade Lin (Glow)" } },
+          { "project": "Launch campaign", "kind": "communication", "reference": "glow-nudge", "text": "Still waiting on the Q4 proposal, any ETA?", "daysAgo": 1, "meta": { "channel": "#glow-launch", "author": "Jade Lin (Glow)" } }
+        ],
+        "work": [
+          { "project": "SEO and content retainer", "kind": "activity", "reference": "ironworks-ads-work", "text": "Set up and launched paid ads management campaigns for IronWorks' January promo.", "daysAgo": 7, "meta": { "apps": "Google Ads, Chrome, Slack", "hours": 12.0, "thread": "ironworks-january-promo" } },
+          { "project": "Launch campaign", "kind": "activity", "reference": "glow-photo-work", "text": "Product photography day shot for Glow's launch campaign.", "daysAgo": 4, "meta": { "apps": "Lightroom, Finder", "hours": 8.0, "thread": "glow-product-shots" } }
+        ],
+        "billing": [
+          { "project": "SEO and content retainer", "kind": "invoice", "reference": "INV-5118", "text": "Invoice INV-5118 · IronWorks Gyms · September SEO retainer · paid.", "daysAgo": 9, "amountCents": 350000, "meta": { "number": "INV-5118", "status": "Paid", "customer": "IronWorks Gyms" } },
+          { "project": "Brand refresh and website", "kind": "invoice", "reference": "INV-5120", "text": "Invoice INV-5120 · Beacon Realty · Website launch milestone · sent.", "daysAgo": 4, "amountCents": 1200000, "meta": { "number": "INV-5120", "status": "Sent", "customer": "Beacon Realty" } },
+          { "project": "Launch campaign", "kind": "invoice", "reference": "INV-5122", "text": "Invoice INV-5122 · Glow Skincare · Product photography · sent.", "daysAgo": 2, "amountCents": 150000, "meta": { "number": "INV-5122", "status": "Sent", "customer": "Glow Skincare" } }
+        ]
+      },
+      "expected": [
+        { "client": "IronWorks Gyms", "type": "scope_change", "status": "needs_clarification" },
+        { "client": "Beacon Realty", "type": "billing_verification", "status": "resolved" },
+        { "client": "Glow Skincare", "type": "overdue_commitment", "status": "needs_clarification" }
+      ],
+      "interview": {
+        "topic": "change_requests",
+        "name": "Change requests and extra work",
+        "description": "How Meridian handles client asks that fall outside a retainer.",
+        "turns": [
+          {
+            "question": "When a client asks for something new in the middle of a project, what usually happens next? A recent example helps.",
+            "suggestedAnswers": ["The account manager says yes to keep them happy", "We scope it and send a quote", "We loop me in if it's big"],
+            "learned": {
+              "businessGoal": "Charge for work outside the retainer instead of absorbing it",
+              "trigger": "A client asks the account manager in Slack for work that is not in the retainer",
+              "actors": ["Client", "Account manager", "Owner"],
+              "applications": ["Slack", "HubSpot"],
+              "steps": [{ "id": "request", "name": "Client asks for extra work", "description": "The client asks in the shared Slack channel, for example to run paid ads.", "actor": "Client", "application": "Slack", "outputs": ["Request message"] }]
+            }
+          },
+          {
+            "question": "How does the account manager know whether that's inside the retainer or extra?",
+            "suggestedAnswers": ["They check the agreement in HubSpot", "They ask me", "They guess"],
+            "learned": {
+              "inputs": ["Retainer agreement"],
+              "decisions": ["Anything not listed as a retainer deliverable is extra and needs a quote"],
+              "bottlenecks": ["Account managers rarely reread the agreement, so extras get said yes to in Slack"],
+              "steps": [{ "id": "check", "name": "Check the retainer", "description": "The account manager compares the ask with the retainer deliverables in HubSpot.", "actor": "Account manager", "application": "HubSpot", "inputs": ["Request message", "Retainer agreement"], "outputs": ["Inside or extra decision"], "dependsOn": ["request"], "decision": "Is the ask listed as a retainer deliverable?" }]
+            }
+          },
+          {
+            "question": "Who prices extra work and how does the client approve it?",
+            "suggestedAnswers": ["I price it, client approves by email", "The AM quotes from a rate card", "A verbal yes on a call"],
+            "learned": {
+              "approvals": ["The owner prices extras and the client approves by email before work starts"],
+              "outputs": ["Quote", "Email approval"],
+              "steps": [{ "id": "quote", "name": "Quote the extra work", "description": "The owner prices the extra and emails a quote for the client to approve.", "actor": "Owner", "application": "Gmail", "inputs": ["Inside or extra decision"], "outputs": ["Email approval"], "dependsOn": ["check"], "requiresApproval": true }]
+            }
+          },
+          {
+            "question": "Once approved, how does it get billed? Is it added to the retainer invoice or billed separately?",
+            "suggestedAnswers": ["Separate invoice in Bill.com", "Added to next month's retainer", "Depends who remembers"],
+            "learned": {
+              "applications": ["Bill.com"],
+              "frequency": "Four or five extra requests a month across retainers",
+              "estimatedMinutes": 40,
+              "exceptions": ["Small content tweaks are part of the retainer"],
+              "steps": [{ "id": "bill", "name": "Bill the extra", "description": "The owner creates a separate invoice in Bill.com for the approved extra.", "actor": "Owner", "application": "Bill.com", "inputs": ["Email approval"], "outputs": ["Invoice"], "dependsOn": ["quote"] }]
+            }
+          },
+          {
+            "question": "What extra work did the team do this year that never made it to an invoice?",
+            "suggestedAnswers": ["Ad management for a promo", "Extra landing pages", "I'd have to ask the AMs"],
+            "learned": {
+              "desiredOutcome": "Every extra that a client approves is invoiced the same month",
+              "bottlenecks": ["Approved extras agreed by account managers never reach the owner who invoices"],
+              "automationOpportunities": ["Flag a Slack request that matches a retainer exclusion", "List approved extras with no matching invoice"]
+            }
+          }
+        ],
+        "closing": "Thanks. Knov now knows that account managers field requests in Slack, that only listed deliverables are in the retainer, that the owner prices extras for email approval, and that approved extras often never reach the invoice. Review what it learned and correct anything that's off."
+      }
+    },
+    {
+      "id": "northwind",
+      "name": "Northwind Interiors",
+      "industry": "Interior design studio",
+      "location": "London, UK",
+      "team": "3 people",
+      "currency": "GBP",
+      "owner": { "name": "Eleanor Whitcombe", "email": "eleanor@northwindinteriors.co.uk" },
+      "tools": ["Gmail", "Slack", "Xero", "SketchUp", "Houzz Pro"],
+      "profile": "A three-person interior design studio working with private clients and small hospitality businesses. Fees are fixed per phase with payment on sign-off. Clients are chatty and ask for 'one more room' constantly; the designer finds it awkward to raise money.",
+      "whatToExpect": [
+        "The Harringtons asked for a garden room design, which the agreement excludes, and a concept was drawn with no fee agreed.",
+        "The Harringtons' concept sign-off milestone (GBP 7,000) has a matching invoice in Xero, so Knov resolves it.",
+        "Fig & Thistle Café accepted the design development milestone and Xero has no invoice for the GBP 4,500 payment.",
+        "Marlow Boutique Hotel was promised a lobby proposal by October 9 and it is late.",
+        "Fig & Thistle's signage design was approved by email at GBP 800, so Knov should not raise it."
+      ],
+      "engagements": [
+        { "client": "The Harringtons", "project": "Townhouse renovation", "description": "Design concept and procurement for the ground floor and master bedroom", "threads": [], "agreementTitle": "Harrington design agreement", "agreement": "Scope: design concept and procurement for the ground floor and master bedroom.\nExcluded: garden room design\nMilestone: concept sign-off.\nPayment: GBP 7000 after concept sign-off, GBP 7000 on procurement completion." },
+        { "client": "Fig & Thistle Café", "project": "Café interior", "description": "Interior design for a 40-cover café", "threads": [], "agreementTitle": "Fig & Thistle design agreement", "agreement": "Scope: interior design for a 40-cover café.\nExcluded: signage design\nMilestone: design development accepted.\nPayment: GBP 4500 after the design development milestone is accepted." },
+        { "client": "Marlow Boutique Hotel", "project": "Lobby refresh proposal", "description": "Concept proposal for a lobby refresh", "threads": [], "agreementTitle": "Marlow proposal letter", "agreement": "Scope: concept proposal for the lobby refresh.\nFee: GBP 2500 on delivery." }
+      ],
+      "records": {
+        "gmail": [
+          { "project": "Townhouse renovation", "kind": "request", "reference": "harrington-garden", "text": "While you're at it, could you do the garden room design too? We'd love it to match the kitchen.", "daysAgo": 12, "meta": { "from": "Sophie Harrington <sophie.harrington@gmail.com>", "to": "eleanor@northwindinteriors.co.uk", "subject": "Garden room?" } },
+          { "project": "Townhouse renovation", "kind": "milestone_accepted", "reference": "harrington-concept", "text": "We've signed off the concept milestone, it's gorgeous.", "daysAgo": 5, "amountCents": 700000, "meta": { "from": "Sophie Harrington <sophie.harrington@gmail.com>", "to": "eleanor@northwindinteriors.co.uk", "subject": "Concept: yes!" } },
+          { "project": "Café interior", "kind": "approval", "reference": "figthistle-signage-approval", "text": "Yes please go ahead with the signage design, the GBP 800 is fine.", "daysAgo": 9, "amountCents": 80000, "meta": { "from": "Ben Carter <ben@figandthistle.co.uk>", "to": "eleanor@northwindinteriors.co.uk", "subject": "Re: Signage for the landlord" } },
+          { "project": "Café interior", "kind": "milestone_accepted", "reference": "figthistle-dd", "text": "Design development milestone accepted on our side. Builders are booked.", "daysAgo": 3, "amountCents": 450000, "meta": { "from": "Ben Carter <ben@figandthistle.co.uk>", "to": "eleanor@northwindinteriors.co.uk", "subject": "DD pack approved" } },
+          { "project": "Lobby refresh proposal", "kind": "commitment", "reference": "marlow-promise", "text": "I'll send the lobby proposal with the mood boards by 2025-10-09.", "daysAgo": 6, "dueDaysAgo": 1, "meta": { "from": "Eleanor Whitcombe <eleanor@northwindinteriors.co.uk>", "to": "Olivia Grant <olivia@marlowhotel.co.uk>", "subject": "Re: Lobby refresh" } }
+        ],
+        "slack": [
+          { "project": "Café interior", "kind": "request", "reference": "figthistle-signage", "text": "Could you also sort the signage design? The landlord needs it for approval.", "daysAgo": 10, "meta": { "channel": "#fig-and-thistle", "author": "Ben Carter (Fig & Thistle)" } },
+          { "project": "Townhouse renovation", "kind": "communication", "reference": "harrington-samples", "text": "The fabric samples arrived, the green is perfect.", "daysAgo": 8, "meta": { "channel": "#harrington-townhouse", "author": "Sophie Harrington" } }
+        ],
+        "work": [
+          { "project": "Townhouse renovation", "kind": "activity", "reference": "harrington-garden-work", "text": "Garden room design concept drawn up for the Harrington townhouse.", "daysAgo": 8, "meta": { "apps": "SketchUp, Chrome", "hours": 10.0, "thread": "harrington-garden-room" } },
+          { "project": "Café interior", "kind": "activity", "reference": "figthistle-signage-work", "text": "Signage design drafted for Fig & Thistle landlord approval.", "daysAgo": 6, "meta": { "apps": "Illustrator, Finder", "hours": 3.5, "thread": "fig-thistle-signage" } }
+        ],
+        "billing": [
+          { "project": "Townhouse renovation", "kind": "invoice", "reference": "INV-0412", "text": "Invoice INV-0412 · The Harringtons · Concept sign-off milestone · sent.", "daysAgo": 4, "amountCents": 700000, "meta": { "number": "INV-0412", "status": "Sent", "customer": "The Harringtons" } },
+          { "project": "Café interior", "kind": "invoice", "reference": "INV-0410", "text": "Invoice INV-0410 · Fig & Thistle Café · Signage design · sent.", "daysAgo": 5, "amountCents": 80000, "meta": { "number": "INV-0410", "status": "Sent", "customer": "Fig & Thistle Café" } },
+          { "project": "Café interior", "kind": "billing_complete", "reference": "figthistle-billing-sync", "text": "Xero sync covers every Fig & Thistle Café invoice through 2025-10-10.", "daysAgo": 0, "meta": { "status": "Sync complete", "customer": "Fig & Thistle Café" } }
+        ]
+      },
+      "expected": [
+        { "client": "The Harringtons", "type": "scope_change", "status": "needs_clarification" },
+        { "client": "The Harringtons", "type": "billing_verification", "status": "resolved" },
+        { "client": "Fig & Thistle Café", "type": "unbilled_milestone", "status": "needs_clarification", "amountCents": 450000, "currency": "GBP" },
+        { "client": "Marlow Boutique Hotel", "type": "overdue_commitment", "status": "needs_clarification" }
+      ],
+      "interview": {
+        "topic": "invoicing",
+        "name": "Invoicing and getting paid",
+        "description": "How Northwind invoices design phases and extras.",
+        "turns": [
+          {
+            "question": "What tells you it's time to send an invoice: a milestone, the end of the month, or something else?",
+            "suggestedAnswers": ["When the client signs off a phase", "When I get round to it", "Monthly for ongoing clients"],
+            "learned": {
+              "businessGoal": "Invoice every signed-off phase promptly and stop giving extra rooms away",
+              "trigger": "A client signs off a design phase by email",
+              "actors": ["Designer", "Client", "Studio assistant"],
+              "applications": ["Gmail", "Xero"],
+              "steps": [{ "id": "signoff", "name": "Client signs off the phase", "description": "The client emails to say the concept or design development pack is approved.", "actor": "Client", "application": "Gmail", "outputs": ["Sign-off email"] }]
+            }
+          },
+          {
+            "question": "After the sign-off email, what happens next and who does it?",
+            "suggestedAnswers": ["I raise the invoice in Xero myself", "The assistant does it on Fridays", "It waits until the next phase starts"],
+            "learned": {
+              "inputs": ["Sign-off email", "Fee schedule"],
+              "steps": [{ "id": "invoice", "name": "Raise the invoice", "description": "The studio assistant raises the phase invoice in Xero on Friday.", "actor": "Studio assistant", "application": "Xero", "inputs": ["Sign-off email", "Fee schedule"], "outputs": ["Invoice"], "dependsOn": ["signoff"] }],
+              "bottlenecks": ["Sign-off emails arrive in the designer's inbox and are forwarded only when remembered"]
+            }
+          },
+          {
+            "question": "When a client asks for an extra room or drawing, how do you handle the money side?",
+            "suggestedAnswers": ["I quote it by email, usually", "I find it awkward and do it anyway", "Small things free, big things quoted"],
+            "learned": {
+              "decisions": ["Any room or drawing not named in the agreement is quoted before design starts"],
+              "approvals": ["The client confirms an extra fee by email before drawing begins"],
+              "exceptions": ["Minor tweaks to an agreed room are included"],
+              "steps": [{ "id": "extra", "name": "Quote an extra", "description": "The designer emails a fee for the extra room and waits for a yes.", "actor": "Designer", "application": "Gmail", "inputs": ["Client request", "Agreement"], "outputs": ["Fee confirmation"], "dependsOn": ["invoice"], "decision": "Is the room or drawing named in the agreement?", "requiresApproval": true }]
+            }
+          },
+          {
+            "question": "What are your payment terms, and how do you chase?",
+            "suggestedAnswers": ["14 days, Xero reminders", "30 days, I chase by hand", "On receipt"],
+            "learned": {
+              "frequency": "Three or four phase invoices a month",
+              "estimatedMinutes": 20,
+              "outputs": ["Invoice", "Payment"],
+              "steps": [{ "id": "chase", "name": "Chase late invoices", "description": "Xero sends reminders after 14 days and the designer follows up personally.", "actor": "Designer", "application": "Xero", "inputs": ["Invoice"], "outputs": ["Reminder"], "dependsOn": ["extra"] }]
+            }
+          },
+          {
+            "question": "In the past year, which sign-offs or extras were invoiced late or never?",
+            "suggestedAnswers": ["A garden room I never charged for", "A DD pack invoiced two months late", "Not sure"],
+            "learned": {
+              "desiredOutcome": "Every phase is invoiced within a week of sign-off and every extra has a fee agreed first",
+              "bottlenecks": ["Extra rooms requested by friendly clients are drawn without a fee"],
+              "automationOpportunities": ["Match sign-off emails with fee schedule entries and show missing invoices", "Flag a request that matches an agreement exclusion"]
+            }
+          }
+        ],
+        "closing": "Thanks. Knov now knows that phases are invoiced after an emailed sign-off, that the assistant raises invoices on Fridays when reminded, and that extra rooms are often drawn before a fee is agreed. Review what it learned and correct anything that's off."
+      }
+    },
+    {
+      "id": "summitpeak",
+      "name": "Summit Peak IT",
+      "industry": "Managed IT services",
+      "location": "Salt Lake City, UT",
+      "team": "5 people",
+      "currency": "USD",
+      "owner": { "name": "Jordan Lee", "email": "jordan@summitpeakit.com" },
+      "tools": ["Gmail", "Slack Connect", "ConnectWise", "QuickBooks", "Microsoft 365 admin"],
+      "profile": "A five-person managed service provider with monthly support retainers for clinics, accountants, and a charter school. Retainers cover support and patching; projects like migrations and network refreshes are quoted separately, at least in theory. Technicians fix whatever the client asks about.",
+      "whatToExpect": [
+        "Wasatch Family Medicine asked for a server migration, which the retainer excludes, and 26 hours were spent with no project quote.",
+        "Canyon Accounting was promised a security audit proposal by October 8 and it is late. Canyon also asked for the audit itself, but no work has started, so Knov raises only the late promise.",
+        "Alta Charter School accepted the network cutover milestone and QuickBooks has no invoice for the USD 18,000 payment.",
+        "Alta's classroom AV install was approved by email at USD 3,400, so Knov should not raise it."
+      ],
+      "engagements": [
+        { "client": "Wasatch Family Medicine", "project": "Clinic IT support retainer", "description": "Managed IT support for 25 users", "threads": [], "agreementTitle": "Wasatch managed services agreement", "agreement": "Scope: managed IT support for 25 users, monitoring, and patching.\nExcluded: server migration\nFee: USD 2750 per month." },
+        { "client": "Canyon Accounting", "project": "Accounting office IT retainer", "description": "Managed IT support for 12 users", "threads": [], "agreementTitle": "Canyon managed services agreement", "agreement": "Scope: managed IT support for 12 users.\nExcluded: security audit\nFee: USD 1400 per month." },
+        { "client": "Alta Charter School", "project": "Network refresh project", "description": "Network refresh: three switches and twelve access points", "threads": [], "agreementTitle": "Alta network refresh statement of work", "agreement": "Scope: network refresh, 3 switches and 12 access points.\nExcluded: classroom AV\nMilestone: network cutover accepted.\nPayment: USD 18000 after cutover acceptance." }
+      ],
+      "records": {
+        "gmail": [
+          { "project": "Clinic IT support retainer", "kind": "request", "reference": "wasatch-migration", "text": "Our old server is dying. Can your team handle the server migration to the cloud before year end?", "daysAgo": 15, "meta": { "from": "Dr. Nina Patel <npatel@wasatchfm.com>", "to": "jordan@summitpeakit.com", "subject": "Server replacement" } },
+          { "project": "Accounting office IT retainer", "kind": "commitment", "reference": "canyon-promise", "text": "I'll send the security audit proposal by 2025-10-08.", "daysAgo": 9, "dueDaysAgo": 2, "meta": { "from": "Jordan Lee <jordan@summitpeakit.com>", "to": "Mark Olsen <mark@canyonaccounting.com>", "subject": "Re: Cyber insurance renewal" } },
+          { "project": "Network refresh project", "kind": "milestone_accepted", "reference": "alta-cutover", "text": "Cutover milestone accepted. The network has been solid all week.", "daysAgo": 4, "amountCents": 1800000, "meta": { "from": "Ruth Adams <radams@altacharter.org>", "to": "jordan@summitpeakit.com", "subject": "Network cutover" } },
+          { "project": "Network refresh project", "kind": "approval", "reference": "alta-av-approval", "text": "Approved: classroom AV install for USD 3,400.", "daysAgo": 9, "amountCents": 340000, "meta": { "from": "Ruth Adams <radams@altacharter.org>", "to": "jordan@summitpeakit.com", "subject": "Re: AV for the new rooms" } }
+        ],
+        "slack": [
+          { "project": "Accounting office IT retainer", "kind": "request", "reference": "canyon-audit-request", "text": "Can you do a security audit for our cyber insurance renewal?", "daysAgo": 11, "meta": { "channel": "#canyon-accounting", "author": "Mark Olsen (Canyon)" } },
+          { "project": "Network refresh project", "kind": "request", "reference": "alta-av-request", "text": "Could you also install the classroom AV in the two new rooms?", "daysAgo": 10, "meta": { "channel": "#alta-charter", "author": "Ruth Adams (Alta)" } },
+          { "project": "Clinic IT support retainer", "kind": "communication", "reference": "wasatch-thanks", "text": "Everything's running fast since the move. Thank you!", "daysAgo": 3, "meta": { "channel": "#wasatch-fm", "author": "Dr. Nina Patel (Wasatch)" } }
+        ],
+        "work": [
+          { "project": "Clinic IT support retainer", "kind": "activity", "reference": "wasatch-migration-work", "text": "Server migration for Wasatch Family Medicine: moved file shares and AD to Azure.", "daysAgo": 6, "meta": { "apps": "Microsoft 365 admin, Azure portal, Chrome", "hours": 26.0, "thread": "wasatch-azure-migration" } },
+          { "project": "Network refresh project", "kind": "activity", "reference": "alta-av-work", "text": "Installed classroom AV in Alta's two new rooms.", "daysAgo": 5, "meta": { "apps": "ConnectWise, Chrome", "hours": 6.0, "thread": "alta-classroom-av" } }
+        ],
+        "billing": [
+          { "project": "Clinic IT support retainer", "kind": "invoice", "reference": "INV-7701", "text": "Invoice INV-7701 · Wasatch Family Medicine · September managed IT · paid.", "daysAgo": 9, "amountCents": 275000, "meta": { "number": "INV-7701", "status": "Paid", "customer": "Wasatch Family Medicine" } },
+          { "project": "Accounting office IT retainer", "kind": "invoice", "reference": "INV-7702", "text": "Invoice INV-7702 · Canyon Accounting · September managed IT · paid.", "daysAgo": 9, "amountCents": 140000, "meta": { "number": "INV-7702", "status": "Paid", "customer": "Canyon Accounting" } },
+          { "project": "Network refresh project", "kind": "invoice", "reference": "INV-7704", "text": "Invoice INV-7704 · Alta Charter School · Classroom AV install · sent.", "daysAgo": 3, "amountCents": 340000, "meta": { "number": "INV-7704", "status": "Sent", "customer": "Alta Charter School" } },
+          { "project": "Network refresh project", "kind": "billing_complete", "reference": "alta-billing-sync", "text": "QuickBooks sync covers every Alta Charter School invoice through 2025-10-10.", "daysAgo": 0, "meta": { "status": "Sync complete", "customer": "Alta Charter School" } }
+        ]
+      },
+      "expected": [
+        { "client": "Wasatch Family Medicine", "type": "scope_change", "status": "needs_clarification" },
+        { "client": "Canyon Accounting", "type": "overdue_commitment", "status": "needs_clarification" },
+        { "client": "Alta Charter School", "type": "unbilled_milestone", "status": "needs_clarification", "amountCents": 1800000, "currency": "USD" }
+      ],
+      "interview": {
+        "topic": "follow_ups",
+        "name": "Proposals and follow-ups",
+        "description": "The project quotes and follow-ups Summit Peak promises its retainer clients.",
+        "turns": [
+          {
+            "question": "When you promise a client a proposal or a follow-up, where does that promise get written down?",
+            "suggestedAnswers": ["A ticket in ConnectWise, sometimes", "Just the email", "My head"],
+            "learned": {
+              "businessGoal": "Quote every project request on time instead of letting technicians absorb it",
+              "trigger": "A retainer client asks for a project, such as a migration or an audit, and the owner promises a quote",
+              "actors": ["Owner", "Technician", "Client"],
+              "applications": ["Gmail", "ConnectWise"],
+              "steps": [{ "id": "promise", "name": "Promise a project quote", "description": "The owner replies by email that a quote will follow by a certain date.", "actor": "Owner", "application": "Gmail", "outputs": ["Promise email"] }]
+            }
+          },
+          {
+            "question": "What decides whether a request is covered by the retainer or needs a quote?",
+            "suggestedAnswers": ["Anything over a few hours is a project", "The agreement lists exclusions", "Technician judgment"],
+            "learned": {
+              "inputs": ["Managed services agreement"],
+              "decisions": ["Migrations, audits, and installs are projects and need a quote; support tickets are covered"],
+              "steps": [{ "id": "classify", "name": "Classify the request", "description": "The owner checks the request against the agreement exclusions.", "actor": "Owner", "application": "ConnectWise", "inputs": ["Client request", "Managed services agreement"], "outputs": ["Project or support decision"], "dependsOn": ["promise"], "decision": "Is the request excluded from the retainer?" }],
+              "bottlenecks": ["Technicians start project work from support tickets before anyone classifies it"]
+            }
+          },
+          {
+            "question": "Who writes the quote, what does it need, and how long does it usually take to go out?",
+            "suggestedAnswers": ["I write it, often a week late", "Our lead tech scopes it, I price it", "Same week when it's quiet"],
+            "learned": {
+              "applications": ["Google Docs"],
+              "outputs": ["Quote PDF"],
+              "frequency": "Two or three project quotes a month",
+              "estimatedMinutes": 90,
+              "steps": [{ "id": "quote", "name": "Write and send the quote", "description": "The lead technician scopes the hours and the owner prices and sends the quote.", "actor": "Owner", "application": "Google Docs", "inputs": ["Project or support decision"], "outputs": ["Quote PDF"], "dependsOn": ["classify"], "requiresApproval": true }],
+              "approvals": ["The owner approves every project price"]
+            }
+          },
+          {
+            "question": "What happens after the quote goes out? Who follows up and when?",
+            "suggestedAnswers": ["I follow up after a week", "The client usually comes back", "Nobody, honestly"],
+            "learned": {
+              "steps": [{ "id": "followup", "name": "Follow up on the quote", "description": "The owner emails a follow-up a week after sending the quote.", "actor": "Owner", "application": "Gmail", "inputs": ["Quote PDF"], "outputs": ["Follow-up email"], "dependsOn": ["quote"] }],
+              "exceptions": ["Emergency work starts before a quote when a client's system is down"]
+            }
+          },
+          {
+            "question": "Which promised quotes slipped this year, and what did it cost you?",
+            "suggestedAnswers": ["A migration we did for free", "An audit the client gave up on", "Not sure"],
+            "learned": {
+              "desiredOutcome": "Every promised quote goes out by the promised date and no project starts without one",
+              "bottlenecks": ["Promised quote dates are only in email, so nothing reminds the owner"],
+              "automationOpportunities": ["Show promised quotes that are past their date", "Flag a ticket that matches a retainer exclusion before a technician starts"]
+            }
+          }
+        ],
+        "closing": "Thanks. Knov now knows that project requests need a quote, that technicians often start before the request is classified, and that promised quote dates live only in email. Review what it learned and correct anything that's off."
+      }
+    },
+    {
+      "id": "clearwater",
+      "name": "Clearwater Localization",
+      "industry": "Translation and localization",
+      "location": "Toronto, ON",
+      "team": "2 people",
+      "currency": "CAD",
+      "owner": { "name": "Mei Zhang", "email": "mei@clearwaterloc.ca" },
+      "tools": ["Gmail", "Slack Connect", "FreshBooks", "memoQ", "Google Drive"],
+      "profile": "A two-person localization studio quoting per word and per module for product catalogues, e-learning, and legal documents. Clients add languages and services mid-project in Slack. The owner translates all day and invoices at night.",
+      "whatToExpect": [
+        "Nordic Gear asked for a German translation, which the quote excludes, and 18,000 words were translated with no price agreed.",
+        "Nordic Gear also accepted the French catalogue milestone and FreshBooks has no invoice for the CAD 7,200 payment.",
+        "Maple Legal was promised a retainer proposal by October 8 and it is late.",
+        "Bright Path's voice-over recording was approved by email at CAD 1,900, so Knov should not raise it."
+      ],
+      "engagements": [
+        { "client": "Nordic Gear Co", "project": "Product catalogue localization", "description": "English to French localization of a 40,000-word product catalogue", "threads": [], "agreementTitle": "Nordic Gear quote and terms", "agreement": "Scope: English to French localization of the product catalogue, 40,000 words.\nExcluded: German translation\nMilestone: French catalogue delivered and accepted.\nPayment: CAD 7200 after the French catalogue milestone is accepted." },
+        { "client": "Bright Path Learning", "project": "Course localization", "description": "Spanish localization of six e-learning modules", "threads": [], "agreementTitle": "Bright Path quote and terms", "agreement": "Scope: localization of six e-learning modules into Spanish.\nExcluded: voice-over recording\nFee: CAD 5400, invoiced per module." },
+        { "client": "Maple Legal Services", "project": "Contract translation", "description": "Certified translation of a 30-page contract", "threads": [], "agreementTitle": "Maple Legal quote", "agreement": "Scope: certified translation of a 30-page contract.\nFee: CAD 1650 on delivery." }
+      ],
+      "records": {
+        "gmail": [
+          { "project": "Product catalogue localization", "kind": "milestone_accepted", "reference": "nordic-french", "text": "The French catalogue milestone is accepted, our Montréal team signed off.", "daysAgo": 3, "amountCents": 720000, "meta": { "from": "Lars Eriksen <lars@nordicgear.co>", "to": "mei@clearwaterloc.ca", "subject": "French catalogue: approved" } },
+          { "project": "Course localization", "kind": "approval", "reference": "brightpath-vo-approval", "text": "Go ahead with the voice-over recording, CAD 1,900 approved.", "daysAgo": 8, "amountCents": 190000, "meta": { "from": "Carmen Diaz <carmen@brightpathlearning.com>", "to": "mei@clearwaterloc.ca", "subject": "Re: Spanish voice-over" } },
+          { "project": "Contract translation", "kind": "commitment", "reference": "maple-promise", "text": "I'll send the proposal for the ongoing translation retainer by 2025-10-08.", "daysAgo": 5, "dueDaysAgo": 2, "meta": { "from": "Mei Zhang <mei@clearwaterloc.ca>", "to": "Anne Fortin <anne@maplelegal.ca>", "subject": "Re: Ongoing translation needs" } },
+          { "project": "Contract translation", "kind": "communication", "reference": "maple-thanks", "text": "The certified translation was accepted by the court clerk. Thank you.", "daysAgo": 7, "meta": { "from": "Anne Fortin <anne@maplelegal.ca>", "to": "mei@clearwaterloc.ca", "subject": "Contract translation received" } }
+        ],
+        "slack": [
+          { "project": "Product catalogue localization", "kind": "request", "reference": "nordic-german", "text": "Could you also do the German translation for the same catalogue? We're launching in Berlin.", "daysAgo": 11, "meta": { "channel": "#nordic-gear", "author": "Lars Eriksen (Nordic Gear)" } },
+          { "project": "Course localization", "kind": "request", "reference": "brightpath-vo-request", "text": "Can you arrange the voice-over recording for the Spanish modules as well?", "daysAgo": 9, "meta": { "channel": "#bright-path", "author": "Carmen Diaz (Bright Path)" } },
+          { "project": "Course localization", "kind": "communication", "reference": "brightpath-module", "text": "Module 3 reviewed, no changes. On to module 4!", "daysAgo": 4, "meta": { "channel": "#bright-path", "author": "Carmen Diaz (Bright Path)" } }
+        ],
+        "work": [
+          { "project": "Product catalogue localization", "kind": "activity", "reference": "nordic-german-work", "text": "German translation of the Nordic Gear catalogue, first 18,000 words.", "daysAgo": 5, "meta": { "apps": "memoQ, Google Drive", "hours": 20.0, "thread": "nordic-german-catalogue" } },
+          { "project": "Course localization", "kind": "activity", "reference": "brightpath-vo-work", "text": "Coordinated voice-over recording sessions for Bright Path's Spanish modules.", "daysAgo": 4, "meta": { "apps": "Gmail, Google Drive, Zoom", "hours": 5.0, "thread": "bright-path-voice-over" } }
+        ],
+        "billing": [
+          { "project": "Course localization", "kind": "invoice", "reference": "INV-0098", "text": "Invoice INV-0098 · Bright Path Learning · Voice-over recording · sent.", "daysAgo": 2, "amountCents": 190000, "meta": { "number": "INV-0098", "status": "Sent", "customer": "Bright Path Learning" } },
+          { "project": "Contract translation", "kind": "invoice", "reference": "INV-0095", "text": "Invoice INV-0095 · Maple Legal Services · Contract translation · paid.", "daysAgo": 8, "amountCents": 165000, "meta": { "number": "INV-0095", "status": "Paid", "customer": "Maple Legal Services" } },
+          { "project": "Product catalogue localization", "kind": "billing_complete", "reference": "nordic-billing-sync", "text": "FreshBooks sync covers every Nordic Gear Co invoice through 2025-10-10.", "daysAgo": 0, "meta": { "status": "Sync complete", "customer": "Nordic Gear Co" } }
+        ]
+      },
+      "expected": [
+        { "client": "Nordic Gear Co", "type": "scope_change", "status": "needs_clarification" },
+        { "client": "Nordic Gear Co", "type": "unbilled_milestone", "status": "needs_clarification", "amountCents": 720000, "currency": "CAD" },
+        { "client": "Maple Legal Services", "type": "overdue_commitment", "status": "needs_clarification" }
+      ],
+      "interview": {
+        "topic": "pricing",
+        "name": "Pricing and quoting",
+        "description": "How Clearwater prices translation work and turns a quote into terms.",
+        "turns": [
+          {
+            "question": "How do you price a new project today: hourly, fixed fee, or a mix? Take the last one you quoted.",
+            "suggestedAnswers": ["Per word, by language pair", "Per module for e-learning", "Flat fee for certified documents"],
+            "learned": {
+              "businessGoal": "Quote every language and service before translating a word",
+              "trigger": "A client sends source files and asks for a price",
+              "actors": ["Owner", "Client", "Freelance linguist"],
+              "applications": ["memoQ", "Gmail"],
+              "steps": [{ "id": "count", "name": "Count the words", "description": "The owner runs the source files through memoQ to get a word count per language.", "actor": "Owner", "application": "memoQ", "inputs": ["Source files"], "outputs": ["Word count"] }]
+            }
+          },
+          {
+            "question": "What rates do you use, and who decides when to move off the rate card?",
+            "suggestedAnswers": ["CAD 0.18 per word for French, 0.22 German", "I discount for volume", "Depends on the deadline"],
+            "learned": {
+              "decisions": ["French is CAD 0.18 per word and German CAD 0.22; rush work adds 25%"],
+              "approvals": ["The owner approves any discount from the rate card"],
+              "steps": [{ "id": "price", "name": "Price the quote", "description": "The owner applies the per-word rate for each language pair and any rush uplift.", "actor": "Owner", "application": "Google Sheets", "inputs": ["Word count"], "outputs": ["Quote"], "dependsOn": ["count"], "requiresApproval": true }]
+            }
+          },
+          {
+            "question": "How does the client accept, and what do your terms say is excluded?",
+            "suggestedAnswers": ["They reply 'approved' to the quote email", "They sign a PDF", "A thumbs-up in Slack"],
+            "learned": {
+              "inputs": ["Word count", "Rate card"],
+              "outputs": ["Accepted quote"],
+              "steps": [{ "id": "accept", "name": "Client accepts the quote", "description": "The client replies by email to accept the quote and the listed exclusions.", "actor": "Client", "application": "Gmail", "inputs": ["Quote"], "outputs": ["Accepted quote"], "dependsOn": ["price"] }]
+            }
+          },
+          {
+            "question": "When a client adds a language or a service mid-project, how is that priced?",
+            "suggestedAnswers": ["I send a new quote line", "I start and quote later", "I usually just add it"],
+            "learned": {
+              "exceptions": ["Small terminology fixes after delivery are free"],
+              "bottlenecks": ["Added languages requested in Slack are started before a price is sent", "Quoting happens at night after translating, so it slips"],
+              "frequency": "Five or six quotes a month, plus two or three mid-project additions",
+              "estimatedMinutes": 40,
+              "steps": [{ "id": "addition", "name": "Quote a mid-project addition", "description": "The owner sends a new quote line for the added language or service before starting.", "actor": "Owner", "application": "Gmail", "inputs": ["Client request", "Accepted quote"], "outputs": ["Additional quote"], "dependsOn": ["accept"], "decision": "Is the added language or service outside the accepted quote?", "requiresApproval": true }]
+            }
+          },
+          {
+            "question": "Which job this year did you finish at a price you wouldn't quote again?",
+            "suggestedAnswers": ["A German add-on done at the French rate", "A rush job with no uplift", "None"],
+            "learned": {
+              "desiredOutcome": "No added language or service starts without an accepted price",
+              "automationOpportunities": ["Flag a Slack request that names a language or service excluded from the quote", "Draft the additional quote line from the request and the rate card"]
+            }
+          }
+        ],
+        "closing": "Thanks. Knov now knows that work is priced per word by language pair, that clients accept quotes by email, and that added languages are often started before a price goes out. Review what it learned and correct anything that's off."
+      }
+    }
+  ]
+}

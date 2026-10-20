@@ -68,6 +68,20 @@
 .simulation-issues li { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); font-size: 13px; }
 .simulation-issues small { margin-left: auto; color: var(--muted); }
 .simulation-browser { margin-top: 18px; }
+.simulation-businesses { margin-top: 22px; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+.simulation-businesses h2 { margin: 0 0 6px; font-size: 16px; }
+.simulation-businesses > .field-hint { margin: 0 0 14px; }
+.business-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.business-grid article { display: grid; align-content: start; gap: 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
+.business-grid article.active { border-color: var(--accent); background: rgba(183,255,60,.05); }
+.business-grid strong { font-size: 14px; }
+.business-grid small { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.business-grid article > button, .business-grid article > .step-state { margin-top: 6px; justify-self: start; }
+.business-confirm { display: grid; gap: 6px; margin-top: 6px; }
+.business-confirm small { color: var(--orange); }
+.simulation-expectations { margin-top: 14px; color: var(--muted); font-size: 13px; }
+.simulation-expectations summary { cursor: pointer; }
+.simulation-expectations ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.6; }
 .simulation-browser-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
 .simulation-browser-heading h2 { margin: 0; }
 .source-records { display: grid; gap: 10px; }

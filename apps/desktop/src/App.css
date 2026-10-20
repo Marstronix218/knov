@@ -949,3 +949,9 @@ button.section-link { border: 0; background: none; cursor: pointer; font: inheri
 .nav-badge.attention { color: #2a1600; background: var(--orange); }
 .back-link { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 14px; color: var(--muted); font-size: 13px; }
 .back-link:hover { color: var(--text); }
+.selection-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: -4px 0 12px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 9px; background: #121616; font-size: 12px; color: var(--muted); }
+.selection-toggle { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; }
+.selection-actions { display: flex; gap: 8px; }
+.activity-select, .selection-toggle input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.activity-row.selectable { grid-template-columns: 15px 58px 12px 30px minmax(0, 1fr) auto 50px; }
+.activity-row.selected { background: rgba(183,255,60,.04); }

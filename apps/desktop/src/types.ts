@@ -693,10 +693,13 @@ export interface WorkflowDocument {
   confirmed: boolean;
   updatedAt: number;
   commercialContext?: {
-    opportunityId: string;
-    projectId: string;
+    opportunityId?: string;
+    projectId?: string;
     demo: boolean;
     answer?: string;
+    /** Set on scripted sandbox interviews: the simulated business id. */
+    simulation?: string;
+    turn?: number;
   } | null;
 }
 export interface InterviewSession {

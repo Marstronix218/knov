@@ -49,7 +49,7 @@ export function HomePage() {
 
   return <div className="page home-page">
     <PageHeader
-      eyebrow={simulation ? "Simulation · Brightline Studio" : "Home"}
+      eyebrow={simulation ? `Simulation · ${data?.business?.name ?? "fictional business"}` : "Home"}
       title="What needs your attention"
       description="Knov reads your contracts, email, Slack, and work activity to find revenue you are about to miss, then tells you what to do."
       actions={isDesktopRuntime() && hasSources && <button className="ghost-button" disabled={busy} onClick={() => void run(() => revenueApi.analyze(simulation))}><RefreshCw size={14} /> Check again</button>}

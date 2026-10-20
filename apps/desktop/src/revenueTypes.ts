@@ -13,8 +13,26 @@ export interface RevenueOpportunity {
 }
 export interface RevenueDraft { id: string; opportunityId: string; kind: string; body: string; status: string; createdAt: number; updatedAt: number; demo: boolean }
 export interface RevenueOutcome { id: string; opportunityId: string; kind: string; evidence: string; amountCents: number | null; currency: string | null; verified: boolean; createdAt: number; demo: boolean }
+/** One of the fictional businesses the sandbox can load. */
+export interface SimulationBusiness {
+  id: string; name: string; industry: string; location: string; team: string; currency: string;
+  owner: { name: string; email: string }; tools: string[]; profile: string;
+  /** Plain-language checklist of what Knov should find, for testers. */
+  whatToExpect: string[];
+  /** The same checklist as data: client, finding type, final status, and amount. */
+  expected: { client: string; type: string; status: string; amountCents: number | null; currency: string | null }[];
+  clientCount: number; interviewTopic: string; interviewName: string;
+}
+export interface SimulationCatalog {
+  active: string | null;
+  businesses: SimulationBusiness[];
+  /** The scripted interview started for the active business, if any. */
+  interview: { sessionId: string; status: string } | null;
+}
 export interface RevenueOverview {
   demo: boolean;
+  /** The sandbox business these records belong to; null for actual data. */
+  business?: SimulationBusiness | null;
   skillSuggestions?: { projectId: string; title: string; description: string; workflowId: string | null; confirmedOpportunityCount: number }[];
   clients: RevenueClient[]; projects: RevenueProject[];
   agreements: { id: string; projectId: string; title: string; text?: string; createdAt?: number; [key: string]: unknown }[];

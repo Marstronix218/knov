@@ -120,21 +120,21 @@ const navigation = [
 /** Secondary groups stay folded until opened, so the business pages stand out. */
 const COLLAPSIBLE_GROUPS = new Set(["Your work"]);
 
-/** Number of open revenue problems for the Home badge; refreshed on navigation. */
-function useOpenProblems(): number | undefined {
+/** Open revenue problems for the Home badge and the loaded sandbox business; refreshed on navigation. */
+function useOpenProblems(): { count?: number; business?: string } {
   const simulation = useSimulationMode();
-  const [count, setCount] = useState<number>();
+  const [state, setState] = useState<{ count?: number; business?: string }>({});
   useEffect(() => {
     if (!isDesktopRuntime()) return;
     let active = true;
     const load = () => void revenueApi.overview(simulation)
-      .then((data) => { if (active) setCount(data.opportunities.filter(isOpen).length); })
-      .catch(() => { if (active) setCount(undefined); });
+      .then((data) => { if (active) setState({ count: data.opportunities.filter(isOpen).length, business: data.business?.name }); })
+      .catch(() => { if (active) setState({}); });
     load();
     window.addEventListener("hashchange", load);
     return () => { active = false; window.removeEventListener("hashchange", load); };
   }, [simulation]);
-  return count;
+  return state;
 }
 
 function useNavigation() {
@@ -194,6 +194,7 @@ function AppShell({ route }: { route: string }) {
   }, [visibleNavigation]);
 
   const simulation = useSimulationMode();
+  const problems = useOpenProblems();
   const page = {
     "/home": <HomePage />,
     "/sources": <SourcesPage />,
@@ -212,10 +213,10 @@ function AppShell({ route }: { route: string }) {
 
   return (
     <div className="app-shell">
-      <Sidebar route={route} items={visibleNavigation} onOpenPalette={() => setPaletteOpen(true)} onOpenFeedback={() => setFeedbackOpen(true)} />
+      <Sidebar route={route} items={visibleNavigation} openProblems={problems.count} onOpenPalette={() => setPaletteOpen(true)} onOpenFeedback={() => setFeedbackOpen(true)} />
       <main className="main-stage" id="main">
         {!isDesktopRuntime() && <div className="demo-banner">Browser preview · sample data · controls do not change your Mac</div>}
-        {isDesktopRuntime() && simulation && <div className="simulation-banner" role="status"><FlaskConical size={14} aria-hidden="true" /> Simulation mode · Home and Opportunities show Brightline Studio, a fictional business <button type="button" onClick={() => setSimulationMode(false)}>Show my actual data</button></div>}
+        {isDesktopRuntime() && simulation && <div className="simulation-banner" role="status"><FlaskConical size={14} aria-hidden="true" /> Simulation mode · Home and Opportunities show {problems.business ?? "a simulated"}, a fictional business <button type="button" onClick={() => setSimulationMode(false)}>Show my actual data</button></div>}
         {page}
       </main>
       {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
@@ -298,11 +299,13 @@ function useHashRoute(): string {
 function Sidebar({
   route,
   items,
+  openProblems,
   onOpenPalette,
   onOpenFeedback,
 }: {
   route: string;
   items: typeof navigation;
+  openProblems?: number;
   onOpenPalette: () => void;
   onOpenFeedback: () => void;
 }) {
@@ -311,7 +314,6 @@ function Sidebar({
   const labs = settings.data?.labsEnabled ?? false;
   const collecting = settings.data?.collectionStatus.enabled ?? false;
   const agentPaused = agent.data?.paused ?? settings.data?.agentPaused ?? false;
-  const openProblems = useOpenProblems();
   const badges: Record<string, number | undefined> = {
     "/home": openProblems || undefined,
     "/agent": agent.data?.awaitingCount || undefined,
@@ -1197,6 +1199,60 @@ function ActivityPage() {
   useEffect(() => setVisibleCount(ACTIVITY_PAGE_SIZE), [range, query]);
   const visibleEvents = filtered?.slice(0, visibleCount) ?? [];
   const hasMore = visibleEvents.length < (filtered?.length ?? 0);
+
+  // Multi-select delete. Selection is keyed by event id and cleared whenever
+  // the underlying list changes so a stale id can never be sent for deletion.
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [lastToggledId, setLastToggledId] = useState<string>();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string>();
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setLastToggledId(undefined);
+  }, [resource.data]);
+  const allVisibleSelected = visibleEvents.length > 0 && visibleEvents.every((event) => selectedIds.has(event.id));
+
+  const toggleSelected = (id: string, extendRange: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      const anchorIndex = extendRange && lastToggledId ? visibleEvents.findIndex((event) => event.id === lastToggledId) : -1;
+      const targetIndex = visibleEvents.findIndex((event) => event.id === id);
+      if (anchorIndex >= 0 && targetIndex >= 0) {
+        const [from, to] = anchorIndex < targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+        const select = current.has(lastToggledId!);
+        for (const event of visibleEvents.slice(from, to + 1)) {
+          if (select) next.add(event.id);
+          else next.delete(event.id);
+        }
+      } else if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+    setLastToggledId(id);
+  };
+  const toggleAllVisible = () => {
+    setSelectedIds(allVisibleSelected ? new Set() : new Set(visibleEvents.map((event) => event.id)));
+  };
+  const deleteSelected = async () => {
+    const ids = [...selectedIds];
+    setDeleting(true);
+    setDeleteError(undefined);
+    try {
+      await api.deleteActivity(ids);
+      const removed = new Set(ids);
+      resource.setData((current) => current?.filter((event) => !removed.has(event.id)));
+      setConfirmingDelete(false);
+    } catch (cause) {
+      setDeleteError(errorMessage(cause));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="page">
       <PageHeader
@@ -1209,12 +1265,47 @@ function ActivityPage() {
         <label className="search-field"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter apps, pages, or topics" /></label>
         <span className="fact-badge"><LockKeyhole size={14} /> Stored locally for 30 days</span>
       </div>
+      {visibleEvents.length > 0 && (
+        <div className="selection-bar" role="toolbar" aria-label="Selected activity">
+          <label className="selection-toggle">
+            <input
+              type="checkbox"
+              aria-label="Select all shown activity"
+              checked={allVisibleSelected}
+              onChange={toggleAllVisible}
+            />
+            <span>{selectedIds.size ? `${selectedIds.size} selected` : "Select activity to delete"}</span>
+          </label>
+          {selectedIds.size > 0 && (
+            <div className="selection-actions">
+              <button className="ghost-button" onClick={() => setSelectedIds(new Set())}>Clear</button>
+              <button className="danger-button" onClick={() => { setDeleteError(undefined); setConfirmingDelete(true); }}>
+                <Trash2 size={14} /> Delete {selectedIds.size}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      {confirmingDelete && (
+        <Modal title={`Delete ${selectedIds.size} ${selectedIds.size === 1 ? "activity" : "activities"}?`} onClose={() => { if (!deleting) setConfirmingDelete(false); }}>
+          <p className="modal-copy">
+            The selected events are removed from Knov&apos;s local database. They will not be re-recorded from browser history, and this cannot be undone.
+          </p>
+          {deleteError && <p className="error-message" role="alert">{deleteError}</p>}
+          <div className="modal-actions">
+            <button className="ghost-button" disabled={deleting} onClick={() => setConfirmingDelete(false)}>Cancel</button>
+            <button className="danger-button" disabled={deleting} onClick={() => void deleteSelected()}>
+              {deleting ? <LoaderCircle size={14} className="spin" /> : <Trash2 size={14} />} Delete
+            </button>
+          </div>
+        </Modal>
+      )}
       <section className="panel activity-panel">
         <EditorChangeSummary events={filtered ?? []} />
         <ResourceState {...resource}>
           {() => (
             <>
-              <ActivityList events={visibleEvents} />
+              <ActivityList events={visibleEvents} selectedIds={selectedIds} onToggle={toggleSelected} />
               {hasMore && (
                 <div className="activity-load-more">
                   <span>Showing {visibleEvents.length} of {filtered?.length ?? 0} events</span>
@@ -1231,14 +1322,38 @@ function ActivityPage() {
   );
 }
 
-function ActivityList({ events, compact = false }: { events: ActivityEvent[]; compact?: boolean }) {
+function ActivityList({
+  events,
+  compact = false,
+  selectedIds,
+  onToggle,
+}: {
+  events: ActivityEvent[];
+  compact?: boolean;
+  /** When provided with `onToggle`, each row shows a checkbox for multi-select. */
+  selectedIds?: ReadonlySet<string>;
+  /** Shift-click extends the selection from the previously toggled row. */
+  onToggle?: (id: string, extendRange: boolean) => void;
+}) {
   if (!events.length) return <EmptyState title="No matching activity" detail="Try a broader filter or another time range." />;
+  const selectable = Boolean(selectedIds && onToggle);
   return (
     <div className={`activity-list ${compact ? "compact" : ""}`}>
       {events.map((event) => {
         const appContext = codeActivityContext(event, events);
+        const selected = selectedIds?.has(event.id) ?? false;
         return (
-          <article className="activity-row" key={event.id}>
+          <article className={`activity-row${selectable ? " selectable" : ""}${selected ? " selected" : ""}`} key={event.id}>
+            {selectable && (
+              <input
+                type="checkbox"
+                className="activity-select"
+                aria-label={`Select ${editorFilePath(event) || event.pageTitle || event.windowTitle || event.appName}`}
+                checked={selected}
+                onClick={(click) => onToggle!(event.id, click.shiftKey)}
+                onChange={() => undefined}
+              />
+            )}
             <time>{formatTime(event.startedAt)}</time>
             <div className="timeline-marker" />
             <ActivityLogo event={event} />

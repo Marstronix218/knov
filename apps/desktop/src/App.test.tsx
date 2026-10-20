@@ -655,6 +655,70 @@ describe("editor file changes", () => {
     expect(screen.queryByRole("button", { name: "Show more" })).not.toBeInTheDocument();
   });
 
+  it("deletes multi-selected activity after confirmation and drops it from the timeline", async () => {
+    const events = Array.from({ length: 4 }, (_, index): ActivityEvent => ({
+      id: `event-${index}`,
+      appName: "Terminal",
+      windowTitle: `Command ${index}`,
+      startedAt: new Date(1_700_000_000_000 - index * 1_000).toISOString(),
+      durationSeconds: 5,
+      source: "collector",
+    }));
+    vi.mocked(api.activity).mockResolvedValue(events);
+    const deleteActivity = vi.spyOn(api, "deleteActivity").mockResolvedValue(2);
+
+    await renderRoute("#/activity");
+    await screen.findByText("Command 0");
+    expect(screen.getByText("Select activity to delete")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Delete/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Command 1" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Command 3" }));
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete 2" }));
+    expect(screen.getByRole("dialog", { name: "Delete 2 activities?" })).toBeInTheDocument();
+    expect(deleteActivity).not.toHaveBeenCalled();
+
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(deleteActivity).toHaveBeenCalledWith(["event-1", "event-3"]));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.queryByText("Command 1")).not.toBeInTheDocument();
+    expect(screen.queryByText("Command 3")).not.toBeInTheDocument();
+    expect(screen.getByText("Command 0")).toBeInTheDocument();
+    expect(screen.getByText("Command 2")).toBeInTheDocument();
+    expect(document.querySelectorAll(".activity-row")).toHaveLength(2);
+    expect(screen.getByText("Select activity to delete")).toBeInTheDocument();
+  });
+
+  it("selects every shown activity with the header checkbox and shift-click ranges", async () => {
+    const events = Array.from({ length: 5 }, (_, index): ActivityEvent => ({
+      id: `event-${index}`,
+      appName: "Terminal",
+      windowTitle: `Command ${index}`,
+      startedAt: new Date(1_700_000_000_000 - index * 1_000).toISOString(),
+      durationSeconds: 5,
+      source: "collector",
+    }));
+    vi.mocked(api.activity).mockResolvedValue(events);
+
+    await renderRoute("#/activity");
+    await screen.findByText("Command 0");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Command 1" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Command 3" }), { shiftKey: true });
+    expect(screen.getByText("3 selected")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Command 2" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Select Command 0" })).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all shown activity" }));
+    expect(screen.getByText("5 selected")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.getByText("Select activity to delete")).toBeInTheDocument();
+  });
+
   it("shows recent workspace changes when Code activity has no window metadata", async () => {
     vi.mocked(api.activity).mockResolvedValue([{
       id: "code-without-title",

@@ -1,9 +1,11 @@
 import { FormEvent, KeyboardEvent, useState } from "react";
-import { ArrowLeft, BadgeDollarSign, CalendarClock, Check, FilePenLine, LoaderCircle, MessageSquare, Pause, Play, Plus, ReceiptText, SkipForward, Trash2 } from "lucide-react";
+import { ArrowLeft, BadgeDollarSign, CalendarClock, Check, ClipboardList, FilePenLine, LoaderCircle, MessageSquare, Pause, Play, Plus, ReceiptText, SkipForward, Trash2 } from "lucide-react";
 import { EmptyState, errorMessage, PageHeader, ResourceState } from "../components/ui";
 import { MarkdownMessage } from "../components/MarkdownMessage";
 import { useResource } from "../hooks/useResource";
 import { api, isDesktopRuntime } from "../lib/api";
+import { revenueApi } from "../lib/revenueApi";
+import { setSimulationMode, useSimulationMode } from "../state/simulationMode";
 import type { DashboardData, InterviewSession, ThreadContext, WorkflowDocument } from "../types";
 import { WorkflowEditor } from "./WorkflowEditor";
 import "./discovery.css";
@@ -33,7 +35,9 @@ function coverage(workflow: WorkflowDocument) {
 }
 
 export function DiscoveryPage({ threadContexts }: { threadContexts: (dashboard: DashboardData) => ThreadContext[] }) {
-  const sessions = useResource(() => api.discoverySessions(), []);
+  const simulation = useSimulationMode();
+  const sessions = useResource(() => api.discoverySessions(simulation), [simulation]);
+  const catalog = useResource(() => (simulation && isDesktopRuntime() ? revenueApi.simulationCatalog() : Promise.resolve(undefined)), [simulation]);
   const dashboard = useResource(() => api.dashboard("7d"), []);
   const settings = useResource(() => api.settings(), []);
   const [selected, setSelected] = useState<string>();
@@ -46,7 +50,10 @@ export function DiscoveryPage({ threadContexts }: { threadContexts: (dashboard: 
   const [editing, setEditing] = useState<WorkflowDocument>();
   const contexts = dashboard.data ? threadContexts(dashboard.data) : [];
   const session = sessions.data?.find((item) => item.id === selected);
-  const providerReady = settings.data?.hasProviderKey;
+  // Scripted sandbox interviews need no provider: the questions are fixed and nothing is sent anywhere.
+  const scripted = Boolean(session?.workflow.commercialContext?.simulation);
+  const providerReady = Boolean(settings.data?.hasProviderKey) || scripted;
+  const business = catalog.data?.businesses.find((item) => item.id === catalog.data?.active);
 
   const run = async (operation: () => Promise<InterviewSession>, keepAnswer = false) => {
     setBusy(true);
@@ -81,13 +88,32 @@ export function DiscoveryPage({ threadContexts }: { threadContexts: (dashboard: 
   const close = () => { setSelected(undefined); setError(""); setConfirmDelete(false); setAnswer(""); };
 
   return <div className="page discovery-page">
-    <PageHeader eyebrow="Teach Knov your business" title="AI interview" description="Answer a few questions about how you sell, deliver, and bill. Knov learns what counts as billable, who approves what, and where money slips through." actions={session && <button className="ghost-button" disabled={busy} onClick={close}><Plus size={15} /> New interview</button>} />
+    <PageHeader eyebrow={simulation ? `Simulation · ${business?.name ?? "fictional business"}` : "Teach Knov your business"} title="AI interview" description="Answer a few questions about how you sell, deliver, and bill. Knov learns what counts as billable, who approves what, and where money slips through." actions={session && <button className="ghost-button" disabled={busy} onClick={close}><Plus size={15} /> New interview</button>} />
     {!isDesktopRuntime() ? <EmptyState title="Open the AI interview in the desktop app" detail="Interviews are stored in your local database. Browser preview does not run or save interviews." /> : <>
-      {!providerReady && !settings.loading && <p className="notice info">{settings.error ?? "The interview needs an AI to ask follow-up questions."} <a href="#/settings">Connect an AI in Settings</a></p>}
+      {simulation && <p className="notice info">Simulation · Interviews here are scripted for {business?.name ?? "the simulated business"}: Knov's questions don't change with your answers, and nothing is sent to an AI provider. <button className="link-button" onClick={() => setSimulationMode(false)}>Show my actual interviews</button></p>}
+      {!simulation && !providerReady && !settings.loading && <p className="notice info">{settings.error ?? "The interview needs an AI to ask follow-up questions."} <a href="#/settings">Connect an AI in Settings</a></p>}
       {error && <p role="alert" className="notice error">{error}</p>}
       {sessions.error && <p role="alert" className="notice error">{sessions.error} <button className="ghost-button" onClick={() => void sessions.reload()}>Retry</button></p>}
 
-      {!session ? <div className="interview-start">
+      {!session && simulation ? <div className="interview-start">
+        <section aria-label="Scripted interview">
+          <h2>{business ? `Interview ${business.owner.name} of ${business.name}` : "Choose a simulated business first"}</h2>
+          {business ? <div className="interview-topics"><button type="button" disabled={busy} onClick={() => void run(() => revenueApi.simulationInterview())}>
+            <ClipboardList size={20} /><strong>{business.interviewName}</strong><small>{business.profile}</small><span>About 5 minutes · scripted</span>
+          </button></div> : <p className="field-hint">Pick a business on the Simulation page, then start its interview from there or here. <a href="#/simulation">Open the simulation</a></p>}
+        </section>
+        <section aria-label="Saved interviews">
+          <h2>Sandbox interviews</h2>
+          <ResourceState {...sessions}>{(items) => items.length ? <div className="interview-saved">{items.map((item) => {
+            const { known, total } = coverage(item.workflow);
+            return <button key={item.id} type="button" disabled={busy} onClick={() => { setSelected(item.id); setAnswer(""); setError(""); setConfirmDelete(false); }}>
+              <strong>{item.workflow.name || "Sandbox interview"}</strong>
+              <span>{STATUS_LABEL[item.status]} · {new Date(item.updatedAt * 1000).toLocaleDateString()}</span>
+              <meter min={0} max={total} value={known} aria-label={`${known} of ${total} essentials known`} />
+            </button>;
+          })}</div> : <p className="field-hint">Nothing yet. Clarifications you answer on Opportunities also appear here.</p>}</ResourceState>
+        </section>
+      </div> : !session ? <div className="interview-start">
         <section aria-label="Interview topics">
           <h2>What should Knov learn first?</h2>
           <div className="interview-topics">{TOPICS.map((topic) => <button key={topic.id} type="button" disabled={busy} onClick={() => void run(() => api.startDiscovery("", undefined, topic.id))}>
@@ -176,6 +202,6 @@ function Learned({ session }: { session: InterviewSession }) {
       {fact("How often", workflow.frequency)}
     </dl>
     {session.status !== "completed" && session.missingInformation.length > 0 && <details className="learned-gaps"><summary>Still unclear ({session.missingInformation.length})</summary><ul>{session.missingInformation.slice(0, 8).map((item) => <li key={item}>{item}</li>)}</ul></details>}
-    <p className="field-hint"><MessageSquare size={12} /> Your answers and this summary go to your AI provider only when you answer or skip. Everything is saved on this Mac.</p>
+    <p className="field-hint"><MessageSquare size={12} /> {session.workflow.commercialContext?.simulation ? "Scripted sandbox interview: nothing is sent to an AI provider. Your answers are saved on this Mac with the simulated business." : "Your answers and this summary go to your AI provider only when you answer or skip. Everything is saved on this Mac."}</p>
   </aside>;
 }

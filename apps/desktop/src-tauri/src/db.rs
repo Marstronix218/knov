@@ -326,6 +326,10 @@ const SCHEMA_REPAIR: &str = concat!(
     "CREATE INDEX IF NOT EXISTS predictions_pending_idx ON predictions(evaluation_status, created_at);\n",
     "CREATE TABLE IF NOT EXISTS product_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL,\n",
     "  thread_id TEXT, occurred_at INTEGER NOT NULL);\n",
+    // Fingerprints of events the user deleted by hand. Collectors and history
+    // re-imports consult this so a removed event does not quietly come back.
+    "CREATE TABLE IF NOT EXISTS deleted_activity_fingerprints (fingerprint TEXT PRIMARY KEY,\n",
+    "  deleted_at INTEGER NOT NULL);\n",
 );
 
 pub struct Database {
@@ -459,6 +463,28 @@ impl Database {
         Ok(inserted)
     }
 
+    /// Removes the given activity rows and remembers their fingerprints so
+    /// the focus collector or a browser-history re-import cannot restore them.
+    /// Returns how many rows were actually deleted.
+    pub fn delete_events(&self, ids: &[i64], now: i64) -> AppResult<usize> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let mut conn = self.conn();
+        let transaction = conn.transaction()?;
+        let mut deleted = 0;
+        for id in ids {
+            transaction.execute(
+                "INSERT OR REPLACE INTO deleted_activity_fingerprints(fingerprint,deleted_at)
+                 SELECT fingerprint,?2 FROM activity_events WHERE id=?1 AND fingerprint IS NOT NULL",
+                params![id, now],
+            )?;
+            deleted += transaction.execute("DELETE FROM activity_events WHERE id=?1", [id])?;
+        }
+        transaction.commit()?;
+        Ok(deleted)
+    }
+
     pub fn history(&self, request: &HistoryRequest) -> AppResult<Vec<ActivityEvent>> {
         let search = request.search.as_deref().unwrap_or("");
         let pattern = format!("%{search}%");
@@ -571,6 +597,12 @@ impl Database {
         };
         let conn = self.conn();
         let purged = conn.execute(sql, [cutoff])?;
+        // Tombstones only need to outlive the events they block, which share
+        // the 30-day retention window.
+        conn.execute(
+            "DELETE FROM deleted_activity_fingerprints WHERE deleted_at < ?1",
+            [cutoff],
+        )?;
         // Derived agent state follows the same 30-day window; the action
         // journal is an audit trail and is kept for 90 days.
         conn.execute(
@@ -1189,6 +1221,7 @@ impl Database {
             "discovered_workflows",
             "discovery_sessions",
             "activity_events",
+            "deleted_activity_fingerprints",
             "chrome_profiles",
             "profile_versions",
             "user_corrections",
@@ -1323,6 +1356,14 @@ impl Database {
 }
 
 fn upsert_event(conn: &Connection, event: &ActivityEvent, fingerprint: &str) -> AppResult<bool> {
+    let deleted_by_user: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM deleted_activity_fingerprints WHERE fingerprint=?1)",
+        [fingerprint],
+        |row| row.get(0),
+    )?;
+    if deleted_by_user {
+        return Ok(false);
+    }
     let existed: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM activity_events WHERE fingerprint=?1)",
         [fingerprint],
@@ -1649,6 +1690,59 @@ mod tests {
             source: ActivitySource::AppFocus,
             is_bootstrap: bootstrap,
         }
+    }
+
+    #[test]
+    fn deleted_events_stay_deleted_when_the_same_event_is_observed_again() {
+        let db = Database::in_memory().unwrap();
+        let count = |db: &Database| -> i64 {
+            db.conn()
+                .query_row("SELECT COUNT(*) FROM activity_events", [], |row| row.get(0))
+                .unwrap()
+        };
+        let first = event(1_000, false);
+        let second = event(2_000, false);
+        let third = event(3_000, false);
+        db.insert_events(&[
+            (first.clone(), "fp-1".into()),
+            (second.clone(), "fp-2".into()),
+            (third.clone(), "fp-3".into()),
+        ])
+        .unwrap();
+        let ids: Vec<i64> = db
+            .history(&HistoryRequest {
+                start_at: 0,
+                end_at: 10_000,
+                search: None,
+                source: None,
+                limit: None,
+                offset: None,
+            })
+            .unwrap()
+            .into_iter()
+            .filter(|row| row.occurred_at != 3_000)
+            .map(|row| row.id.unwrap())
+            .collect();
+        assert_eq!(ids.len(), 2);
+
+        // Unknown ids are ignored rather than failing the whole request.
+        let deleted = db.delete_events(&[ids[0], ids[1], 999_999], 5_000).unwrap();
+        assert_eq!(deleted, 2);
+        assert_eq!(count(&db), 1);
+
+        // The focus collector re-reporting an active session, or a Chrome
+        // history re-import, must not resurrect what the user removed.
+        assert!(!db.insert_event(&first, "fp-1").unwrap());
+        assert_eq!(db.insert_events(&[(second, "fp-2".into())]).unwrap(), 0);
+        assert_eq!(count(&db), 1);
+
+        // Tombstones age out with the retention window so the table stays small.
+        db.purge_expired(5_000 + 31 * 86_400, true).unwrap();
+        let tombstones: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM deleted_activity_fingerprints", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(tombstones, 0);
     }
 
     #[test]
