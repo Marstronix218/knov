@@ -4,3 +4,7 @@ target/
 .DS_Store
 .env
 .env.local
+
+# oh-my-claudecode runtime state (project skills stay committable)
+**/.omc/*
+!**/.omc/skills/

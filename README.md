@@ -15,7 +15,7 @@ don't need to build anything. To publish a tester build, see
 
 ## Screenshot
 
-![Knov's Now page showing the current work thread, a suggested next step, and the apps and files behind it](apps/web/assets/now.jpg)
+![Knov's Home page for a simulated business, listing an uninvoiced milestone and an overdue promise with the evidence behind each and the recommended action](docs/screenshots/home.jpg)
 
 ## Alpha status
 

@@ -1245,6 +1245,8 @@ function ActivityPage() {
       await api.deleteActivity(ids);
       const removed = new Set(ids);
       resource.setData((current) => current?.filter((event) => !removed.has(event.id)));
+      setSelectedIds(new Set());
+      setLastToggledId(undefined);
       setConfirmingDelete(false);
     } catch (cause) {
       setDeleteError(errorMessage(cause));
