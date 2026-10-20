@@ -12,9 +12,9 @@ pub enum AppError {
     Http(#[from] reqwest::Error),
     #[error("credential operation failed")]
     Credential,
-    #[error("provider is not configured")]
+    #[error("No AI is connected yet. Open Settings to connect a local model or add an API key.")]
     ProviderNotConfigured,
-    #[error("provider rejected the request: {0}")]
+    #[error("{0}")]
     Provider(String),
     #[error("invalid input: {0}")]
     InvalidInput(String),

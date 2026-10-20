@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AiUsageSummary,
   GraphRevision,
   InterviewGraph,
   InterviewSession,
@@ -17,6 +18,9 @@ import type {
   ChatRunResult,
   DashboardData,
   GrantRequest,
+  LocalModelDetection,
+  PermissionProbe,
+  TesterSummary,
   ProfileData,
   Provider,
   PredictionDashboard,
@@ -76,7 +80,7 @@ async function call<T>(command: string, args?: Record<string, unknown>, fallback
 }
 
 async function discoveryCall<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  if (!isTauri()) throw new Error("Workflow Discovery requires the desktop app. Browser preview cannot save interviews or call your provider.");
+  if (!isTauri()) throw new Error("The AI interview requires the desktop app. Browser preview cannot save interviews or call your provider.");
   return invoke<T>(command, args);
 }
 
@@ -84,8 +88,9 @@ export const api = {
   interviewGraphHistory: (sessionId: string) => discoveryCall<GraphRevision[]>("get_discovery_graph_history", { sessionId }),
   interviewGraph: (sessionId: string, revision?: number) => discoveryCall<InterviewGraph>("get_discovery_graph", { sessionId, revision }),
   deleteDiscovery: (sessionId: string) => discoveryCall<void>("delete_discovery_interview", { sessionId }),
-  discoverySessions: () => discoveryCall<InterviewSession[]>("get_discovery_sessions"),
-  startDiscovery: (description: string, threadContext?: ThreadContext) => discoveryCall<InterviewSession>("start_discovery_interview", { description, threadContext }),
+  /** Interviews in one scope: actual (default) or the simulated business. */
+  discoverySessions: (demo = false) => discoveryCall<InterviewSession[]>("get_discovery_sessions", { demo }),
+  startDiscovery: (description: string, threadContext?: ThreadContext, topic?: string) => discoveryCall<InterviewSession>("start_discovery_interview", { description, threadContext, topic }),
   advanceDiscovery: (sessionId: string, action: "answer" | "skip" | "end", answer?: string) => discoveryCall<InterviewSession>("advance_discovery_interview", { sessionId, action, answer }),
   setDiscoveryStatus: (sessionId: string, status: "paused" | "active") => discoveryCall<InterviewSession>("set_discovery_interview_status", { sessionId, status }),
   discoveredWorkflows: () => discoveryCall<WorkflowDocument[]>("get_discovered_workflows"),
@@ -113,6 +118,9 @@ export const api = {
     call<DashboardData>("get_dashboard", { range }, { ...mockDashboard, range }),
   activity: (range: RangeKey, query = "") =>
     call<ActivityEvent[]>("get_activity_history", { range, query }, mockActivity),
+  /** Removes the selected events from the local database. Resolves with the number deleted. */
+  deleteActivity: (ids: string[]) =>
+    call<number>("delete_activity_events", { ids }, ids.length),
   profile: () => call<ProfileData>("get_profile", undefined, mockProfile),
   settings: () => call<SettingsData>("get_settings", undefined, mockSettings),
   predictionsDashboard: () =>
@@ -136,6 +144,38 @@ export const api = {
   setCollectionEnabled: (enabled: boolean) =>
     call<SettingsData>("set_collection_enabled", { enabled }, { ...mockSettings, collectionStatus: { ...mockSettings.collectionStatus, enabled } }),
   requestAccessibility: () => call<boolean>("request_accessibility_permission", undefined, false),
+  probePermissions: () =>
+    call<PermissionProbe>("probe_permissions", undefined, { foregroundApps: true, windowTitles: false }),
+  detectLocalModels: (baseUrl?: string) =>
+    call<LocalModelDetection>("detect_local_models", { baseUrl }, {
+      baseUrl: baseUrl || "http://localhost:11434",
+      reachable: false,
+      models: [],
+      error: "Local AI detection requires the desktop app.",
+    }),
+  openMailDraft: async (to: string, subject: string, body: string) => {
+    if (!isTauri()) {
+      window.location.href = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      return;
+    }
+    await invoke<void>("open_mail_draft", { to, subject, body });
+  },
+  aiUsage: (days: number) =>
+    call<AiUsageSummary>("get_ai_usage", { days }, {
+      since: 0, requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, unpricedRequests: 0,
+      pricesConfigured: false, byFeature: [], byModel: [], byDay: [],
+    }),
+  testerSummary: () =>
+    call<TesterSummary>("get_tester_summary", undefined, {
+      appVersion: "0.2.0",
+      macOS: "preview",
+      aiProvider: "none",
+      browserProfiles: 0,
+      labsEnabled: false,
+      daysWithActivity: 0,
+      questionsAsked: 0,
+      events: {},
+    }),
   setBrowserProfiles: (profileIds: string[]) =>
     call<void>("set_browser_profiles", { profileIds }, undefined),
   startBootstrap: () => call<BootstrapStatus>("start_bootstrap", undefined, undefined),

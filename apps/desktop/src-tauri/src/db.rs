@@ -14,6 +14,7 @@ use crate::{
         ActivityEvent, ActivitySource, Dashboard, DashboardRequest, HistoryRequest,
         ProfileDocument, QueryActivityFacts, Recommendation, Settings, UsageItem, UserCorrection,
     },
+    providers::AiUsageRecord,
 };
 
 macro_rules! predictions_v1_columns {
@@ -296,6 +297,22 @@ CREATE INDEX predictions_pending_idx ON predictions(evaluation_status, created_a
 "#
     ),
     r#"ALTER TABLE recommendations ADD COLUMN title TEXT NOT NULL DEFAULT '';"#,
+    r#"
+CREATE TABLE ai_usage (
+  id TEXT PRIMARY KEY,
+  timestamp INTEGER NOT NULL,
+  feature TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  cache_read_input_tokens INTEGER,
+  cache_write_input_tokens INTEGER,
+  estimated_cost_usd REAL,
+  latency_ms INTEGER NOT NULL
+);
+CREATE INDEX ai_usage_time_idx ON ai_usage(timestamp DESC);
+"#,
 ];
 
 /// Index of the idempotent agent-schema migration, re-applied after
@@ -309,6 +326,10 @@ const SCHEMA_REPAIR: &str = concat!(
     "CREATE INDEX IF NOT EXISTS predictions_pending_idx ON predictions(evaluation_status, created_at);\n",
     "CREATE TABLE IF NOT EXISTS product_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL,\n",
     "  thread_id TEXT, occurred_at INTEGER NOT NULL);\n",
+    // Fingerprints of events the user deleted by hand. Collectors and history
+    // re-imports consult this so a removed event does not quietly come back.
+    "CREATE TABLE IF NOT EXISTS deleted_activity_fingerprints (fingerprint TEXT PRIMARY KEY,\n",
+    "  deleted_at INTEGER NOT NULL);\n",
 );
 
 pub struct Database {
@@ -373,6 +394,7 @@ impl Database {
         transaction.execute_batch(MIGRATIONS[AGENT_SCHEMA_MIGRATION])?;
         transaction.execute_batch(SCHEMA_REPAIR)?;
         crate::discovery::initialize_schema(&transaction)?;
+        crate::revenue::init(&transaction)?;
         transaction.commit()?;
         Ok(())
     }
@@ -410,7 +432,11 @@ impl Database {
     }
 
     pub fn settings(&self) -> AppResult<Settings> {
-        Ok(self.get_setting("settings")?.unwrap_or_default())
+        let mut settings: Settings = self.get_setting("settings")?.unwrap_or_default();
+        if settings.selected_provider.is_none() {
+            settings.selected_provider = crate::providers::managed_provider();
+        }
+        Ok(settings)
     }
 
     pub fn save_settings(&self, settings: &Settings) -> AppResult<()> {
@@ -435,6 +461,28 @@ impl Database {
         }
         transaction.commit()?;
         Ok(inserted)
+    }
+
+    /// Removes the given activity rows and remembers their fingerprints so
+    /// the focus collector or a browser-history re-import cannot restore them.
+    /// Returns how many rows were actually deleted.
+    pub fn delete_events(&self, ids: &[i64], now: i64) -> AppResult<usize> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let mut conn = self.conn();
+        let transaction = conn.transaction()?;
+        let mut deleted = 0;
+        for id in ids {
+            transaction.execute(
+                "INSERT OR REPLACE INTO deleted_activity_fingerprints(fingerprint,deleted_at)
+                 SELECT fingerprint,?2 FROM activity_events WHERE id=?1 AND fingerprint IS NOT NULL",
+                params![id, now],
+            )?;
+            deleted += transaction.execute("DELETE FROM activity_events WHERE id=?1", [id])?;
+        }
+        transaction.commit()?;
+        Ok(deleted)
     }
 
     pub fn history(&self, request: &HistoryRequest) -> AppResult<Vec<ActivityEvent>> {
@@ -549,6 +597,12 @@ impl Database {
         };
         let conn = self.conn();
         let purged = conn.execute(sql, [cutoff])?;
+        // Tombstones only need to outlive the events they block, which share
+        // the 30-day retention window.
+        conn.execute(
+            "DELETE FROM deleted_activity_fingerprints WHERE deleted_at < ?1",
+            [cutoff],
+        )?;
         // Derived agent state follows the same 30-day window; the action
         // journal is an audit trail and is kept for 90 days.
         conn.execute(
@@ -564,6 +618,7 @@ impl Database {
             "DELETE FROM agent_runs WHERE created_at < ?1",
             [journal_cutoff],
         )?;
+        crate::revenue::prune(&conn, cutoff)?;
         Ok(purged)
     }
 
@@ -1001,6 +1056,71 @@ impl Database {
         Ok(facts)
     }
 
+    pub fn record_ai_usage(&self, record: &AiUsageRecord) -> AppResult<()> {
+        self.conn().execute(
+            "INSERT INTO ai_usage
+             (id,timestamp,feature,provider,model,input_tokens,output_tokens,
+              cache_read_input_tokens,cache_write_input_tokens,estimated_cost_usd,latency_ms)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+            params![
+                record.id,
+                record.timestamp,
+                record.feature,
+                record.provider,
+                record.model,
+                record.input_tokens,
+                record.output_tokens,
+                record.cache_read_input_tokens,
+                record.cache_write_input_tokens,
+                record.estimated_cost_usd,
+                record.latency_ms,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Requests, tokens, and estimated spend since `since`, grouped by the
+    /// feature, the model, and the local day.
+    pub fn ai_usage_summary(&self, since: i64) -> AppResult<serde_json::Value> {
+        let conn = self.conn();
+        let group = |column: &str| -> AppResult<Vec<serde_json::Value>> {
+            let mut statement = conn.prepare(&format!(
+                "SELECT {column}, COUNT(*), COALESCE(SUM(input_tokens),0),
+                        COALESCE(SUM(output_tokens),0), SUM(estimated_cost_usd),
+                        SUM(CASE WHEN estimated_cost_usd IS NULL THEN 1 ELSE 0 END)
+                 FROM ai_usage WHERE timestamp >= ?1
+                 GROUP BY 1 ORDER BY 1 DESC"
+            ))?;
+            let rows = statement.query_map([since], |row| {
+                Ok(serde_json::json!({
+                    "key": row.get::<_, String>(0)?,
+                    "requests": row.get::<_, i64>(1)?,
+                    "inputTokens": row.get::<_, i64>(2)?,
+                    "outputTokens": row.get::<_, i64>(3)?,
+                    "costUsd": row.get::<_, Option<f64>>(4)?,
+                    "unpricedRequests": row.get::<_, i64>(5)?,
+                }))
+            })?;
+            Ok(rows.collect::<Result<Vec<_>, _>>()?)
+        };
+        let by_feature = group("feature")?;
+        let by_model = group("provider || ' · ' || model")?;
+        let by_day = group("date(timestamp, 'unixepoch', 'localtime')")?;
+        let sum =
+            |field: &str| -> f64 { by_day.iter().filter_map(|row| row[field].as_f64()).sum() };
+        Ok(serde_json::json!({
+            "since": since,
+            "requests": sum("requests") as i64,
+            "inputTokens": sum("inputTokens") as i64,
+            "outputTokens": sum("outputTokens") as i64,
+            "costUsd": sum("costUsd"),
+            "unpricedRequests": sum("unpricedRequests") as i64,
+            "byFeature": by_feature,
+            "byModel": by_model,
+            "byDay": by_day,
+        }))
+    }
+
     pub fn record_inference_run(&self, run: &InferenceRun) -> AppResult<()> {
         self.conn().execute(
             "INSERT OR REPLACE INTO inference_runs
@@ -1044,6 +1164,38 @@ impl Database {
         Ok(())
     }
 
+    /// Aggregate counts for opt-in tester feedback. Never includes titles,
+    /// URLs, application names, or chat content.
+    pub fn tester_summary(&self) -> AppResult<serde_json::Value> {
+        let conn = self.conn();
+        let (active_days, first_seen): (i64, Option<i64>) = conn.query_row(
+            "SELECT COUNT(DISTINCT date(occurred_at,'unixepoch','localtime')),MIN(occurred_at)
+             FROM activity_events WHERE source='app_focus'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let chats: i64 =
+            conn.query_row("SELECT COUNT(*) FROM inference_runs", [], |row| row.get(0))?;
+        let mut statement = conn.prepare(
+            "SELECT event_type,COUNT(*) FROM product_events GROUP BY event_type ORDER BY event_type",
+        )?;
+        let events = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    serde_json::Value::from(row.get::<_, i64>(1)?),
+                ))
+            })?
+            .collect::<Result<serde_json::Map<_, _>, _>>()?;
+        Ok(serde_json::json!({
+            "daysWithActivity":active_days,
+            "daysSinceFirstActivity":first_seen
+                .map(|first| (chrono::Utc::now().timestamp() - first).max(0) / 86_400),
+            "questionsAsked":chats,
+            "events":events
+        }))
+    }
+
     pub fn record_product_event(
         &self,
         event_type: &str,
@@ -1060,6 +1212,7 @@ impl Database {
     pub fn delete_all_local_data(&self) -> AppResult<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
+        crate::revenue::delete_all(&tx)?;
         for table in [
             "discovery_graph_evidence",
             "discovery_graph_edges",
@@ -1068,12 +1221,14 @@ impl Database {
             "discovered_workflows",
             "discovery_sessions",
             "activity_events",
+            "deleted_activity_fingerprints",
             "chrome_profiles",
             "profile_versions",
             "user_corrections",
             "recommendations",
             "refresh_runs",
             "inference_runs",
+            "ai_usage",
             "product_events",
             "predictions",
             "agent_actions",
@@ -1201,6 +1356,14 @@ impl Database {
 }
 
 fn upsert_event(conn: &Connection, event: &ActivityEvent, fingerprint: &str) -> AppResult<bool> {
+    let deleted_by_user: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM deleted_activity_fingerprints WHERE fingerprint=?1)",
+        [fingerprint],
+        |row| row.get(0),
+    )?;
+    if deleted_by_user {
+        return Ok(false);
+    }
     let existed: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM activity_events WHERE fingerprint=?1)",
         [fingerprint],
@@ -1530,6 +1693,59 @@ mod tests {
     }
 
     #[test]
+    fn deleted_events_stay_deleted_when_the_same_event_is_observed_again() {
+        let db = Database::in_memory().unwrap();
+        let count = |db: &Database| -> i64 {
+            db.conn()
+                .query_row("SELECT COUNT(*) FROM activity_events", [], |row| row.get(0))
+                .unwrap()
+        };
+        let first = event(1_000, false);
+        let second = event(2_000, false);
+        let third = event(3_000, false);
+        db.insert_events(&[
+            (first.clone(), "fp-1".into()),
+            (second.clone(), "fp-2".into()),
+            (third.clone(), "fp-3".into()),
+        ])
+        .unwrap();
+        let ids: Vec<i64> = db
+            .history(&HistoryRequest {
+                start_at: 0,
+                end_at: 10_000,
+                search: None,
+                source: None,
+                limit: None,
+                offset: None,
+            })
+            .unwrap()
+            .into_iter()
+            .filter(|row| row.occurred_at != 3_000)
+            .map(|row| row.id.unwrap())
+            .collect();
+        assert_eq!(ids.len(), 2);
+
+        // Unknown ids are ignored rather than failing the whole request.
+        let deleted = db.delete_events(&[ids[0], ids[1], 999_999], 5_000).unwrap();
+        assert_eq!(deleted, 2);
+        assert_eq!(count(&db), 1);
+
+        // The focus collector re-reporting an active session, or a Chrome
+        // history re-import, must not resurrect what the user removed.
+        assert!(!db.insert_event(&first, "fp-1").unwrap());
+        assert_eq!(db.insert_events(&[(second, "fp-2".into())]).unwrap(), 0);
+        assert_eq!(count(&db), 1);
+
+        // Tombstones age out with the retention window so the table stays small.
+        db.purge_expired(5_000 + 31 * 86_400, true).unwrap();
+        let tombstones: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM deleted_activity_fingerprints", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(tombstones, 0);
+    }
+
+    #[test]
     fn chrome_profile_rows_for_deleted_profiles_are_pruned_only_when_listed() {
         let db = Database::in_memory().unwrap();
         let row = |id: &str| (id.to_string(), id.to_string(), format!("/tmp/{id}"));
@@ -1568,6 +1784,7 @@ mod tests {
             "agent_runs",
             "agent_actions",
             "business_records",
+            "revenue_records",
         ] {
             let exists: bool = db
                 .conn()
@@ -1639,6 +1856,44 @@ mod tests {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .unwrap();
         assert_eq!(version, MIGRATIONS.len());
+    }
+
+    #[test]
+    fn ai_usage_summary_groups_requests_and_flags_unpriced_ones() {
+        let db = Database::in_memory().unwrap();
+        let record = |id: &str, feature: &str, cost: Option<f64>| AiUsageRecord {
+            id: id.into(),
+            timestamp: Utc::now().timestamp(),
+            feature: feature.into(),
+            provider: "openai".into(),
+            model: "test-model".into(),
+            input_tokens: Some(1_000),
+            output_tokens: Some(200),
+            cache_read_input_tokens: None,
+            cache_write_input_tokens: None,
+            estimated_cost_usd: cost,
+            latency_ms: 40,
+        };
+        db.record_ai_usage(&record("a", "ask", Some(0.01))).unwrap();
+        db.record_ai_usage(&record("b", "ask", Some(0.02))).unwrap();
+        db.record_ai_usage(&record("c", "interview", None)).unwrap();
+        let summary = db.ai_usage_summary(0).unwrap();
+        assert_eq!(summary["requests"], 3);
+        assert_eq!(summary["inputTokens"], 3_000);
+        assert_eq!(summary["outputTokens"], 600);
+        assert_eq!(summary["unpricedRequests"], 1);
+        assert!((summary["costUsd"].as_f64().unwrap() - 0.03).abs() < 1e-9);
+        let ask = summary["byFeature"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["key"] == "ask")
+            .unwrap();
+        assert_eq!(ask["requests"], 2);
+        assert_eq!(
+            db.ai_usage_summary(Utc::now().timestamp() + 60).unwrap()["requests"],
+            0
+        );
     }
 
     #[test]

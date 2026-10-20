@@ -35,13 +35,17 @@ export function AppStatusProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const interval = window.setInterval(() => void refreshAgent(), AGENT_REFRESH_MS);
-    const onFocus = () => void refreshAgent();
+    // Collection can also be toggled from the menu bar icon while the window is hidden.
+    const onFocus = () => {
+      void refreshAgent();
+      void api.settings().then(setSettings).catch(() => undefined);
+    };
     window.addEventListener("focus", onFocus);
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("focus", onFocus);
     };
-  }, [refreshAgent]);
+  }, [refreshAgent, setSettings]);
 
   const setCollectionEnabled = useCallback(async (enabled: boolean) => {
     setSettings(await api.setCollectionEnabled(enabled));

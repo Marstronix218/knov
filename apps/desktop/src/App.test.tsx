@@ -121,10 +121,20 @@ function editorActivity(): ActivityEvent[] {
 describe("application navigation", () => {
   beforeEach(stubApi);
 
-  it("redirects unknown routes to the dashboard", async () => {
+  it("redirects unknown routes to Home", async () => {
     await renderRoute("#/unknown");
 
-    expect(await screen.findByRole("heading", { name: "Pick up where you left off." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What needs your attention" })).toBeInTheDocument();
+    expect(window.location.hash).toBe("#/home");
+  });
+
+  it("puts the business pages first and the AI interview outside Labs", async () => {
+    await renderRoute("#/home");
+
+    const links = (await screen.findAllByRole("link")).map((link) => link.textContent);
+    expect(links.slice(0, 6)).toEqual(["Home", "Opportunities", "Sources", "AI interview", "Ask", "Simulation"]);
+    fireEvent.click(screen.getByRole("link", { name: "AI interview" }));
+    expect(await screen.findByRole("heading", { name: "AI interview" })).toBeInTheDocument();
   });
 
   it("navigates from the dashboard to activity history", async () => {
@@ -135,38 +145,140 @@ describe("application navigation", () => {
     expect(await screen.findByRole("heading", { name: "Your local timeline" })).toBeInTheDocument();
   });
 
-  it("navigates to reconstructed work threads", async () => {
+  it("folds secondary work pages until opened, and keeps the current page's group open", async () => {
+    localStorage.removeItem("knov.open-nav-groups");
+    await renderRoute("#/home");
+    expect(screen.queryByRole("link", { name: "Memory" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Your work" }));
+    expect(screen.getByRole("link", { name: "Memory" })).toHaveAttribute("title", "What Knov knows about you, and your corrections");
+    expect(localStorage.getItem("knov.open-nav-groups")).toBe('["Your work"]');
+    localStorage.removeItem("knov.open-nav-groups");
+  });
+
+  it("opens Ask from the primary navigation", async () => {
     await renderRoute("#/dashboard");
 
-    fireEvent.click(screen.getByRole("link", { name: "Threads" }));
+    fireEvent.click(screen.getByRole("link", { name: "Ask" }));
 
-    expect(await screen.findByRole("heading", { name: "Your threads" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Knov implementation/ }));
-    expect(screen.getByText("Thread evidence")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Remembers more. Sends less." })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "What have I been working on this week?" })).toBeInTheDocument();
+  });
+
+  it("opens Opportunities without enabling Labs and states the browser boundary", async () => {
+    await renderRoute("#/dashboard");
+
+    fireEvent.click(screen.getByRole("link", { name: "Opportunities" }));
+
+    expect(await screen.findByRole("heading", { name: "Opportunities" })).toBeInTheDocument();
+    expect(screen.getByText("Open Revenue in the desktop app")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Check sources again" })).not.toBeInTheDocument();
+  });
+
+  it("keeps experimental pages out of the navigation until Labs is on", async () => {
+    await renderRoute("#/dashboard");
+    await screen.findByRole("link", { name: "Memory" });
+    expect(screen.queryByRole("link", { name: /^Workflows/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^Agent/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("link", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Show Labs features/ }));
+
+    await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ labsEnabled: true }));
+    expect(await screen.findByRole("link", { name: /^Workflows/ })).toBeInTheDocument();
   });
 });
 
 describe("onboarding", () => {
-  beforeEach(stubApi);
-
-  it("completes consent without changing the hook order", async () => {
+  beforeEach(() => {
+    stubApi();
     localStorage.clear();
-    vi.mocked(api.recordProductEvent).mockRejectedValueOnce(new Error("local metrics unavailable"));
     window.location.hash = "";
+    vi.spyOn(api, "probePermissions").mockResolvedValue({ foregroundApps: true, windowTitles: false });
+    vi.spyOn(api, "detectLocalModels").mockResolvedValue({ baseUrl: "http://localhost:11434", reachable: false, models: [] });
+    vi.spyOn(api, "startLocalBootstrap").mockResolvedValue({ phase: "complete", importedEvents: 0, progress: 100, message: "ready" });
+    vi.spyOn(api, "startBootstrap").mockResolvedValue({ phase: "complete", importedEvents: 0, progress: 100, message: "ready" });
+    vi.spyOn(api, "bootstrapStatus").mockResolvedValue({ phase: "importing", importedEvents: 0, progress: 20, message: "Importing" });
+  });
+
+  it("connects a cloud key and builds the first profile in the background", async () => {
+    vi.mocked(api.recordProductEvent).mockRejectedValueOnce(new Error("local metrics unavailable"));
+    const saveKey = vi.spyOn(api, "saveProviderKey").mockResolvedValue(undefined);
+    vi.spyOn(api, "testProvider").mockResolvedValue("Connection successful.");
+    vi.mocked(api.saveSettings).mockImplementation(async (settings) => ({ ...clone(mockSettings), ...settings, aiConfigured: true }));
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    fireEvent.click(screen.getByRole("radio", { name: /Use my own business data/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    fireEvent.click((await screen.findAllByRole("checkbox"))[0]);
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    fireEvent.click(await screen.findByRole("radio", { name: /Cloud API key/ }));
+    fireEvent.change(screen.getByLabelText("API key"), { target: { value: "sk-test-only" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save and connect/ }));
+
+    expect(await screen.findByText("Connected to OpenAI.")).toBeInTheDocument();
+    expect(saveKey).toHaveBeenCalledWith("openai", "sk-test-only");
+    fireEvent.click(screen.getByRole("button", { name: /Finish setup/ }));
+
+    expect(await screen.findByRole("heading", { name: "Sources" })).toBeInTheDocument();
+    expect(localStorage.getItem("knov.simulation-mode")).toBe("false");
+    expect(api.startBootstrap).toHaveBeenCalledOnce();
+    expect(api.setBrowserProfiles).toHaveBeenCalledWith(["chrome-default"]);
+    expect(localStorage.getItem("knov.setup-complete")).toBe("true");
+  });
+
+  it("finishes without any browser when none is installed", async () => {
+    vi.mocked(api.browserProfiles).mockResolvedValue([]);
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
     fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
-    const profiles = await screen.findAllByRole("checkbox");
-    fireEvent.click(profiles[0]);
-    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
-    fireEvent.change(screen.getByLabelText("API key"), {
-      target: { value: "sk-test-only" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /Build my first profile/ }));
+    expect(await screen.findByText(/No Chrome, Arc, Brave, Edge, or Vivaldi profiles were found/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Skip/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Skip AI and finish/ }));
 
-    expect(await screen.findByRole("heading", { name: "Pick up where you left off." })).toBeInTheDocument();
-    expect(localStorage.getItem("knov.setup-complete")).toBe("true");
+    expect(await screen.findByRole("heading", { name: "Simulation" })).toBeInTheDocument();
+    expect(localStorage.getItem("knov.simulation-mode")).toBe("true");
+    expect(api.setBrowserProfiles).toHaveBeenCalledWith([]);
+    expect(api.startLocalBootstrap).toHaveBeenCalledOnce();
+  });
+
+  it("offers a detected local model and explains how to get one otherwise", async () => {
+    vi.mocked(api.detectLocalModels).mockResolvedValue({ baseUrl: "http://localhost:11434", reachable: true, models: ["llama3.2:latest", "qwen3:8b"] });
+    vi.spyOn(api, "testProvider").mockResolvedValue("Connection successful.");
+    render(<App />);
+
+    for (let step = 0; step < 3; step += 1) fireEvent.click(screen.getByRole("button", { name: /Continue|Skip/ }));
+    fireEvent.change(await screen.findByLabelText("Model"), { target: { value: "qwen3:8b" } });
+    fireEvent.click(screen.getByRole("button", { name: /Use this model/ }));
+
+    await waitFor(() => expect(api.saveSettings).toHaveBeenCalledWith({ provider: "local", localBaseUrl: "http://localhost:11434", localModel: "qwen3:8b" }));
+    expect(await screen.findByText("Using qwen3:8b on this Mac.")).toBeInTheDocument();
+  });
+
+  it("skips the AI step when Knov provides the AI", async () => {
+    vi.mocked(api.settings).mockResolvedValue({ ...clone(mockSettings), managedAi: true, aiConfigured: true, provider: "openai" });
+    render(<App />);
+
+    expect(await screen.findByText("Mac activity")).toBeInTheDocument();
+    expect(screen.queryByText("AI")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Finish setup/ }));
+
+    await waitFor(() => expect(api.startBootstrap).toHaveBeenCalledOnce());
+  });
+
+  it("shows macOS permission status during setup", async () => {
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Allow" }));
+
+    await waitFor(() => expect(api.probePermissions).toHaveBeenCalled());
+    expect(await screen.findByText("On")).toBeInTheDocument();
+    expect(screen.getByText("Off")).toBeInTheDocument();
   });
 });
 
@@ -246,7 +358,7 @@ describe("dashboard", () => {
 
     await renderRoute("#/dashboard");
 
-    expect(await screen.findByText("No work threads yet")).toBeInTheDocument();
+    expect(await screen.findByText("Knov is getting to know your work")).toBeInTheDocument();
     expect(screen.getByText("A short reset may help")).toBeInTheDocument();
   });
 
@@ -428,7 +540,21 @@ describe("dashboard", () => {
 });
 
 describe("prediction experiment", () => {
-  beforeEach(stubApi);
+  beforeEach(() => {
+    stubApi();
+    vi.mocked(api.settings).mockResolvedValue({ ...clone(mockSettings), labsEnabled: true });
+  });
+
+  it("stays hidden from Now unless Labs is on", async () => {
+    vi.mocked(api.settings).mockResolvedValue(clone(mockSettings));
+    vi.mocked(api.predictionsDashboard).mockResolvedValue({ ...clone(mockPredictionDashboard), enabled: true });
+
+    await renderRoute("#/dashboard");
+    await screen.findByRole("heading", { name: "Knov implementation" });
+
+    expect(screen.queryByRole("region", { name: "Likely next" })).not.toBeInTheDocument();
+    expect(api.predictionsDashboard).not.toHaveBeenCalled();
+  });
 
   it("renders a high-confidence pending prediction with evidence", async () => {
     vi.mocked(api.predictionsDashboard).mockResolvedValue({
@@ -529,6 +655,70 @@ describe("editor file changes", () => {
     expect(screen.queryByRole("button", { name: "Show more" })).not.toBeInTheDocument();
   });
 
+  it("deletes multi-selected activity after confirmation and drops it from the timeline", async () => {
+    const events = Array.from({ length: 4 }, (_, index): ActivityEvent => ({
+      id: `event-${index}`,
+      appName: "Terminal",
+      windowTitle: `Command ${index}`,
+      startedAt: new Date(1_700_000_000_000 - index * 1_000).toISOString(),
+      durationSeconds: 5,
+      source: "collector",
+    }));
+    vi.mocked(api.activity).mockResolvedValue(events);
+    const deleteActivity = vi.spyOn(api, "deleteActivity").mockResolvedValue(2);
+
+    await renderRoute("#/activity");
+    await screen.findByText("Command 0");
+    expect(screen.getByText("Select activity to delete")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Delete/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Command 1" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Command 3" }));
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete 2" }));
+    expect(screen.getByRole("dialog", { name: "Delete 2 activities?" })).toBeInTheDocument();
+    expect(deleteActivity).not.toHaveBeenCalled();
+
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(deleteActivity).toHaveBeenCalledWith(["event-1", "event-3"]));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.queryByText("Command 1")).not.toBeInTheDocument();
+    expect(screen.queryByText("Command 3")).not.toBeInTheDocument();
+    expect(screen.getByText("Command 0")).toBeInTheDocument();
+    expect(screen.getByText("Command 2")).toBeInTheDocument();
+    expect(document.querySelectorAll(".activity-row")).toHaveLength(2);
+    expect(screen.getByText("Select activity to delete")).toBeInTheDocument();
+  });
+
+  it("selects every shown activity with the header checkbox and shift-click ranges", async () => {
+    const events = Array.from({ length: 5 }, (_, index): ActivityEvent => ({
+      id: `event-${index}`,
+      appName: "Terminal",
+      windowTitle: `Command ${index}`,
+      startedAt: new Date(1_700_000_000_000 - index * 1_000).toISOString(),
+      durationSeconds: 5,
+      source: "collector",
+    }));
+    vi.mocked(api.activity).mockResolvedValue(events);
+
+    await renderRoute("#/activity");
+    await screen.findByText("Command 0");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Command 1" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Command 3" }), { shiftKey: true });
+    expect(screen.getByText("3 selected")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Select Command 2" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Select Command 0" })).not.toBeChecked();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all shown activity" }));
+    expect(screen.getByText("5 selected")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.getByText("Select activity to delete")).toBeInTheDocument();
+  });
+
   it("shows recent workspace changes when Code activity has no window metadata", async () => {
     vi.mocked(api.activity).mockResolvedValue([{
       id: "code-without-title",
@@ -579,7 +769,7 @@ describe("editor file changes", () => {
       recommendations: [],
     });
 
-    await renderRoute("#/threads");
+    await renderRoute("#/dashboard");
     fireEvent.click(await screen.findByRole("button", { name: /Software development/i }));
 
     const summary = await screen.findByRole("region", { name: "Saved files" });
@@ -733,7 +923,10 @@ describe("settings privacy disclosures", () => {
   it("states that provider keys travel directly from the Mac", async () => {
     await renderRoute("#/settings");
 
-    expect(await screen.findByText("Your key goes directly from this Mac to the selected provider.")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("radio", { name: /Cloud API key/ }));
+
+    expect(await screen.findByText(/Stored in macOS Keychain and sent only to OpenAI/)).toBeInTheDocument();
+    expect(screen.getByText(/never your raw activity/)).toBeInTheDocument();
   });
 
   it("states which metadata collection includes", async () => {
@@ -741,7 +934,7 @@ describe("settings privacy disclosures", () => {
 
     expect(
       await screen.findByText(
-        "Foreground app, window title, selected Chrome history, and editor workspace-change metadata.",
+        "Foreground app, window title, selected browser history, and editor workspace-change metadata.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(/Git working-tree paths/i)).toBeInTheDocument();
@@ -754,23 +947,23 @@ describe("settings privacy disclosures", () => {
     await renderRoute("#/settings");
 
     expect(
-      await screen.findByText("Select local Chrome profiles for history import and continuous backfill."),
+      await screen.findByText("Optional. Choose Chrome, Arc, Brave, Edge, or Vivaldi profiles to import and keep up to date."),
     ).toBeInTheDocument();
     expect(screen.queryByText("Chrome companion pairing")).not.toBeInTheDocument();
     expect(screen.queryByText(/Chrome extension is disconnected/i)).not.toBeInTheDocument();
   });
 
-  it("re-imports Chrome history and refreshes the profile as one operation", async () => {
+  it("re-imports browser history and refreshes the profile as one operation", async () => {
     const reimport = vi.mocked(api.reimportChromeHistory);
     const refresh = vi.mocked(api.refreshProfile);
     await renderRoute("#/settings");
 
-    fireEvent.click(await screen.findByRole("button", { name: "Re-import Chrome history" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Re-import browser history" }));
 
     await waitFor(() => expect(reimport).toHaveBeenCalledOnce());
     expect(refresh).not.toHaveBeenCalled();
     expect(
-      await screen.findByText("Chrome durations imported and your profile was refreshed."),
+      await screen.findByText("Browser history imported and your profile was refreshed."),
     ).toBeInTheDocument();
   });
 
@@ -798,10 +991,10 @@ describe("assistant chat", () => {
     const chat = vi.spyOn(api, "chat").mockResolvedValue(chatRun(response));
     await renderRoute("#/assistant");
 
-    fireEvent.change(screen.getByPlaceholderText(/What should I prioritize/), {
+    fireEvent.change(screen.getByPlaceholderText(/Ask about your work/), {
       target: { value: "What should I work on?" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Send/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => expect(chat).toHaveBeenCalledTimes(1));
     expect(chat.mock.calls[0][1]).toBe("optimized");
@@ -829,10 +1022,10 @@ describe("assistant chat", () => {
     const chat = vi.spyOn(api, "chat").mockResolvedValue(chatRun(response));
     await renderRoute("#/assistant");
 
-    fireEvent.change(screen.getByPlaceholderText(/What should I prioritize/), {
+    fireEvent.change(screen.getByPlaceholderText(/Ask about your work/), {
       target: { value: "Compare this." },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Send/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => expect(chat).toHaveBeenCalled());
     expect(chat.mock.calls[0][1]).toBe("optimized");
@@ -854,8 +1047,8 @@ describe("assistant chat", () => {
 
     fireEvent.click(await screen.findByRole("link", { name: /Ask with context/ }));
     expect(await screen.findByText("Review local candidate evidence")).toBeInTheDocument();
-    fireEvent.change(screen.getByPlaceholderText(/What should I prioritize/), { target: { value: "What next?" } });
-    fireEvent.click(screen.getByRole("button", { name: /Send/ }));
+    fireEvent.change(screen.getByPlaceholderText(/Ask about your work/), { target: { value: "What next?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => expect(chat).toHaveBeenCalledOnce());
     const sentMessages = chat.mock.calls[0][0];
@@ -886,7 +1079,7 @@ describe("assistant chat", () => {
     const chat = vi.spyOn(api, "chat").mockResolvedValue(chatRun(response));
     await renderRoute("#/assistant");
 
-    const composer = screen.getByPlaceholderText(/What should I prioritize/);
+    const composer = screen.getByPlaceholderText(/Ask about your work/);
     fireEvent.change(composer, { target: { value: "Send this with Enter" } });
     fireEvent.keyDown(composer, { key: "Enter", code: "Enter" });
 
@@ -900,7 +1093,7 @@ describe("assistant chat", () => {
     const chat = vi.spyOn(api, "chat");
     await renderRoute("#/assistant");
 
-    const composer = screen.getByPlaceholderText(/What should I prioritize/);
+    const composer = screen.getByPlaceholderText(/Ask about your work/);
     fireEvent.change(composer, { target: { value: "First line" } });
     fireEvent.keyDown(composer, { key: "Enter", code: "Enter", shiftKey: true });
 
@@ -911,11 +1104,11 @@ describe("assistant chat", () => {
     const chat = vi.spyOn(api, "chat");
     await renderRoute("#/assistant");
 
-    fireEvent.change(screen.getByPlaceholderText(/What should I prioritize/), {
+    fireEvent.change(screen.getByPlaceholderText(/Ask about your work/), {
       target: { value: "   " },
     });
 
-    expect(screen.getByRole("button", { name: /Send/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     expect(chat).not.toHaveBeenCalled();
   });
 
@@ -939,10 +1132,10 @@ describe("assistant chat", () => {
     vi.spyOn(api, "chat").mockResolvedValue(chatRun(response));
     await renderRoute("#/assistant");
 
-    fireEvent.change(screen.getByPlaceholderText(/What should I prioritize/), {
+    fireEvent.change(screen.getByPlaceholderText(/Ask about your work/), {
       target: { value: "What should I work on?" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Send/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     expect(await screen.findByRole("heading", { name: "Immediate" })).toBeInTheDocument();
     expect(screen.getByText("next steps").tagName).toBe("STRONG");

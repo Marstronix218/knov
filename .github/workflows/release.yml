@@ -1,0 +1,88 @@
+name: Release macOS build
+
+# Push a tag such as v0.2.0 (matching the app version), or run manually from
+# the Actions tab. The result is a draft GitHub Release with a DMG attached;
+# review it and click Publish to share the download link.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - run: npm ci
+
+      - name: Test
+        run: |
+          npm run typecheck
+          npm test
+          npm run test:rust
+
+      # Optional: with an Apple Developer ID the app is signed and notarized, so
+      # testers can open it with a normal double-click. Without these secrets the
+      # build is ad-hoc signed and testers use "Open Anyway" once (see TESTERS.md).
+      - name: Configure Apple signing
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            {
+              echo "APPLE_CERTIFICATE=$APPLE_CERTIFICATE"
+              echo "APPLE_CERTIFICATE_PASSWORD=$APPLE_CERTIFICATE_PASSWORD"
+              echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY"
+              echo "APPLE_ID=$APPLE_ID"
+              echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+              echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+            } >> "$GITHUB_ENV"
+            echo "Signing and notarizing with a Developer ID."
+          else
+            echo "No Developer ID secrets; producing an ad-hoc signed build."
+          fi
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Where in-app feedback goes. Set under Settings → Secrets and
+          # variables → Actions → Variables.
+          VITE_FEEDBACK_EMAIL: ${{ vars.FEEDBACK_EMAIL }}
+          VITE_FEEDBACK_URL: ${{ vars.FEEDBACK_URL }}
+        with:
+          projectPath: apps/desktop
+          args: --target universal-apple-darwin
+          tagName: v__VERSION__
+          releaseName: Knov __VERSION__ (early access)
+          releaseDraft: true
+          prerelease: true
+          releaseBody: |
+            **Knov early access for Mac** (macOS 13 or later; Apple Silicon and Intel).
+
+            1. Download the `.dmg` below, open it, and drag **Knov** into **Applications**.
+            2. Open Knov. If macOS says it can't verify the app, open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway**.
+            3. Follow the 4-step setup. For free, private AI install [Ollama](https://ollama.com/download).
+
+            Full guide: [TESTERS.md](https://github.com/${{ github.repository }}/blob/main/TESTERS.md). Use **Send feedback** in the app sidebar to tell us what you think.

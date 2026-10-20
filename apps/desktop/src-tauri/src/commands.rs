@@ -48,7 +48,7 @@ use crate::{
         RuntimeStatus,
     },
     prediction::{self, PredictionDashboard, PredictionHistoryItem},
-    providers::ProviderClient,
+    providers::{normalize_local_base_url, LocalModelConfig, ProviderClient},
     threading::semantic_topics,
 };
 
@@ -391,6 +391,27 @@ fn activity_history_to_ui(
         .collect())
 }
 
+/// Deletes the selected activity events from the local database. Returns the
+/// number of rows removed; ids that no longer exist are skipped.
+#[tauri::command]
+pub async fn delete_activity_events(
+    ids: Vec<String>,
+    state: State<'_, AppState>,
+) -> AppResult<usize> {
+    let parsed = ids
+        .iter()
+        .map(|id| id.trim().parse::<i64>())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| AppError::InvalidInput("Activity ids must be numeric.".into()))?;
+    if parsed.is_empty() {
+        return Err(AppError::InvalidInput(
+            "Select at least one activity to delete.".into(),
+        ));
+    }
+    let db = state.db.clone();
+    blocking(move || db.delete_events(&parsed, unix_now())).await
+}
+
 static ACTIVITY_ICON_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -441,6 +462,34 @@ pub fn open_resource(url: String) -> AppResult<()> {
     } else {
         Err(AppError::InvalidInput(
             "The system could not open the resource.".into(),
+        ))
+    }
+}
+
+/// Opens a feedback draft in the user's mail app; nothing is sent until they
+/// press Send there.
+#[tauri::command]
+pub fn open_mail_draft(to: String, subject: String, body: String) -> AppResult<()> {
+    let to = to.trim();
+    let valid_address = to.len() <= 254
+        && to.split_once('@').is_some_and(|(user, domain)| {
+            !user.is_empty() && domain.contains('.') && !to.contains(['?', '&', '/', ' ', ':'])
+        });
+    if !valid_address {
+        return Err(AppError::InvalidInput("Invalid feedback address.".into()));
+    }
+    let mut url = url::Url::parse(&format!("mailto:{to}"))
+        .map_err(|_| AppError::InvalidInput("Invalid feedback address.".into()))?;
+    url.query_pairs_mut()
+        .append_pair("subject", &subject.chars().take(200).collect::<String>())
+        .append_pair("body", &body.chars().take(6_000).collect::<String>());
+    // Mail clients expect %20 rather than form-encoded spaces.
+    let draft = url.as_str().replace('+', "%20");
+    if open_external_url(&draft)?.success() {
+        Ok(())
+    } else {
+        Err(AppError::InvalidInput(
+            "No mail app is set up on this Mac. Use Copy instead.".into(),
         ))
     }
 }
@@ -611,7 +660,7 @@ pub async fn get_browser_profiles(state: State<'_, AppState>) -> AppResult<Vec<V
         .map(|profile| {
             json!({
                 "id":profile.id,
-                "browser":"chrome",
+                "browser":crate::platform::browser_for_profile(&profile.id).label,
                 "name":profile.name,
                 "path":profile.path,
                 "selected":profile.selected,
@@ -634,15 +683,36 @@ pub fn get_bootstrap_status(state: State<'_, AppState>) -> AppResult<Value> {
 }
 
 #[tauri::command]
-pub fn set_collection_enabled(enabled: bool, state: State<'_, AppState>) -> AppResult<Value> {
+pub fn set_collection_enabled(
+    enabled: bool,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<Value> {
     let mut settings = state.db.settings()?;
     settings.collection_enabled = enabled;
     state.db.save_settings(&settings)?;
+    crate::sync_tray_collection(&app, enabled);
     settings_to_ui(&state)
+}
+
+/// Checks foreground-app and window-title access for onboarding. Reading the
+/// foreground app once is also what triggers macOS's System Events prompt.
+#[tauri::command]
+pub async fn probe_permissions() -> AppResult<Value> {
+    let (foreground, titles, message) =
+        blocking(|| Ok(crate::platform::probe_foreground_access())).await?;
+    Ok(json!({
+        "foregroundApps":foreground,
+        "windowTitles":titles || crate::platform::accessibility_trusted(false),
+        "message":message
+    }))
 }
 
 #[tauri::command]
 pub fn request_accessibility_permission(state: State<'_, AppState>) -> bool {
+    if crate::platform::accessibility_trusted(true) {
+        return true;
+    }
     #[cfg(target_os = "macos")]
     {
         let _ = std::process::Command::new("/usr/bin/open")
@@ -691,11 +761,6 @@ fn validated_profile_selection(
         .filter(|id| available.contains(id) && seen.insert(id.as_str()))
         .cloned()
         .collect::<Vec<_>>();
-    if selection.is_empty() {
-        return Err(AppError::InvalidInput(
-            "Select at least one Chrome profile.".into(),
-        ));
-    }
     Ok(selection)
 }
 
@@ -877,10 +942,23 @@ pub fn save_settings(
 ) -> AppResult<Value> {
     let mut current = state.db.settings()?;
     if let Some(provider) = settings.get("provider").and_then(Value::as_str) {
-        if !matches!(provider, "openai" | "anthropic" | "bedrock") {
+        if !matches!(provider, "openai" | "anthropic" | "bedrock" | "local") {
             return Err(AppError::InvalidInput("Unsupported provider.".into()));
         }
         current.selected_provider = Some(provider.into());
+    }
+    if let Some(base_url) = settings.get("localBaseUrl").and_then(Value::as_str) {
+        current.local_base_url = normalize_local_base_url(base_url)?;
+    }
+    if let Some(model) = settings.get("localModel") {
+        current.local_model = model
+            .as_str()
+            .map(str::trim)
+            .filter(|model| !model.is_empty())
+            .map(|model| model.chars().take(200).collect());
+    }
+    if let Some(enabled) = settings.get("labsEnabled").and_then(Value::as_bool) {
+        current.labs_enabled = enabled;
     }
     if let Some(enabled) = settings
         .get("behavioralGuidanceEnabled")
@@ -938,7 +1016,71 @@ pub fn save_settings(
         )?;
     }
     state.db.save_settings(&current)?;
+    state
+        .providers
+        .configure_local(local_model_config(&current));
     settings_to_ui(&state)
+}
+
+pub fn local_model_config(settings: &Settings) -> LocalModelConfig {
+    LocalModelConfig {
+        base_url: settings.local_base_url.clone(),
+        model: settings.local_model.clone(),
+    }
+}
+
+/// Lists models from a local AI server without saving anything, so onboarding
+/// and Settings can offer a picker.
+#[tauri::command]
+pub async fn detect_local_models(
+    base_url: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<Value> {
+    let base_url = match base_url.filter(|value| !value.trim().is_empty()) {
+        Some(value) => normalize_local_base_url(&value)?,
+        None => state.db.settings()?.local_base_url,
+    };
+    Ok(match state.providers.local_models(&base_url).await {
+        Ok(models) => json!({"baseUrl":base_url,"reachable":true,"models":models}),
+        Err(error) => {
+            json!({"baseUrl":base_url,"reachable":false,"models":[],"error":error.to_string()})
+        }
+    })
+}
+
+/// Counts only (no titles, URLs, apps, or chat text) that a tester can choose
+/// to attach to feedback after reviewing them.
+#[tauri::command]
+pub async fn get_ai_usage(days: i64, state: State<'_, AppState>) -> AppResult<Value> {
+    let since = Utc::now().timestamp() - days.clamp(1, 365) * 86_400;
+    let db = state.db.clone();
+    let mut summary = blocking(move || db.ai_usage_summary(since)).await?;
+    summary["pricesConfigured"] =
+        json!(crate::analytics::estimated_cost_usd(Some(1), Some(1), None, None).is_some());
+    Ok(summary)
+}
+
+#[tauri::command]
+pub async fn get_tester_summary(state: State<'_, AppState>) -> AppResult<Value> {
+    let db = state.db.clone();
+    let mut summary = blocking(move || db.tester_summary()).await?;
+    let settings = state.db.settings()?;
+    summary["appVersion"] = json!(env!("CARGO_PKG_VERSION"));
+    summary["aiProvider"] = json!(settings.selected_provider.unwrap_or_else(|| "none".into()));
+    summary["browserProfiles"] = json!(settings.selected_chrome_profiles.len());
+    summary["labsEnabled"] = json!(settings.labs_enabled);
+    summary["macOS"] = json!(macos_version());
+    Ok(summary)
+}
+
+fn macos_version() -> String {
+    std::process::Command::new("/usr/bin/sw_vers")
+        .arg("-productVersion")
+        .output()
+        .ok()
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|version| !version.is_empty())
+        .unwrap_or_else(|| "unknown".into())
 }
 
 #[tauri::command]
@@ -1526,10 +1668,12 @@ pub fn install_native_host(extension_id: String) -> AppResult<String> {
 #[tauri::command]
 pub fn delete_all_data(state: State<'_, AppState>) -> AppResult<()> {
     // Credentials live outside SQLite and are explicitly included in single-action deletion.
+    crate::revenue::connectors::cleanup_credentials()?;
     state.providers.delete_key("openai")?;
     state.providers.delete_key("anthropic")?;
     state.providers.delete_key("bedrock")?;
     state.db.delete_all_local_data()?;
+    state.providers.configure_local(LocalModelConfig::default());
     let drafts = state.agent_host.drafts_dir();
     if drafts.exists() {
         std::fs::remove_dir_all(drafts)?;
@@ -1624,10 +1768,17 @@ fn settings_to_ui(state: &AppState) -> AppResult<Value> {
     let provider = settings
         .selected_provider
         .clone()
-        .unwrap_or_else(|| "openai".into());
+        .unwrap_or_else(|| "local".into());
     Ok(json!({
         "provider":provider,
+        "aiConfigured":settings.selected_provider.is_some() && state.providers.has_key(&provider),
         "hasProviderKey":state.providers.has_key(&provider),
+        "managedAi":crate::providers::managed_provider().as_deref() == Some(provider.as_str()),
+        "localBaseUrl":settings.local_base_url,
+        "localModel":settings.local_model,
+        "labsEnabled":settings.labs_enabled,
+        "profileReady":settings.initial_profile_completed,
+        "appVersion":env!("CARGO_PKG_VERSION"),
         "behavioralGuidanceEnabled":settings.behavioral_guidance_enabled,
         "predictionExperimentEnabled":settings.prediction_experiment_enabled,
         "predictionDisplayThreshold":settings.prediction_display_threshold,
@@ -2118,10 +2269,17 @@ mod tests {
                 .unwrap(),
             ids(&["Profile 13"])
         );
-        // Never-seen IDs and selections that would end up empty are rejected.
+        // Never-seen IDs are rejected; browser history is optional, so an empty
+        // selection (including one left only with deleted profiles) is allowed.
         assert!(validated_profile_selection(&ids(&["Profile 99"]), &available, &previous).is_err());
-        assert!(validated_profile_selection(&ids(&["Profile 7"]), &available, &previous).is_err());
-        assert!(validated_profile_selection(&[], &available, &previous).is_err());
+        assert!(
+            validated_profile_selection(&ids(&["Profile 7"]), &available, &previous)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(validated_profile_selection(&[], &available, &previous)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -2465,20 +2623,23 @@ mod tests {
 
 #[tauri::command]
 pub fn get_discovery_sessions(
+    demo: Option<bool>,
     state: State<'_, AppState>,
 ) -> AppResult<Vec<crate::discovery::InterviewSession>> {
-    crate::discovery::sessions(&state.db)
+    crate::discovery::sessions_in_scope(&state.db, demo.unwrap_or(false))
 }
 #[tauri::command]
 pub fn start_discovery_interview(
     description: String,
     thread_context: Option<ThreadContext>,
+    topic: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<crate::discovery::InterviewSession> {
     crate::discovery::start(
         &state.db,
         description,
         validated_thread_context(thread_context)?,
+        topic,
     )
 }
 #[tauri::command]
@@ -2488,7 +2649,8 @@ pub async fn advance_discovery_interview(
     answer: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<crate::discovery::InterviewSession> {
-    let provider = if action == "end" {
+    // Ending locally and scripted sandbox interviews never contact a provider.
+    let provider = if action == "end" || crate::discovery::runs_without_provider(&state.db, &session_id)? {
         String::new()
     } else {
         selected_provider(&state.db)?
