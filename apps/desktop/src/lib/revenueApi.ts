@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { isDesktopRuntime } from "./api";
 import type { InterviewSession } from "../types";
-import type { ExtractedDocument, RevenueOverview, SimulationCatalog } from "../revenueTypes";
+import type { ConnectorConfig, ConnectorProvider, ConnectorScope, ConnectorStatus, ConnectorSyncResult, ExtractedDocument, RevenueOverview, SimulationCatalog, SlackChannel, SlackOAuthStart } from "../revenueTypes";
 async function call(command: string, args?: Record<string, unknown>): Promise<RevenueOverview> {
   if (!isDesktopRuntime()) throw new Error("Revenue Intelligence requires the desktop app. Browser preview does not save, analyze, or synchronize commercial data.");
   return invoke<RevenueOverview>(command, args);
@@ -36,6 +36,22 @@ export const revenueApi = {
   saveDraft: (draftId: string, body: string) => call("revenue_save_draft", { draftId, body }),
   approveDraft: (draftId: string) => call("revenue_approve_draft", { draftId }),
   recordOutcome: (opportunityId: string, kind: string, evidence: string, amountCents: number | null, currency: string | null, verified: boolean) => call("revenue_record_outcome", { opportunityId, kind, evidence, amountCents, currency, verified }),
+};
+
+/** Gmail and Slack connections. Tokens and client secrets go to Keychain and never come back. */
+export const connectorApi = {
+  config: () => invoke<ConnectorConfig>("revenue_connector_config"),
+  status: (provider: ConnectorProvider) => invoke<ConnectorStatus>("revenue_connector_status", { provider }),
+  /** Opens Google consent in the browser; resolves after approval (up to 180 s). */
+  gmailSignIn: (clientId: string, clientSecret: string | null, scope: ConnectorScope, authorized: boolean) => invoke<ConnectorStatus>("revenue_gmail_oauth", { clientId, clientSecret, scope, authorized }),
+  connectWithToken: (provider: ConnectorProvider, token: string, scope: ConnectorScope, authorized: boolean) => invoke<ConnectorStatus>("revenue_connector_connect", { provider, token, scope, authorized }),
+  slackStart: (clientId: string, clientSecret: string, scope: ConnectorScope, authorized: boolean) => invoke<SlackOAuthStart>("revenue_slack_oauth_start", { clientId, clientSecret, scope, authorized }),
+  slackComplete: (code: string, state: string) => invoke<ConnectorStatus>("revenue_slack_oauth_complete", { code, state, authorized: true }),
+  slackChannels: () => invoke<SlackChannel[]>("revenue_slack_list_channels"),
+  updateScope: (provider: ConnectorProvider, scope: ConnectorScope) => invoke<ConnectorStatus>("revenue_connector_update_scope", { provider, scope, authorized: true }),
+  sync: (provider: ConnectorProvider, projectId: string) => invoke<ConnectorSyncResult>("revenue_connector_sync", { provider, projectId }),
+  disconnect: (provider: ConnectorProvider) => invoke<void>("revenue_connector_disconnect", { provider, revoke: true }),
+  deleteImported: (provider: ConnectorProvider) => invoke<unknown>("revenue_delete_source", { source: provider }),
 };
 
 export type SimulationStep = "contracts" | "gmail" | "slack" | "work" | "billing";

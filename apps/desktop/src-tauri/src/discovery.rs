@@ -24,15 +24,25 @@ pub struct WorkflowEvidence {
 pub struct WorkflowStep {
     pub id: String,
     pub name: String,
+    #[serde(default)]
     pub description: String,
+    #[serde(default)]
     pub actor: String,
+    #[serde(default)]
     pub application: String,
+    #[serde(default)]
     pub inputs: Vec<String>,
+    #[serde(default)]
     pub outputs: Vec<String>,
+    #[serde(default)]
     pub depends_on: Vec<String>,
+    #[serde(default)]
     pub decision: Option<String>,
+    #[serde(default)]
     pub requires_approval: bool,
+    #[serde(default)]
     pub evidence: Vec<String>,
+    #[serde(default)]
     pub confidence: f64,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,28 +50,51 @@ pub struct WorkflowStep {
 pub struct WorkflowDocument {
     pub id: String,
     pub session_id: String,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub description: String,
+    #[serde(default)]
     pub business_goal: String,
+    #[serde(default)]
     pub trigger: String,
+    #[serde(default)]
     pub actors: Vec<String>,
+    #[serde(default)]
     pub steps: Vec<WorkflowStep>,
+    #[serde(default)]
     pub applications: Vec<String>,
+    #[serde(default)]
     pub resources: Vec<String>,
+    #[serde(default)]
     pub inputs: Vec<String>,
+    #[serde(default)]
     pub outputs: Vec<String>,
+    #[serde(default)]
     pub decisions: Vec<String>,
+    #[serde(default)]
     pub dependencies: Vec<String>,
+    #[serde(default)]
     pub approvals: Vec<String>,
+    #[serde(default)]
     pub exceptions: Vec<String>,
+    #[serde(default)]
     pub bottlenecks: Vec<String>,
+    #[serde(default)]
     pub frequency: String,
+    #[serde(default)]
     pub estimated_minutes: Option<f64>,
+    #[serde(default)]
     pub desired_outcome: String,
+    #[serde(default)]
     pub automation_opportunities: Vec<String>,
+    #[serde(default)]
     pub evidence: Vec<WorkflowEvidence>,
+    #[serde(default)]
     pub confidence: f64,
+    #[serde(default)]
     pub confirmed: bool,
+    #[serde(default)]
     pub updated_at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commercial_context: Option<serde_json::Value>,
@@ -101,7 +134,9 @@ pub struct InterviewSession {
 struct InterviewResponse {
     workflow: WorkflowDocument,
     question: Option<String>,
+    #[serde(default)]
     missing_information: Vec<String>,
+    #[serde(default)]
     complete: bool,
     #[serde(default)]
     suggested_answers: Vec<String>,
@@ -753,7 +788,7 @@ fn ensure_request_policy(db: &Database, policy: &str) -> AppResult<()> {
 }
 fn apply_response(s: &mut InterviewSession, text: &str) -> AppResult<()> {
     let mut response = parse_json_response(text)?;
-    normalize_incomplete_steps(&mut response, &s.workflow);
+    normalize_incomplete_response(&mut response, &s.workflow);
     let mut output: InterviewResponse = serde_json::from_value(response)?;
     if output.workflow.id != s.workflow.id || output.workflow.session_id != s.id {
         return Err(invalid("Provider changed the workflow identity."));
@@ -843,43 +878,79 @@ fn apply_response(s: &mut InterviewSession, text: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// Missing information is expected while interviewing. Normalize only unknown
-/// step details; identity, names, unexpected keys, and invalid types stay strict.
-fn normalize_incomplete_steps(response: &mut serde_json::Value, previous: &WorkflowDocument) {
-    let Some(steps) = response
-        .pointer_mut("/workflow/steps")
-        .and_then(|v| v.as_array_mut())
-    else {
+/// Missing information is expected while interviewing, and providers routinely
+/// omit empty or unchanged keys or add keys of their own. Omitted (or null,
+/// where not nullable) workflow keys keep their current values, omitted step
+/// details keep the matching step's values or neutral unknowns, and keys outside
+/// the schema are dropped. Workflow and step identity, step names, and invalid
+/// types stay strict.
+fn normalize_incomplete_response(response: &mut serde_json::Value, previous: &WorkflowDocument) {
+    if let Some(fields) = response.as_object_mut() {
+        fields.retain(|key, _| {
+            matches!(
+                key.as_str(),
+                "workflow" | "question" | "missingInformation" | "complete" | "suggestedAnswers"
+            )
+        });
+    }
+    let Ok(serde_json::Value::Object(current)) = serde_json::to_value(previous) else {
         return;
     };
+    let Some(workflow) = response.get_mut("workflow").and_then(|v| v.as_object_mut()) else {
+        return;
+    };
+    workflow.retain(|key, _| current.contains_key(key));
+    for (key, value) in &current {
+        if matches!(key.as_str(), "id" | "sessionId") {
+            continue;
+        }
+        let nullable = matches!(key.as_str(), "estimatedMinutes" | "commercialContext");
+        if workflow.get(key).is_none_or(|v| v.is_null() && !nullable) {
+            workflow.insert(key.clone(), value.clone());
+        }
+    }
+    if let Some(evidence) = workflow.get_mut("evidence").and_then(|v| v.as_array_mut()) {
+        for item in evidence.iter_mut().filter_map(|v| v.as_object_mut()) {
+            item.retain(|key, _| matches!(key.as_str(), "source" | "detail"));
+        }
+    }
+    let Some(steps) = workflow.get_mut("steps").and_then(|v| v.as_array_mut()) else {
+        return;
+    };
+    let defaults = [
+        ("description", json!("")),
+        ("actor", json!("")),
+        ("application", json!("")),
+        ("inputs", json!([])),
+        ("outputs", json!([])),
+        ("dependsOn", json!([])),
+        ("decision", serde_json::Value::Null),
+        ("evidence", json!([])),
+        ("requiresApproval", json!(true)),
+        ("confidence", json!(0.0)),
+    ];
     for step in steps {
         let Some(fields) = step.as_object_mut() else {
             continue;
         };
+        fields.retain(|key, _| {
+            matches!(key.as_str(), "id" | "name") || defaults.iter().any(|(k, _)| k == key)
+        });
         let prior = fields
             .get("id")
             .and_then(|id| id.as_str())
             .and_then(|id| previous.steps.iter().find(|step| step.id == id))
             .and_then(|step| serde_json::to_value(step).ok());
-        for (key, default) in [
-            ("description", json!("")),
-            ("actor", json!("")),
-            ("application", json!("")),
-            ("inputs", json!([])),
-            ("outputs", json!([])),
-            ("dependsOn", json!([])),
-            ("evidence", json!([])),
-            ("requiresApproval", json!(true)),
-            ("confidence", json!(0.0)),
-        ] {
-            if fields.get(key).is_none_or(serde_json::Value::is_null) {
+        for (key, default) in &defaults {
+            let nullable = *key == "decision";
+            if fields.get(*key).is_none_or(|v| v.is_null() && !nullable) {
                 let value = prior
                     .as_ref()
-                    .and_then(|step| step.get(key))
-                    .filter(|value| !value.is_null())
+                    .and_then(|step| step.get(*key))
+                    .filter(|value| nullable || !value.is_null())
                     .cloned()
-                    .unwrap_or(default);
-                fields.insert(key.into(), value);
+                    .unwrap_or_else(|| default.clone());
+                fields.insert((*key).into(), value);
             }
         }
     }
@@ -1393,6 +1464,94 @@ mod tests {
         assert_eq!(step.inputs, vec!["Invoice"]);
         assert_eq!(step.confidence, 0.6);
         assert!(!step.requires_approval);
+    }
+
+    #[test]
+    fn provider_omitted_and_extra_workflow_keys_keep_current_values() {
+        let db = Database::in_memory().unwrap();
+        let mut current = start(&db, "Review invoices".into(), None, None).unwrap();
+        current.workflow.bottlenecks = vec!["Invoices wait for approval".into()];
+        current.workflow.exceptions = vec!["Disputed totals".into()];
+        current.workflow.decisions = vec!["Invoices over $500 need approval".into()];
+        current.workflow.steps.push(WorkflowStep {
+            id: "compare".into(),
+            name: "Compare invoices".into(),
+            description: String::new(),
+            actor: "Accounting reviewer".into(),
+            application: String::new(),
+            inputs: vec!["Invoice".into()],
+            outputs: vec![],
+            depends_on: vec![],
+            decision: None,
+            requires_approval: false,
+            evidence: vec![],
+            confidence: 0.5,
+        });
+        let mut workflow = serde_json::to_value(&current.workflow).unwrap();
+        let fields = workflow.as_object_mut().unwrap();
+        fields.remove("bottlenecks");
+        fields.remove("exceptions");
+        fields.remove("automationOpportunities");
+        fields.insert("decisions".into(), serde_json::Value::Null);
+        fields.insert("notes".into(), json!("extra provider key"));
+        fields["steps"][0].as_object_mut().unwrap().remove("inputs");
+        fields["steps"][0]["owner"] = json!("extra step key");
+        fields["evidence"][0]["confidence"] = json!(0.4);
+        apply_response(
+            &mut current,
+            &json!({"workflow":workflow, "question":"Who approves invoices?",
+                "missingInformation":["Approver"], "complete":false, "reasoning":"extra"})
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            current.workflow.bottlenecks,
+            vec!["Invoices wait for approval"]
+        );
+        assert_eq!(current.workflow.exceptions, vec!["Disputed totals"]);
+        assert!(current.workflow.automation_opportunities.is_empty());
+        assert_eq!(
+            current.workflow.decisions,
+            vec!["Invoices over $500 need approval"]
+        );
+        assert_eq!(current.workflow.steps[0].inputs, vec!["Invoice"]);
+        assert_eq!(current.workflow.steps[0].actor, "Accounting reviewer");
+        assert_eq!(
+            current.messages.last().unwrap().content,
+            "Who approves invoices?"
+        );
+        let mut workflow = serde_json::to_value(&current.workflow).unwrap();
+        workflow.as_object_mut().unwrap().remove("id");
+        assert!(apply_response(
+            &mut current,
+            &json!({"workflow":workflow, "question":"Next?", "complete":false}).to_string()
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn stored_workflow_without_later_fields_deserializes() {
+        let db = Database::in_memory().unwrap();
+        let s = start(&db, "Review invoices".into(), None, None).unwrap();
+        let mut stored = serde_json::to_value(&s.workflow).unwrap();
+        let fields = stored.as_object_mut().unwrap();
+        fields.remove("bottlenecks");
+        fields.remove("automationOpportunities");
+        fields.insert(
+            "steps".into(),
+            json!([{"id":"compare", "name":"Compare invoices"}]),
+        );
+        let doc: WorkflowDocument = serde_json::from_value(stored).unwrap();
+        assert!(doc.bottlenecks.is_empty());
+        assert!(doc.automation_opportunities.is_empty());
+        assert!(doc.steps[0].inputs.is_empty());
+        assert_eq!(doc.id, s.workflow.id);
+        let mut missing_identity = serde_json::to_value(&s.workflow).unwrap();
+        missing_identity
+            .as_object_mut()
+            .unwrap()
+            .remove("sessionId");
+        assert!(serde_json::from_value::<WorkflowDocument>(missing_identity).is_err());
     }
 
     #[test]

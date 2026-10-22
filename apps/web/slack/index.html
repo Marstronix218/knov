@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>Knov · Slack sign-in</title>
+  <link rel="icon" href="../assets/knov-icon.svg" type="image/svg+xml">
+  <style>
+    :root { color-scheme: dark; --bg: #0b0d0d; --panel: #141818; --line: rgba(255, 255, 255, .08); --text: #edf3ec; --muted: #8e9995; --accent: #b7ff3c; --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --mono: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.6; }
+    main { width: 100%; max-width: 560px; padding: 28px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+    h1 { margin: 0 0 10px; font-size: 22px; letter-spacing: -.03em; }
+    p { margin: 0 0 12px; color: var(--muted); }
+    a { color: var(--accent); }
+    code { font-family: var(--mono); font-size: .9em; color: #dfffb0; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Knov Slack sign-in</h1>
+    <p>Knov uses <code>https://marstronix218.github.io/knov/slack/callback.html</code> as the Redirect URL for the Slack app you create. After you approve access in Slack, that page shows a one-time code to paste into <b>Knov → Sources → Slack</b>.</p>
+    <p>Nothing here talks to Slack; Knov on your Mac exchanges the code. <a href="../">Back to Knov</a></p>
+  </main>
+  <script>
+    // Slack sends the code to callback.html; forward anything that arrives here by mistake.
+    if (/[?&](code|error)=/.test(window.location.search)) window.location.replace("callback.html" + window.location.search);
+  </script>
+</body>
+</html>

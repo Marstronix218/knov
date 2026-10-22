@@ -80,6 +80,29 @@ describe("Workflow Discovery", () => {
     expect(screen.getByRole("button", { name: "Send answer" })).toBeEnabled();
   });
 
+  it("renders each turn as one bubble and shows Knov's pending reply while an answer is in flight", async () => {
+    vi.spyOn(api, "discoverySessions").mockResolvedValue([session]);
+    let resolve!: (value: InterviewSession) => void;
+    vi.spyOn(api, "advanceDiscovery").mockReturnValue(new Promise((done) => { resolve = done; }));
+    const status = vi.spyOn(api, "setDiscoveryStatus").mockImplementation(async (_, value) => ({ ...session, status: value }));
+    renderDiscovery();
+    fireEvent.click(await screen.findByRole("button", { name: /Invoice reconciliation.*in progress/ }));
+    const list = screen.getByLabelText("Interview messages");
+    const question = within(list).getByText("Which records do you compare?");
+    expect(question.closest(".message-content")?.parentElement?.closest(".message-content")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Your answer"), { target: { value: "Our ledger" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+    expect(within(list).getByRole("status")).toHaveTextContent("Thinking about your answer");
+    resolve({ ...session, messages: [...session.messages, { role: "user", content: "Our ledger", createdAt: 101 }, { role: "assistant", content: "What happens when amounts differ?", createdAt: 101 }] });
+    await within(list).findByText("What happens when amounts differ?");
+    expect(within(list).queryByRole("status")).not.toBeInTheDocument();
+    expect(within(list).getByText("Our ledger").closest(".message")).toHaveClass("user");
+    fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    await screen.findByRole("button", { name: "Resume interview" });
+    expect(status).toHaveBeenCalledWith("session-1", "paused");
+    expect(within(list).queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("deletes a saved interview only after the explicit delete control", async () => {
     vi.spyOn(api, "discoverySessions").mockResolvedValue([session]);
     const remove = vi.spyOn(api, "deleteDiscovery").mockResolvedValue(undefined);

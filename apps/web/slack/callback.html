@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <!-- The one-time code stays on this page: no referrer, no external resources, no network calls. -->
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>Knov · Slack sign-in code</title>
+  <link rel="icon" href="../assets/knov-icon.svg" type="image/svg+xml">
+  <style>
+    /* Tokens from ../styles.css, inlined so this page loads nothing else. */
+    :root {
+      color-scheme: dark;
+      --bg: #0b0d0d; --panel: #141818; --panel-soft: #111515;
+      --line: rgba(255, 255, 255, .08); --line-strong: rgba(255, 255, 255, .14);
+      --text: #edf3ec; --muted: #8e9995; --accent: #b7ff3c; --accent-ink: #101500; --danger: #ff786f;
+      --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.6; -webkit-font-smoothing: antialiased; }
+    main { width: 100%; max-width: 560px; padding: 28px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 750; color: var(--muted); font-size: 14px; }
+    .brand img { width: 26px; height: 26px; border-radius: 7px; }
+    h1 { margin: 18px 0 8px; font-size: 24px; letter-spacing: -.03em; line-height: 1.15; }
+    p { margin: 0 0 14px; color: var(--muted); }
+    b { color: var(--text); font-weight: 650; }
+    .code { display: block; width: 100%; margin: 18px 0 12px; padding: 16px; border: 1px solid var(--line-strong); border-radius: 11px; background: var(--panel-soft); color: var(--text); font: 600 20px/1.4 var(--mono); word-break: break-all; user-select: all; }
+    button { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 11px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); font: 700 15px var(--font); cursor: pointer; }
+    button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .status { min-height: 1.6em; margin-top: 10px; font-size: 14px; }
+    .error { color: var(--danger); }
+    .fine { margin-top: 18px; font-size: 13px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand"><img src="../assets/knov-icon.svg" alt=""><span>Knov</span></div>
+
+    <section id="success" hidden>
+      <h1>Copy this code into Knov</h1>
+      <p>Paste this into <b>Knov → Sources → Slack</b>, in the box “Paste the code from the browser”, then press <b>Finish connecting</b>.</p>
+      <output id="code" class="code" aria-label="One-time Slack authorization code"></output>
+      <button type="button" id="copy">Copy code</button>
+      <p class="status" id="copy-status" role="status" aria-live="polite"></p>
+      <p class="fine">The code works once and expires in a few minutes. This page does not send it anywhere; only Knov on your Mac exchanges it with Slack.</p>
+    </section>
+
+    <section id="failure" hidden>
+      <h1>Slack did not authorize Knov</h1>
+      <p class="error" id="error" role="alert"></p>
+      <p>Return to <b>Knov → Sources → Slack</b> and choose <b>Start over</b> to try again.</p>
+    </section>
+
+    <section id="empty" hidden>
+      <h1>No Slack code here</h1>
+      <p>This page shows the one-time code after you approve Knov in Slack. Start from <b>Knov → Sources → Slack → Open Slack to authorize</b>.</p>
+    </section>
+  </main>
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var code = params.get("code");
+      var error = params.get("error");
+      // Keep the code out of browser history once it is shown.
+      if (window.location.search && window.history.replaceState) window.history.replaceState(null, "", window.location.pathname);
+      function show(id) { document.getElementById(id).hidden = false; }
+      if (error) {
+        document.getElementById("error").textContent = "Slack returned: " + error.slice(0, 200);
+        show("failure");
+        return;
+      }
+      if (!code) { show("empty"); return; }
+      var box = document.getElementById("code");
+      var status = document.getElementById("copy-status");
+      box.textContent = code.slice(0, 256);
+      show("success");
+      document.getElementById("copy").addEventListener("click", function () {
+        var text = box.textContent;
+        function selected() {
+          var range = document.createRange();
+          range.selectNodeContents(box);
+          var selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          status.textContent = "Selected. Press ⌘C to copy.";
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () { status.textContent = "Copied. Paste it into Knov."; }, selected);
+        } else {
+          selected();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

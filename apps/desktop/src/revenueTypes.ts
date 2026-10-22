@@ -43,3 +43,12 @@ export interface RevenueOverview {
 
 /** Text extracted from an uploaded document, for review before import. */
 export interface ExtractedDocument { title: string; text: string }
+
+/** Approved read boundary for a connector; times are Unix seconds, `before` exclusive. */
+export interface ConnectorScope { query: string; after: number; before: number; channels: string[]; maxItems: number }
+export type ConnectorProvider = "gmail" | "slack";
+export interface ConnectorStatus { provider: ConnectorProvider; connected: boolean; account: string | null; scope: ConnectorScope | null; lastSync: number | null; pending?: boolean; watermark?: number | null }
+export interface ConnectorConfig { slackRedirectUrl: string; slackUserScopes: string[]; gmailScope: string }
+export interface ConnectorSyncResult { imported: number; truncated: boolean; incremental?: boolean }
+export interface SlackOAuthStart { authorizeUrl: string; state: string; opened: boolean }
+export interface SlackChannel { id: string; name: string; isPrivate: boolean; isMember: boolean }

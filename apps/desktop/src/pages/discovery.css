@@ -15,17 +15,7 @@
 .discovery-session-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 22px; border-bottom: 1px solid var(--line); }
 .discovery-session-heading h2 { margin: 0 0 8px; font-size: 20px; }
 .discovery-session-heading span, .discovery-session-heading p { color: var(--muted); font-size: 13px; line-height: 1.6; margin: 0; }
-.discovery-messages { display: grid; gap: 18px; max-height: 55vh; overflow-y: auto; padding: 24px; }
-.discovery-message { border: 1px solid var(--line); background: var(--panel-soft); border-radius: 12px; padding: 16px; font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
-.discovery-message > strong { display: block; color: var(--accent); margin-bottom: 10px; font-size: 11px; }
-.discovery-message.user { margin-left: 36px; }
-.discovery-message.user > strong { color: var(--blue); }
-.discovery-message p { margin: 6px 0; }
-.discovery-gaps { margin: 0 24px 16px; color: var(--muted); font-size: 13px; }
-.discovery-answer { padding: 20px 24px; border-top: 1px solid var(--line); }
 .discovery-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.discovery-conversation > .discovery-actions { padding: 22px; border-top: 1px solid var(--line); }
-.discovery-actions p { color: var(--muted); font-size: 13px; width: 100%; }
 .discovery-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding-top: 12px; }
 .discovery-editor { max-height: 75vh; overflow-y: auto; padding-right: 8px; }
 .discovery-editor fieldset { min-width: 0; }
@@ -83,22 +73,62 @@
 .interview-saved strong { font-size: 13px; overflow-wrap: anywhere; }
 .interview-saved span { color: var(--muted); font-size: 12px; }
 .interview-saved meter, .learned-progress meter { width: 100%; height: 6px; }
-.interview-heading { display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center; margin: 20px 0 14px; }
+/* Interview session: fills the window like Ask, so the composer and header never scroll away. */
+.discovery-page.interview-session { display: flex; flex-direction: column; height: 100vh; min-height: 600px; padding-bottom: 24px; }
+.discovery-page.interview-session > * { flex-shrink: 0; }
+.discovery-page.interview-session > .interview-layout { flex: 1 1 auto; min-height: 0; }
+.discovery-page.interview-session .page-header { margin-bottom: 20px; }
+.discovery-page.interview-session .page-header .ghost-button { white-space: nowrap; }
+.interview-heading { display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center; margin: 0 0 14px; }
 .interview-heading > div:nth-child(2) { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .interview-heading h2 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
 .interview-status { padding: 3px 8px; border-radius: 999px; color: var(--muted); background: rgba(255,255,255,.06); font-size: 11px; font-weight: 650; white-space: nowrap; }
 .interview-status.active { color: var(--accent-ink); background: var(--accent); }
 .interview-status.completed { color: var(--accent); background: rgba(183,255,60,.1); }
-.interview-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); gap: 18px; align-items: start; }
-.interview-layout .discovery-messages { max-height: 52vh; }
-.interview-thinking { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
-.interview-suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-.interview-suggestions button { padding: 7px 12px; border: 1px solid rgba(183,255,60,.35); border-radius: 999px; color: var(--accent); background: rgba(183,255,60,.05); cursor: pointer; font-size: 13px; }
+.interview-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(270px, 1fr); grid-template-rows: minmax(0, 1fr); gap: 16px; }
+
+/* Conversation: one panel, messages scroll, composer pinned to the bottom. */
+.interview-conversation { min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 15px; background: var(--panel); overflow: hidden; }
+.interview-messages { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 22px clamp(16px, 5%, 36px) 6px; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 18px); mask-image: linear-gradient(to bottom, transparent 0, #000 18px); }
+.interview-messages .interview-message { margin: 0 0 18px; }
+.interview-message .message-body { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+.interview-message.user .message-body { align-items: flex-end; }
+.interview-sender { padding: 0 4px; color: #76817c; font-size: 12px; font-weight: 600; line-height: 1.3; }
+.interview-messages > .message:last-child { animation: interview-turn-in .32s cubic-bezier(.2, .7, .2, 1) both; }
+.interview-pending { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
+.interview-pending .typing { padding: 0; }
+@keyframes interview-turn-in { from { opacity: 0; transform: translateY(6px); } }
+
+/* Composer: suggestions, then the field with Send inline, then quiet secondary actions. */
+.interview-composer { flex: 0 0 auto; display: grid; gap: 10px; padding: 12px 16px 10px; border-top: 1px solid var(--line); background: #111515; }
+.interview-caption { color: #7d8a84; font-size: 12px; line-height: 1.4; }
+.interview-suggestions-block { display: grid; gap: 7px; }
+.interview-suggestions { display: flex; flex-wrap: wrap; gap: 7px; }
+.interview-suggestions button { padding: 7px 12px; border: 1px solid rgba(183,255,60,.3); border-radius: 999px; color: var(--accent); background: rgba(183,255,60,.05); font-size: 13px; line-height: 1.35; text-align: left; cursor: pointer; transition: background .15s ease, border-color .15s ease; }
+.interview-suggestions button:hover:not(:disabled) { border-color: rgba(183,255,60,.6); background: rgba(183,255,60,.11); }
 .interview-suggestions button:disabled { opacity: .45; cursor: not-allowed; }
-.interview-answer { display: grid; gap: 7px; margin-bottom: 10px; color: var(--muted); font-size: 13px; }
-.interview-answer textarea { width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--panel-soft); font: inherit; font-size: 14px; resize: vertical; }
-.interview-secondary { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
-.interview-learned { position: sticky; top: 20px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+.interview-input { display: flex; align-items: flex-end; gap: 8px; padding: 5px 5px 5px 4px; border: 1px solid var(--line-strong); border-radius: 12px; background: #0d1010; transition: border-color .15s ease, box-shadow .15s ease; }
+.interview-input:focus-within { border-color: rgba(183,255,60,.45); box-shadow: 0 0 0 3px rgba(183,255,60,.08); }
+.interview-answer { flex: 1; min-width: 0; display: flex; }
+.discovery-page .interview-answer textarea { flex: 1; width: 100%; min-height: 48px; max-height: 168px; padding: 8px 10px; border: 0; outline: 0; color: var(--text); background: transparent; font-size: 16px; line-height: 1.5; resize: none; field-sizing: content; }
+.interview-answer textarea:focus-visible { outline: none; }
+.interview-answer textarea::placeholder { color: #66716c; }
+.interview-answer textarea:disabled { opacity: .6; }
+.interview-send { flex: 0 0 auto; min-height: 38px; padding: 8px 12px 8px 14px; font-size: 13px; }
+.interview-composer-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; }
+.interview-secondary { display: flex; flex-wrap: wrap; gap: 2px; margin-left: auto; }
+.interview-quiet { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border: 0; border-radius: 7px; color: #97a29d; background: transparent; font-size: 13px; font-weight: 600; cursor: pointer; transition: color .15s ease, background .15s ease; }
+.interview-quiet:hover:not(:disabled) { color: var(--text); background: rgba(255,255,255,.05); }
+.interview-quiet:disabled { opacity: .45; }
+.interview-state { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 16px; padding: 14px 16px; }
+.interview-state p { display: flex; align-items: flex-start; gap: 8px; flex: 1 1 260px; margin: 0; color: #bac3bf; font-size: 14px; line-height: 1.5; }
+.interview-state p svg { flex: 0 0 auto; margin-top: 3px; color: var(--muted); }
+.interview-state.complete p svg { color: var(--accent); }
+.interview-state-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.interview-visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* What Knov has learned: scrolls on its own beside the conversation. */
+.interview-learned { align-self: start; max-height: 100%; overflow-y: auto; overscroll-behavior: contain; padding: 18px 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
 .interview-learned h2 { margin: 0 0 12px; font-size: 15px; }
 .learned-progress { display: grid; gap: 4px; margin-bottom: 14px; }
 .learned-progress small { color: var(--muted); font-size: 12px; }
@@ -111,4 +141,20 @@
 .learned-gaps { margin-bottom: 12px; color: var(--muted); font-size: 13px; }
 .learned-gaps ul { margin: 8px 0 0; padding-left: 18px; line-height: 1.6; }
 .interview-learned .field-hint { display: flex; gap: 6px; align-items: flex-start; margin: 0; }
-@media (max-width: 1050px) { .interview-layout, .interview-topics { grid-template-columns: 1fr; } .interview-learned { position: static; } .interview-heading { grid-template-columns: 1fr; } }
+@media (max-width: 1050px) {
+  .interview-topics { grid-template-columns: 1fr; }
+  .discovery-page.interview-session { min-height: 560px; }
+  .interview-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-bottom: 12px; }
+  .interview-heading > div:nth-child(2) { order: 3; flex: 1 1 100%; }
+  .interview-heading > .discovery-actions { margin-left: auto; }
+  /* The conversation keeps the window; the summary continues below it and the page scrolls to reach it. */
+  .interview-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: 100% auto; gap: 14px; }
+  .interview-learned { align-self: stretch; max-height: none; overflow: visible; margin-bottom: 24px; padding: 16px; }
+  .interview-composer-footer .interview-caption { display: none; }
+}
+/* Small windows: mid-interview, the page intro is redundant; give its room to the conversation. */
+@media (max-width: 860px), (max-height: 720px) {
+  .discovery-page.interview-session { padding-top: 28px; }
+  .discovery-page.interview-session .page-header { margin-bottom: 14px; }
+  .discovery-page.interview-session .page-header p { display: none; }
+}

@@ -1,5 +1,5 @@
-import { FormEvent, KeyboardEvent, useRef, useState } from "react";
-import { ArrowLeft, BadgeDollarSign, CalendarClock, Check, ClipboardList, FilePenLine, LoaderCircle, MessageSquare, Pause, Play, Plus, ReceiptText, SkipForward, Trash2 } from "lucide-react";
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
+import { ArrowLeft, BadgeDollarSign, CalendarClock, Check, ChevronRight, ClipboardList, FilePenLine, LoaderCircle, MessageSquare, Pause, Play, Plus, ReceiptText, SkipForward, Trash2 } from "lucide-react";
 import { EmptyState, errorMessage, PageHeader, ResourceState } from "../components/ui";
 import { MarkdownMessage } from "../components/MarkdownMessage";
 import { useResource } from "../hooks/useResource";
@@ -45,6 +45,8 @@ export function DiscoveryPage({ threadContexts }: { threadContexts: (dashboard: 
   const [contextIndex, setContextIndex] = useState("");
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
+  // What Knov is doing while a turn is in flight; shown as a pending bubble in the conversation.
+  const [thinking, setThinking] = useState<string>();
   const [error, setError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   // Set when the delete confirm is cancelled, so focus returns to the Delete button.
@@ -57,6 +59,18 @@ export function DiscoveryPage({ threadContexts }: { threadContexts: (dashboard: 
   const scripted = Boolean(session?.workflow.commercialContext?.simulation);
   const providerReady = Boolean(settings.data?.hasProviderKey) || scripted;
   const business = catalog.data?.businesses.find((item) => item.id === catalog.data?.active);
+  const messageList = useRef<HTMLDivElement>(null);
+  const lastSessionId = useRef<string | undefined>(undefined);
+  const messageCount = session?.messages.length ?? 0;
+  // Keep the newest turn in view: jump when switching interviews, glide when a turn arrives.
+  useEffect(() => {
+    const list = messageList.current;
+    if (!list || typeof list.scrollTo !== "function") return;
+    const switched = lastSessionId.current !== session?.id;
+    lastSessionId.current = session?.id;
+    const reduceMotion = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    list.scrollTo({ top: list.scrollHeight, behavior: switched || reduceMotion ? "auto" : "smooth" });
+  }, [session?.id, messageCount, thinking]);
 
   const run = async (operation: () => Promise<InterviewSession>, keepAnswer = false) => {
     setBusy(true);
@@ -68,7 +82,7 @@ export function DiscoveryPage({ threadContexts }: { threadContexts: (dashboard: 
       setConfirmDelete(false);
       if (!keepAnswer) setAnswer("");
     } catch (cause) { setError(errorMessage(cause)); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setThinking(undefined); }
   };
   const deleteSession = async () => {
     if (!session) return;
@@ -86,11 +100,15 @@ export function DiscoveryPage({ threadContexts }: { threadContexts: (dashboard: 
   };
   // A tapped suggestion is sent as the answer; any typed draft stays in the box.
   const send = (action: "answer" | "skip" | "end", text = answer.trim()) => {
-    if (session) void run(() => api.advanceDiscovery(session.id, action, action === "answer" ? text : undefined), action === "answer" && text !== answer.trim());
+    if (!session) return;
+    setThinking(action === "answer" ? "Thinking about your answer…" : action === "skip" ? "Finding a better question…" : "Writing up what it learned…");
+    void run(() => api.advanceDiscovery(session.id, action, action === "answer" ? text : undefined), action === "answer" && text !== answer.trim());
   };
   const close = () => { setSelected(undefined); setError(""); setConfirmDelete(false); setAnswer(""); };
 
-  return <div className="page discovery-page">
+  const inSession = Boolean(session) && isDesktopRuntime();
+
+  return <div className={`page discovery-page${inSession ? " interview-session" : ""}`}>
     <PageHeader eyebrow={simulation ? `Simulation · ${business?.name ?? "fictional business"}` : "Teach Knov your business"} title="AI interview" description="Answer a few questions about how you sell, deliver, and bill. Knov learns what counts as billable, who approves what, and where money slips through." actions={session && <button className="ghost-button" disabled={busy} onClick={close}><Plus size={15} /> New interview</button>} />
     {!isDesktopRuntime() ? <EmptyState title="Open the AI interview in the desktop app" detail="Interviews are stored in your local database. Browser preview does not run or save interviews." /> : <>
       {simulation && <p className="notice info">Simulation · Interviews here are scripted for {business?.name ?? "the simulated business"}: Knov's questions don't change with your answers, and nothing is sent to an AI provider. <button className="link-button" onClick={() => setSimulationMode(false)}>Show my actual interviews</button></p>}
@@ -156,25 +174,45 @@ export function DiscoveryPage({ threadContexts }: { threadContexts: (dashboard: 
           </div>
         </header>
         <div className="interview-layout">
-          <section className="discovery-conversation" aria-label="Interview">
-            <div className="discovery-messages" aria-label="Interview messages" aria-live="polite">
-              {session.messages.map((message, index) => <article key={`${session.id}-${index}`} className={`discovery-message ${message.role}`}><strong>{message.role === "assistant" ? "Knov" : "You"}</strong><MarkdownMessage>{message.content}</MarkdownMessage></article>)}
-              {busy && <p role="status" className="interview-thinking"><LoaderCircle className="spin" size={16} /> Knov is thinking about your answer…</p>}
+          <section className="interview-conversation" aria-label="Interview">
+            <div className="interview-messages" ref={messageList} aria-label="Interview messages" aria-live="polite">
+              {session.messages.map((message, index) => <article key={`${session.id}-${index}`} className={`message interview-message ${message.role}`}>
+                <div className="message-body">
+                  <span className="interview-sender">{message.role === "assistant" ? "Knov" : "You"}</span>
+                  {message.role === "assistant" ? <MarkdownMessage>{message.content}</MarkdownMessage> : <div className="message-content user-content">{message.content}</div>}
+                </div>
+              </article>)}
+              {thinking && <article className="message interview-message assistant pending" role="status">
+                <div className="message-body">
+                  <span className="interview-sender">Knov</span>
+                  <div className="message-content interview-pending"><span className="typing" aria-hidden="true"><i /><i /><i /></span>{thinking}</div>
+                </div>
+              </article>}
             </div>
-            {session.status === "active" ? <form className="discovery-answer" onSubmit={(event) => { event.preventDefault(); send("answer"); }}>
-              {!!session.suggestedAnswers?.length && <div className="interview-suggestions" aria-label="Suggested answers">{session.suggestedAnswers.map((suggestion) => <button key={suggestion} type="button" disabled={busy || !providerReady} onClick={() => send("answer", suggestion)}>{suggestion}</button>)}</div>}
-              <label className="interview-answer">Your answer<textarea rows={3} value={answer} disabled={busy} maxLength={6000} onChange={(event) => setAnswer(event.target.value)} onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && answer.trim() && providerReady && !busy) { event.preventDefault(); send("answer"); } }} placeholder="Answer in your own words. A real example helps most." /></label>
-              <div className="discovery-actions">
-                <button className="primary-button" disabled={busy || !providerReady || !answer.trim()}>Send answer</button>
-                <small className="field-hint">Enter to send · Shift+Enter for a new line</small>
+            {session.status === "active" ? <form className="interview-composer" onSubmit={(event) => { event.preventDefault(); send("answer"); }}>
+              {!!session.suggestedAnswers?.length && <div className="interview-suggestions-block">
+                <small className="interview-caption" id="interview-suggestions-caption">Tap one or write your own</small>
+                <div className="interview-suggestions" aria-label="Suggested answers" aria-describedby="interview-suggestions-caption">{session.suggestedAnswers.map((suggestion) => <button key={suggestion} type="button" disabled={busy || !providerReady} onClick={() => send("answer", suggestion)}>{suggestion}</button>)}</div>
+              </div>}
+              <div className="interview-input">
+                <label className="interview-answer"><span className="interview-visually-hidden">Your answer</span><textarea rows={2} value={answer} disabled={busy} maxLength={6000} onChange={(event) => setAnswer(event.target.value)} onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && answer.trim() && providerReady && !busy) { event.preventDefault(); send("answer"); } }} placeholder="Answer in your own words. A real example helps most." /></label>
+                <button className="primary-button interview-send" aria-label="Send answer" disabled={busy || !providerReady || !answer.trim()}>{busy && thinking ? <LoaderCircle className="spin" size={15} /> : <>Send <ChevronRight size={15} /></>}</button>
+              </div>
+              <div className="interview-composer-footer">
+                <small className="interview-caption">Enter to send · Shift+Enter for a new line</small>
                 <span className="interview-secondary">
-                  <button type="button" className="ghost-button" disabled={busy || !providerReady} onClick={() => send("skip")}><SkipForward size={14} /> Skip question</button>
-                  <button type="button" className="ghost-button" disabled={busy} onClick={() => void run(() => api.setDiscoveryStatus(session.id, "paused"))}><Pause size={14} /> Pause</button>
-                  <button type="button" className="ghost-button" disabled={busy} onClick={() => send("end")}>Finish & review</button>
+                  <button type="button" className="interview-quiet" disabled={busy || !providerReady} onClick={() => send("skip")}><SkipForward size={14} /> Skip question</button>
+                  <button type="button" className="interview-quiet" disabled={busy} onClick={() => void run(() => api.setDiscoveryStatus(session.id, "paused"))}><Pause size={14} /> Pause</button>
+                  <button type="button" className="interview-quiet" disabled={busy} onClick={() => send("end")}><Check size={14} /> Finish & review</button>
                 </span>
               </div>
-            </form> : session.status === "paused" ? <div className="discovery-actions"><p>Progress is saved. Resume when you are ready.</p><button className="primary-button" disabled={busy} onClick={() => void run(() => api.setDiscoveryStatus(session.id, "active"))}><Play size={15} /> Resume interview</button></div>
-              : <div className="discovery-actions"><p><Check size={14} /> Interview complete. Check what Knov learned and correct anything that's wrong.</p><button className="primary-button" disabled={busy} onClick={() => setEditing(session.workflow)}>Review workflow</button><button className="ghost-button" onClick={close}>Start another topic</button></div>}
+            </form> : session.status === "paused" ? <div className="interview-composer interview-state">
+              <p><Pause size={15} /> <span>Paused. Your progress is saved, so you can pick up where you left off.</span></p>
+              <div className="interview-state-actions"><button className="primary-button" disabled={busy} onClick={() => void run(() => api.setDiscoveryStatus(session.id, "active"))}><Play size={15} /> Resume interview</button></div>
+            </div> : <div className="interview-composer interview-state complete">
+              <p><Check size={15} /> <span>Interview complete. Check what Knov learned and correct anything that's wrong.</span></p>
+              <div className="interview-state-actions"><button className="primary-button" disabled={busy} onClick={() => setEditing(session.workflow)}>Review workflow</button><button className="ghost-button" onClick={close}>Start another topic</button></div>
+            </div>}
           </section>
           <Learned session={session} />
         </div>

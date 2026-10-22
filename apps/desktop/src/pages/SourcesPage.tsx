@@ -1,12 +1,12 @@
 import { DragEvent, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FileUp, FlaskConical, Hash, LoaderCircle, Mail } from "lucide-react";
+import { FileUp, FlaskConical, Hash, LoaderCircle, Mail, RefreshCw } from "lucide-react";
 import { EmptyState, errorMessage, PageHeader } from "../components/ui";
 import { useResource } from "../hooks/useResource";
-import { isDesktopRuntime } from "../lib/api";
-import { fileToBase64, revenueApi } from "../lib/revenueApi";
+import { api, isDesktopRuntime } from "../lib/api";
+import { connectorApi, fileToBase64, revenueApi } from "../lib/revenueApi";
 import { setSimulationMode, useSimulationMode } from "../state/simulationMode";
-import type { ExtractedDocument, RevenueOverview } from "../revenueTypes";
+import type { ConnectorConfig, ConnectorProvider, ConnectorScope, ConnectorStatus, ExtractedDocument, RevenueOverview, SlackChannel, SlackOAuthStart } from "../revenueTypes";
 import "./home.css";
 import "./revenue.css";
 
@@ -98,10 +98,9 @@ export function SourcesPage() {
             <article><Mail size={18} /><div><strong>Gmail</strong><small>Client requests, approvals, and promises you made by email.</small></div><button className="ghost-button" disabled={busy} onClick={() => void tryDemo("gmail")}><FlaskConical size={14} /> Try with sample inbox</button></article>
             <article><Hash size={18} /><div><strong>Slack</strong><small>Requests that arrive in shared client channels.</small></div><button className="ghost-button" disabled={busy} onClick={() => void tryDemo("slack")}><FlaskConical size={14} /> Try with sample Slack</button></article>
           </div>
-          <details><summary>Connect your own account (developer setup required for now)</summary>
-            <p className="field-hint">One-click sign-in needs Knov's own Google and Slack apps, which are not published yet. Until then, connecting requires your own Google OAuth client ID or a Slack token. See docs/revenue-connectors.md.</p>
-            <RevenueSources projectId={projectId} refresh={() => void resource.reload()} />
-          </details>
+          <p className="field-hint">To connect your own account, Knov signs in with a Google or Slack app you create once. Sign-in details stay in macOS Keychain.</p>
+          <GmailCard projectId={projectId} refresh={() => void resource.reload()} />
+          <SlackCard projectId={projectId} refresh={() => void resource.reload()} />
         </section>
 
         <details className="revenue-panel"><summary>Advanced: review imported content and add evidence by hand</summary>
@@ -217,30 +216,265 @@ function EvidenceEntry({ projectId, busy, run }: { projectId: string; busy: bool
   return <details><summary>Add reviewed work or billing evidence</summary><form className="stack-form" onSubmit={(e) => { e.preventDefault(); const fields = new FormData(e.currentTarget); const due = String(fields.get("due")); void run(() => invoke<RevenueOverview>("revenue_add_evidence", { projectId, kind: fields.get("kind"), sourceRef: fields.get("source"), text: fields.get("text"), occurredAt: Date.parse(String(fields.get("occurred"))) / 1000, dueAt: due ? Date.parse(due) / 1000 : null, amountCents: String(fields.get("amount")).trim() ? Math.round(Number(fields.get("amount")) * 100) : null, currency: String(fields.get("amount")).trim() ? String(fields.get("currency")) : null })); }}><label>Kind<select name="kind">{["request", "activity", "approval", "milestone_accepted", "invoice", "commitment", "billing_complete"].map((kind) => <option value={kind} key={kind}>{label(kind)}</option>)}</select></label><label>Source reference<input name="source" required /></label><label>Exact evidence<textarea name="text" required rows={3} /></label><label>Occurred at (your local time)<input name="occurred" type="datetime-local" required /></label><label>Explicit commitment due date (optional, your local time)<input name="due" type="datetime-local" /></label><div className="revenue-fields"><label>Evidence-supported amount (optional)<input name="amount" type="number" min="0" step="0.01" /></label><label>Currency<input name="currency" defaultValue="USD" pattern="[A-Z]{3}" maxLength={3} /></label></div><p className="field-hint">Only mark billing complete when the imported billing records actually cover this project and period.</p><button className="primary-button" disabled={busy || !projectId}>Add evidence</button></form></details>;
 }
 
-interface SourceStatus { provider: string; connected: boolean; account: string | null; lastSync: number | null; scope: { query: string; after: number; before: number; channels: string[]; maxItems: number } | null }
-function RevenueSources({ projectId, refresh }: { projectId: string; refresh: () => void }) {
-  const [provider, setProvider] = useState("gmail");
-  const [status, setStatus] = useState<SourceStatus>();
+const DAY_MS = 86_400_000;
+/** A UTC calendar day `offset` days from today, in the date input's format. */
+const utcDay = (offset = 0) => new Date(Date.now() + offset * DAY_MS).toISOString().slice(0, 10);
+const dayOf = (seconds: number) => new Date(seconds * 1000).toISOString().slice(0, 10);
+const MAX_CHANNELS = 10;
+const GMAIL_API_URL = "https://console.cloud.google.com/apis/library/gmail.googleapis.com";
+const GOOGLE_CLIENTS_URL = "https://console.cloud.google.com/apis/credentials";
+const SLACK_APPS_URL = "https://api.slack.com/apps";
+const CONNECTOR_GUIDE_URL = "https://github.com/Marstronix218/knov/blob/main/docs/revenue-connectors.md";
+const providerName = (provider: ConnectorProvider) => provider === "gmail" ? "Gmail" : "Slack";
+
+interface RangeValue { after: string; before: string; limit: number }
+/** Last 90 days through today; `before` is exclusive, so it is tomorrow. */
+const defaultRange = (): RangeValue => ({ after: utcDay(-90), before: utcDay(1), limit: 50 });
+const rangeFromScope = (scope: ConnectorScope | null | undefined): RangeValue => scope ? { after: dayOf(scope.after), before: dayOf(scope.before), limit: scope.maxItems } : defaultRange();
+const scopeOf = (range: RangeValue, extra: Partial<ConnectorScope> = {}): ConnectorScope => ({ query: "", channels: [], after: Date.parse(range.after) / 1000, before: Date.parse(range.before) / 1000, maxItems: range.limit, ...extra });
+const describeRange = (scope: ConnectorScope) => `${dayOf(scope.after)} to ${dayOf(scope.before - 1)}, up to ${scope.maxItems} per sync`;
+const openLink = (url: string) => () => void api.openResource(url).catch(() => undefined);
+
+type Operate = (operation: () => Promise<string | void>) => Promise<void>;
+
+/** Status, progress and messages for one provider's card. */
+function useConnector(provider: ConnectorProvider, refresh: () => void) {
+  const [status, setStatus] = useState<ConnectorStatus>();
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [deleteSourceConfirmed, setDeleteSourceConfirmed] = useState(false);
-  useEffect(() => { let active = true; setStatus(undefined); setError(""); setDeleteSourceConfirmed(false); void invoke<SourceStatus>("revenue_connector_status", { provider }).then((value) => { if (active) setStatus(value); }).catch((cause) => { if (active) setError(errorMessage(cause)); }); return () => { active = false; }; }, [provider]);
-  const operate = async (operation: () => Promise<unknown>) => {
+  const [message, setMessage] = useState("");
+  useEffect(() => {
+    let active = true;
+    connectorApi.status(provider).then((value) => { if (active) setStatus(value); }).catch((cause) => { if (active) setError(errorMessage(cause)); });
+    return () => { active = false; };
+  }, [provider]);
+  const operate: Operate = async (operation) => {
     setBusy(true); setError(""); setMessage("");
-    try { await operation(); }
+    try { const done = await operation(); if (done) setMessage(done); }
     catch (cause) { setError(errorMessage(cause)); }
     finally {
-      try { setStatus(await invoke<SourceStatus>("revenue_connector_status", { provider })); }
+      try { setStatus(await connectorApi.status(provider)); }
       catch { setStatus(undefined); }
       refresh();
       setBusy(false);
     }
   };
-  return <section className="revenue-sources"><label>Provider<select value={provider} disabled={busy} onChange={(e) => setProvider(e.target.value)}><option value="gmail">Gmail</option><option value="slack">Slack</option></select></label>{error && <p role="alert" className="notice error">{error}</p>}{message && <p role="status" className="notice info">{message}</p>}<p>{status?.connected ? `Connected: ${status.account ?? provider}` : "Disconnected · No live source is synchronized"}</p>{status?.scope && <pre>{JSON.stringify(status.scope, null, 2)}</pre>}{status?.lastSync && <p>Last sync: {new Date(status.lastSync * 1000).toLocaleString()}</p>}
-    {!status?.connected ? <form className="stack-form" onSubmit={(e) => { e.preventDefault(); const fields = new FormData(e.currentTarget); const form = e.currentTarget; const token = String(fields.get("token")); const clientId = String(fields.get("clientId") ?? "").trim(); const clientSecret = String(fields.get("clientSecret") ?? "").trim() || null; void operate(async () => { await invoke(provider === "gmail" && clientId ? "revenue_gmail_oauth" : "revenue_connector_connect", { provider, token, clientId, clientSecret, authorized: fields.get("authorized") === "on", scope: { query: String(fields.get("query") ?? ""), channels: String(fields.get("channels") ?? "").split(",").map((item) => item.trim()).filter(Boolean), after: Date.parse(String(fields.get("after"))) / 1000, before: Date.parse(String(fields.get("before"))) / 1000, maxItems: Number(fields.get("limit")) } }); form.reset(); setMessage("Authorized scope saved. Sync reads only the selected sources."); }); }}>
-      <p className="field-hint">Credentials are stored in macOS Keychain and never in browser storage. A Google Desktop client ID opens browser authorization; Slack requires a read-only authorized token.</p>{provider === "gmail" && <><label>Google Desktop OAuth client ID (preferred)<input name="clientId" placeholder="…apps.googleusercontent.com" /></label><label>Desktop client secret (optional, if required by your configuration)<input name="clientSecret" type="password" autoComplete="off" maxLength={8192} /></label></>}<label>{provider === "gmail" ? "Or an authorized access token" : "Authorized access token"}<input name="token" type="password" required={provider === "slack"} autoComplete="off" /></label>{provider === "gmail" ? <label>Gmail query<input name="query" required placeholder="from:client.example.com" /></label> : <label>Selected Slack channel IDs<input name="channels" required placeholder="C0123,C0456" /></label>}<div className="revenue-fields"><label>Read from (UTC date)<input type="date" name="after" required /></label><label>Read before (UTC date)<input type="date" name="before" required /></label></div><label>Maximum records per sync<input type="number" name="limit" min="1" max="100" defaultValue="50" required /></label><label className="revenue-check"><input name="authorized" type="checkbox" required /> I authorize this account and only the source scope above</label><button className="primary-button" disabled={busy}>Authorize selected scope</button>
-    </form> : <div className="revenue-actions"><button className="primary-button" disabled={busy || !projectId} onClick={() => void operate(async () => { const result = await invoke<{ imported: number; truncated: boolean }>("revenue_connector_sync", { provider, projectId }); setMessage(`Imported ${result.imported} records${result.truncated ? "; selected limit reached, history may be incomplete" : ""}.`); })}>Sync to selected project</button><button className="ghost-button" disabled={busy} onClick={() => void operate(() => invoke("revenue_connector_disconnect", { provider, revoke: true }))}>Disconnect & revoke</button></div>}
-    <details><summary>Delete imported {provider === "gmail" ? "Gmail" : "Slack"} content</summary><p>Removes this source's imported excerpts and copied content in dependent drafts. Financial review history remains. Disconnect first to prevent future imports.</p><label className="revenue-check"><input type="checkbox" checked={deleteSourceConfirmed} onChange={(event) => setDeleteSourceConfirmed(event.target.checked)} /> Delete this source's imported content from this Mac</label><button className="danger-button" disabled={busy || !deleteSourceConfirmed} onClick={() => void operate(async () => { await invoke("revenue_delete_source", { source: provider }); setDeleteSourceConfirmed(false); setMessage("Imported source content deleted from this Mac."); })}>Delete imported source content</button></details>
+  return { status, busy, error, message, setMessage, operate };
+}
+
+function RangeFields({ value, onChange, noun }: { value: RangeValue; onChange: (value: RangeValue) => void; noun: string }) {
+  return <>
+    <div className="revenue-fields">
+      <label>Read from (UTC date)<input type="date" required value={value.after} onChange={(event) => onChange({ ...value, after: event.target.value })} /></label>
+      <label>Read before (UTC date)<input type="date" required value={value.before} onChange={(event) => onChange({ ...value, before: event.target.value })} /></label>
+    </div>
+    <label>Maximum {noun} per sync<input type="number" min={1} max={100} required value={value.limit} onChange={(event) => onChange({ ...value, limit: Number(event.target.value) })} /></label>
+  </>;
+}
+
+function SyncActions({ provider, projectId, canSync, busy, operate }: { provider: ConnectorProvider; projectId: string; canSync: boolean; busy: boolean; operate: Operate }) {
+  const sync = () => operate(async () => {
+    const result = await connectorApi.sync(provider, projectId);
+    const noun = result.imported === 1 ? "message" : "messages";
+    return `Imported ${result.imported} ${noun}${result.incremental ? " new since the last sync" : ""}.${result.truncated ? " The per-sync limit was reached, so some messages were not imported; raise the limit or narrow the dates." : ""}`;
+  });
+  const disconnect = () => operate(async () => { await connectorApi.disconnect(provider); return `${providerName(provider)} disconnected and Knov's access revoked.`; });
+  return <>
+    {!projectId && <p className="field-hint">Add or choose a client above to sync into.</p>}
+    <div className="revenue-actions">
+      <button type="button" className="primary-button" disabled={busy || !projectId || !canSync} onClick={() => void sync()}>{busy ? <LoaderCircle className="spin" size={14} /> : <RefreshCw size={14} />} Sync now</button>
+      <button type="button" className="ghost-button" disabled={busy} onClick={() => void disconnect()}>Disconnect</button>
+    </div>
+  </>;
+}
+
+function DeleteImported({ provider, busy, operate }: { provider: ConnectorProvider; busy: boolean; operate: Operate }) {
+  const [confirmed, setConfirmed] = useState(false);
+  const name = providerName(provider);
+  return <details><summary>Delete imported {name} content</summary>
+    <p>Removes {name}'s imported excerpts and copied content in dependent drafts. Financial review history remains. Disconnect first to prevent future imports.</p>
+    <label className="revenue-check"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> Delete imported {name} content from this Mac</label>
+    <button type="button" className="danger-button" disabled={busy || !confirmed} onClick={() => void operate(async () => { await connectorApi.deleteImported(provider); setConfirmed(false); return `Imported ${name} content deleted from this Mac.`; })}>Delete imported {name} content</button>
+  </details>;
+}
+
+function Notices({ error, message }: { error: string; message: string }) {
+  return <>{error && <p role="alert" className="notice error">{error}</p>}{message && <p role="status" className="notice ok">{message}</p>}</>;
+}
+
+function GmailCard({ projectId, refresh }: { projectId: string; refresh: () => void }) {
+  const { status, busy, error, message, operate } = useConnector("gmail", refresh);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [query, setQuery] = useState("newer_than:90d");
+  const [range, setRange] = useState(defaultRange);
+  const [authorized, setAuthorized] = useState(false);
+  const [waiting, setWaiting] = useState(false);
+  const [token, setToken] = useState("");
+  const scope = scopeOf(range, { query: query.trim() });
+  const connected = (how: Promise<ConnectorStatus>) => operate(async () => {
+    await how;
+    setClientSecret(""); setToken("");
+    return "Gmail connected. Choose the client above and press Sync now.";
+  });
+  const signIn = async () => {
+    setWaiting(true);
+    try { await connected(connectorApi.gmailSignIn(clientId.trim(), clientSecret.trim() || null, scope, authorized)); }
+    finally { setWaiting(false); }
+  };
+
+  return <section className="revenue-sources" aria-label="Gmail connection">
+    <h3><Mail size={15} /> Gmail {status?.connected ? "· Connected" : "· Not connected"}</h3>
+    <Notices error={error} message={message} />
+    {!status ? !error && <p>Checking connection…</p> : status.connected ? <>
+      <p><strong>{status.account}</strong></p>
+      {status.scope && <p className="field-hint">Reads emails matching <code>{status.scope.query}</code>, {describeRange(status.scope)}. Read-only; Knov never sends email.</p>}
+      <p>{status.lastSync ? `Last sync: ${new Date(status.lastSync * 1000).toLocaleString()}` : "Not synced yet."}</p>
+      {status.watermark ? <p className="field-hint">Next sync fetches only mail newer than {new Date(status.watermark * 1000).toLocaleString()}.</p> : null}
+      <SyncActions provider="gmail" projectId={projectId} canSync busy={busy} operate={operate} />
+    </> : <form className="stack-form" onSubmit={(event) => { event.preventDefault(); void signIn(); }}>
+      <ol>
+        <li><strong>Create a Google sign-in for Knov</strong> (one time, about five minutes)
+          <ol>
+            <li>In Google Cloud, <button type="button" className="link-button" onClick={openLink(GMAIL_API_URL)}>enable the Gmail API</button> for a project.</li>
+            <li>Set up the OAuth consent screen (External, Testing) and add your Gmail address as a test user.</li>
+            <li><button type="button" className="link-button" onClick={openLink(GOOGLE_CLIENTS_URL)}>Create an OAuth client ID</button> with application type <b>Desktop app</b>.</li>
+            <li>Copy its Client ID, and Client secret if shown, into step 2. <button type="button" className="link-button" onClick={openLink(CONNECTOR_GUIDE_URL)}>Step-by-step guide</button></li>
+          </ol>
+        </li>
+        <li><strong>Choose what Knov may read</strong>
+          <label>Google client ID<input value={clientId} onChange={(event) => setClientId(event.target.value)} required maxLength={256} placeholder="…apps.googleusercontent.com" autoComplete="off" /></label>
+          <label>Google client secret (optional)<input type="password" value={clientSecret} onChange={(event) => setClientSecret(event.target.value)} maxLength={8192} autoComplete="off" /></label>
+          <label>Which emails (Gmail search)<input value={query} onChange={(event) => setQuery(event.target.value)} required maxLength={512} /></label>
+          <p className="field-hint">Narrow it to one client with, for example, <code>from:@theirdomain.com</code>. The dates below also apply.</p>
+          <RangeFields value={range} onChange={setRange} noun="emails" />
+          <label className="revenue-check"><input type="checkbox" checked={authorized} onChange={(event) => setAuthorized(event.target.checked)} /> Knov may read only emails matching this search and these dates, read-only</label>
+        </li>
+        <li><strong>Sign in</strong>
+          <div className="revenue-actions"><button className="primary-button" disabled={busy || !authorized || !clientId.trim()}>{waiting ? <LoaderCircle className="spin" size={14} /> : <Mail size={14} />} Sign in with Google</button></div>
+          {waiting && <p className="notice info">Waiting for you to approve access in your browser. This times out after 3 minutes.</p>}
+        </li>
+      </ol>
+      <details><summary>Advanced: connect with an access token</summary>
+        <p className="field-hint">An access token issued with the gmail.readonly scope. It is not renewed; reconnect when it expires.</p>
+        <label>Gmail access token<input type="password" value={token} onChange={(event) => setToken(event.target.value)} autoComplete="off" maxLength={8192} /></label>
+        <button type="button" className="ghost-button" disabled={busy || !authorized || !token.trim()} onClick={() => void connected(connectorApi.connectWithToken("gmail", token.trim(), scope, authorized))}>Connect with token</button>
+      </details>
+    </form>}
+    <DeleteImported provider="gmail" busy={busy} operate={operate} />
   </section>;
+}
+
+function SlackCard({ projectId, refresh }: { projectId: string; refresh: () => void }) {
+  const { status, busy, error, message, setMessage, operate } = useConnector("slack", refresh);
+  const [config, setConfig] = useState<ConnectorConfig>();
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [range, setRange] = useState(defaultRange);
+  const [authorized, setAuthorized] = useState(false);
+  const [started, setStarted] = useState<SlackOAuthStart>();
+  const [code, setCode] = useState("");
+  const [token, setToken] = useState("");
+  const [tokenChannels, setTokenChannels] = useState("");
+  useEffect(() => { void connectorApi.config().then(setConfig).catch(() => undefined); }, []);
+  const redirectUrl = config?.slackRedirectUrl;
+
+  const start = () => operate(async () => {
+    const result = await connectorApi.slackStart(clientId.trim(), clientSecret.trim(), scopeOf(range), authorized);
+    setStarted(result); setClientSecret("");
+  });
+  const complete = () => operate(async () => {
+    if (!started) return;
+    await connectorApi.slackComplete(code.trim(), started.state);
+    setStarted(undefined); setCode("");
+    return "Slack connected. Pick the channels Knov may read.";
+  });
+  const connectWithToken = () => operate(async () => {
+    const channels = tokenChannels.split(",").map((item) => item.trim()).filter(Boolean);
+    await connectorApi.connectWithToken("slack", token.trim(), scopeOf(range, { channels }), authorized);
+    setToken("");
+    return "Slack connected.";
+  });
+  const copyRedirect = () => { if (redirectUrl) void navigator.clipboard?.writeText(redirectUrl).then(() => setMessage("Redirect URL copied.")).catch(() => undefined); };
+
+  return <section className="revenue-sources" aria-label="Slack connection">
+    <h3><Hash size={15} /> Slack {status?.connected ? "· Connected" : "· Not connected"}</h3>
+    <Notices error={error} message={message} />
+    {!status ? !error && <p>Checking connection…</p> : status.connected ? <>
+      <p><strong>{status.account}</strong></p>
+      {status.scope && <p className="field-hint">{status.scope.channels.length ? `Reads ${status.scope.channels.length} selected ${status.scope.channels.length === 1 ? "channel" : "channels"}, ${describeRange(status.scope)}.` : "No channels selected yet."} Read-only; Knov never posts in Slack.</p>}
+      <p>{status.lastSync ? `Last sync: ${new Date(status.lastSync * 1000).toLocaleString()}` : "Not synced yet."}</p>
+      <SlackChannelPicker status={status} busy={busy} operate={operate} />
+      <SyncActions provider="slack" projectId={projectId} canSync={Boolean(status.scope?.channels.length)} busy={busy} operate={operate} />
+    </> : started ? <form className="stack-form" aria-label="Finish Slack sign-in" onSubmit={(event) => { event.preventDefault(); void complete(); }}>
+      <p>{started.opened ? "Slack is open in your browser." : "Open Slack to approve access."} After you click <b>Allow</b>, a Knov page shows a one-time code.</p>
+      {!started.opened && <p><button type="button" className="link-button" onClick={openLink(started.authorizeUrl)}>Open the Slack approval page</button></p>}
+      <label>Paste the code from the browser<input value={code} onChange={(event) => setCode(event.target.value)} required maxLength={256} autoComplete="off" spellCheck={false} /></label>
+      <div className="revenue-actions">
+        <button className="primary-button" disabled={busy || !code.trim()}>Finish connecting</button>
+        <button type="button" className="ghost-button" disabled={busy} onClick={() => setStarted(undefined)}>Start over</button>
+      </div>
+    </form> : <form className="stack-form" onSubmit={(event) => { event.preventDefault(); void start(); }}>
+      {status.pending && <p className="notice info">A Slack sign-in was started but not finished. Start it again below.</p>}
+      <ol>
+        <li><strong>Create a Slack app for Knov</strong> (one time)
+          <ol>
+            <li><button type="button" className="link-button" onClick={openLink(SLACK_APPS_URL)}>Open your Slack apps</button>, choose <b>Create New App → From scratch</b>, and pick your workspace.</li>
+            <li>In <b>OAuth &amp; Permissions → Redirect URLs</b>, add this URL and save: <code>{redirectUrl ?? "…"}</code> <button type="button" className="link-button" disabled={!redirectUrl} onClick={copyRedirect}>Copy URL</button></li>
+            <li>Under <b>User Token Scopes</b> (not Bot Token Scopes), add {(config?.slackUserScopes ?? []).map((scope, index) => <span key={scope}>{index ? ", " : ""}<code>{scope}</code></span>)}.</li>
+            <li>In <b>Basic Information</b>, copy the Client ID and Client Secret into step 2.</li>
+          </ol>
+        </li>
+        <li><strong>Connect</strong>
+          <label>Slack client ID<input value={clientId} onChange={(event) => setClientId(event.target.value)} required maxLength={64} placeholder="1234567890.1234567890" autoComplete="off" /></label>
+          <label>Slack client secret<input type="password" value={clientSecret} onChange={(event) => setClientSecret(event.target.value)} required maxLength={256} autoComplete="off" /></label>
+          <RangeFields value={range} onChange={setRange} noun="messages" />
+          <label className="revenue-check"><input type="checkbox" checked={authorized} onChange={(event) => setAuthorized(event.target.checked)} /> Knov may read only the channels I pick next, within these dates, read-only</label>
+          <div className="revenue-actions"><button className="primary-button" disabled={busy || !authorized || !clientId.trim() || !clientSecret.trim()}><Hash size={14} /> Open Slack to authorize</button></div>
+        </li>
+      </ol>
+      <details><summary>Advanced: connect with a token</summary>
+        <p className="field-hint">A Slack token with only the read scopes above, plus the channel IDs to read.</p>
+        <label>Slack token<input type="password" value={token} onChange={(event) => setToken(event.target.value)} autoComplete="off" maxLength={8192} /></label>
+        <label>Channel IDs (comma-separated, up to 10)<input value={tokenChannels} onChange={(event) => setTokenChannels(event.target.value)} placeholder="C0123ABCD, C0456EFGH" /></label>
+        <button type="button" className="ghost-button" disabled={busy || !authorized || !token.trim() || !tokenChannels.trim()} onClick={() => void connectWithToken()}>Connect with token</button>
+      </details>
+    </form>}
+    <DeleteImported provider="slack" busy={busy} operate={operate} />
+  </section>;
+}
+
+/** Lists channels by name; sync still reads only the 1–10 saved here. */
+function SlackChannelPicker({ status, busy, operate }: { status: ConnectorStatus; busy: boolean; operate: Operate }) {
+  const [channels, setChannels] = useState<SlackChannel[]>();
+  const [listError, setListError] = useState("");
+  const [selected, setSelected] = useState<string[]>(() => status.scope?.channels ?? []);
+  const [manual, setManual] = useState(() => (status.scope?.channels ?? []).join(", "));
+  const [range, setRange] = useState(() => rangeFromScope(status.scope));
+  useEffect(() => {
+    let active = true;
+    connectorApi.slackChannels().then((list) => { if (active) setChannels(list); }).catch((cause) => { if (active) setListError(errorMessage(cause)); });
+    return () => { active = false; };
+  }, []);
+  const toggle = (id: string) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : current.length >= MAX_CHANNELS ? current : [...current, id]);
+  const chosen = channels ? selected : manual.split(",").map((item) => item.trim()).filter(Boolean);
+  const save = () => operate(async () => {
+    await connectorApi.updateScope("slack", scopeOf(range, { channels: chosen }));
+    return `Saved ${chosen.length} ${chosen.length === 1 ? "channel" : "channels"}. Sync reads only these.`;
+  });
+  return <form className="stack-form" aria-label="Slack channels" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+    <strong>Channels Knov may read</strong>
+    {channels ? channels.length ? <fieldset>
+      <legend>Pick up to {MAX_CHANNELS} ({selected.length} of {MAX_CHANNELS} selected)</legend>
+      {channels.map((channel) => {
+        const checked = selected.includes(channel.id);
+        return <label className="revenue-check" key={channel.id}><input type="checkbox" checked={checked} disabled={!checked && selected.length >= MAX_CHANNELS} onChange={() => toggle(channel.id)} /> #{channel.name}{channel.isPrivate ? " (private)" : ""}{channel.isMember ? "" : " · you're not a member"}</label>;
+      })}
+    </fieldset> : <p>No channels found in this workspace.</p> : listError ? <>
+      <p className="notice error" role="alert">{listError}</p>
+      <label>Channel IDs (comma-separated, up to 10)<input value={manual} onChange={(event) => setManual(event.target.value)} placeholder="C0123ABCD, C0456EFGH" /></label>
+    </> : <p>Loading channels…</p>}
+    <RangeFields value={range} onChange={setRange} noun="messages" />
+    <div className="revenue-actions"><button className="ghost-button" disabled={busy || !chosen.length || chosen.length > MAX_CHANNELS}>Save selected channels</button></div>
+  </form>;
 }

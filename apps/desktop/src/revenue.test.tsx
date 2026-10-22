@@ -148,32 +148,113 @@ describe("Revenue Intelligence", () => {
 
   it("shows local disconnection even when remote revocation fails", async () => {
     let connected = true;
-    vi.mocked(invoke).mockImplementation(async (command) => {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const provider = (args as { provider?: string } | undefined)?.provider;
       if (command === "revenue_connector_disconnect") {
         connected = false;
         throw new Error("Locally disconnected; remote revocation failed");
       }
-      return { connected, provider: "gmail", account: "test@example.com", scope: null, lastSync: null };
+      if (command === "revenue_connector_status") return { connected: provider === "gmail" && connected, provider, account: "test@example.com", scope: null, lastSync: null };
+      return undefined;
     });
     render(<SourcesPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "Disconnect & revoke" }));
-    await screen.findByText("Locally disconnected; remote revocation failed");
-    await screen.findByText("Disconnected · No live source is synchronized");
-    expect(screen.queryByRole("button", { name: "Disconnect & revoke" })).not.toBeInTheDocument();
+    const gmail = await screen.findByRole("region", { name: "Gmail connection" });
+    fireEvent.click(await within(gmail).findByRole("button", { name: "Disconnect" }));
+    await within(gmail).findByText("Locally disconnected; remote revocation failed");
+    await within(gmail).findByText("Gmail · Not connected");
+    expect(within(gmail).queryByRole("button", { name: "Disconnect" })).not.toBeInTheDocument();
   });
 
-  it("passes an optional desktop OAuth secret without persisting it in browser storage", async () => {
+  it("signs in to Gmail with the form scope and an optional secret that is never kept in browser storage", async () => {
     render(<SourcesPage />);
-    fireEvent.change(await screen.findByLabelText("Google Desktop OAuth client ID (preferred)"), { target: { value: "demo.apps.googleusercontent.com" } });
-    fireEvent.change(screen.getByLabelText(/Desktop client secret/), { target: { value: "fixture-client-secret" } });
-    fireEvent.change(screen.getByLabelText("Gmail query"), { target: { value: "from:client@example.com" } });
-    fireEvent.change(screen.getByLabelText("Read from (UTC date)"), { target: { value: "2026-10-01" } });
-    fireEvent.change(screen.getByLabelText("Read before (UTC date)"), { target: { value: "2026-10-09" } });
-    fireEvent.click(screen.getByLabelText("I authorize this account and only the source scope above"));
-    fireEvent.click(screen.getByRole("button", { name: "Authorize selected scope" }));
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith("revenue_gmail_oauth", expect.objectContaining({ clientId: "demo.apps.googleusercontent.com", clientSecret: "fixture-client-secret", authorized: true })));
+    const gmail = await screen.findByRole("region", { name: "Gmail connection" });
+    fireEvent.change(await within(gmail).findByLabelText("Google client ID"), { target: { value: "demo.apps.googleusercontent.com" } });
+    fireEvent.change(within(gmail).getByLabelText("Google client secret (optional)"), { target: { value: "fixture-client-secret" } });
+    fireEvent.change(within(gmail).getByLabelText("Which emails (Gmail search)"), { target: { value: "from:client@example.com" } });
+    fireEvent.change(within(gmail).getByLabelText("Read from (UTC date)"), { target: { value: "2026-10-01" } });
+    fireEvent.change(within(gmail).getByLabelText("Read before (UTC date)"), { target: { value: "2026-10-09" } });
+    fireEvent.change(within(gmail).getByLabelText("Maximum emails per sync"), { target: { value: "25" } });
+    const signIn = within(gmail).getByRole("button", { name: "Sign in with Google" });
+    expect(signIn).toBeDisabled();
+    fireEvent.click(within(gmail).getByLabelText(/Knov may read only emails matching this search/));
+    fireEvent.click(signIn);
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("revenue_gmail_oauth", {
+      clientId: "demo.apps.googleusercontent.com",
+      clientSecret: "fixture-client-secret",
+      authorized: true,
+      scope: { query: "from:client@example.com", channels: [], after: Date.parse("2026-10-01") / 1000, before: Date.parse("2026-10-09") / 1000, maxItems: 25 },
+    }));
     expect(JSON.stringify(localStorage)).not.toContain("fixture-client-secret");
     expect(JSON.stringify(sessionStorage)).not.toContain("fixture-client-secret");
+  });
+});
+
+const REDIRECT = "https://marstronix218.github.io/knov/slack/callback.html";
+/** Answers connector commands by name; unlisted commands resolve to undefined. */
+function mockConnectors(handlers: Record<string, (args: Record<string, unknown>) => unknown> = {}) {
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    const input = (args ?? {}) as Record<string, unknown>;
+    if (handlers[command]) return handlers[command](input);
+    if (command === "revenue_connector_config") return { slackRedirectUrl: REDIRECT, slackUserScopes: ["channels:history", "channels:read", "groups:history", "groups:read"], gmailScope: "https://www.googleapis.com/auth/gmail.readonly" };
+    if (command === "revenue_connector_status") return { connected: false, provider: input.provider, account: null, scope: null, lastSync: null, pending: false, watermark: null };
+    return undefined;
+  });
+}
+
+describe("Slack connection", () => {
+  it("shows the redirect URL, opens Slack, then finishes with the pasted code and the same state", async () => {
+    let connected = false;
+    mockConnectors({
+      revenue_slack_oauth_start: () => ({ authorizeUrl: "https://slack.com/oauth/v2/authorize?state=state-123", state: "state-123", opened: true }),
+      revenue_slack_oauth_complete: () => { connected = true; return {}; },
+      revenue_slack_list_channels: () => [],
+      revenue_connector_status: (input) => ({ connected: input.provider === "slack" && connected, provider: input.provider, account: connected ? "Acme / dana" : null, scope: connected ? { query: "", after: 1, before: 2, channels: [], maxItems: 50 } : null, lastSync: null }),
+    });
+    render(<SourcesPage />);
+    const slack = await screen.findByRole("region", { name: "Slack connection" });
+    expect(await within(slack).findByText(REDIRECT)).toBeInTheDocument();
+    fireEvent.change(within(slack).getByLabelText("Slack client ID"), { target: { value: "123.456" } });
+    fireEvent.change(within(slack).getByLabelText("Slack client secret"), { target: { value: "fixture-slack-secret" } });
+    fireEvent.click(within(slack).getByLabelText(/Knov may read only the channels I pick next/));
+    fireEvent.click(within(slack).getByRole("button", { name: "Open Slack to authorize" }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("revenue_slack_oauth_start", expect.objectContaining({ clientId: "123.456", clientSecret: "fixture-slack-secret", authorized: true, scope: expect.objectContaining({ channels: [], maxItems: 50 }) })));
+    const code = await within(slack).findByLabelText("Paste the code from the browser");
+    fireEvent.change(code, { target: { value: " 1234.5678.abcdef " } });
+    fireEvent.click(within(slack).getByRole("button", { name: "Finish connecting" }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("revenue_slack_oauth_complete", { code: "1234.5678.abcdef", state: "state-123", authorized: true }));
+    expect(await within(slack).findByText("Acme / dana")).toBeInTheDocument();
+    expect(JSON.stringify(localStorage)).not.toContain("fixture-slack-secret");
+  });
+
+  it("picks channels by name, allows at most ten, and saves the scope without a token", async () => {
+    const channels = Array.from({ length: 12 }, (_, index) => ({ id: `C0000000${String(index).padStart(2, "0")}`, name: `client-${String(index).padStart(2, "0")}`, isPrivate: index === 11, isMember: true }));
+    mockConnectors({
+      revenue_slack_list_channels: () => channels,
+      revenue_connector_status: (input) => ({ connected: input.provider === "slack", provider: input.provider, account: "Acme / dana", scope: { query: "", after: Date.parse("2026-08-01") / 1000, before: Date.parse("2026-10-21") / 1000, channels: [], maxItems: 50 }, lastSync: null }),
+    });
+    render(<SourcesPage />);
+    const picker = await screen.findByRole("form", { name: "Slack channels" });
+    await within(picker).findByLabelText("#client-00");
+    for (let index = 0; index < 11; index += 1) fireEvent.click(within(picker).getByLabelText(new RegExp(`#client-${String(index).padStart(2, "0")}`)));
+    expect(within(picker).getByText(/10 of 10 selected/)).toBeInTheDocument();
+    expect(within(picker).getByLabelText(/#client-10/)).not.toBeChecked();
+    expect(within(picker).getByLabelText(/#client-10/)).toBeDisabled();
+    expect(within(picker).getByLabelText(/#client-11 \(private\)/)).toBeDisabled();
+    fireEvent.click(within(picker).getByRole("button", { name: "Save selected channels" }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("revenue_connector_update_scope", { provider: "slack", authorized: true, scope: expect.objectContaining({ channels: channels.slice(0, 10).map((channel) => channel.id), maxItems: 50, after: Date.parse("2026-08-01") / 1000 }) }));
+    const call = vi.mocked(invoke).mock.calls.find(([command]) => command === "revenue_connector_update_scope");
+    expect(JSON.stringify(call)).not.toMatch(/token/i);
+  });
+
+  it("falls back to channel IDs when the channel list is not permitted", async () => {
+    mockConnectors({
+      revenue_slack_list_channels: () => { throw new Error("Listing channels needs the channels:read or groups:read scope; enter channel IDs instead"); },
+      revenue_connector_status: (input) => ({ connected: input.provider === "slack", provider: input.provider, account: "Acme / dana", scope: { query: "", after: 1, before: 86_401, channels: ["C01234567"], maxItems: 50 }, lastSync: null }),
+    });
+    render(<SourcesPage />);
+    const picker = await screen.findByRole("form", { name: "Slack channels" });
+    expect(await within(picker).findByText(/enter channel IDs instead/)).toBeInTheDocument();
+    expect(within(picker).getByLabelText("Channel IDs (comma-separated, up to 10)")).toHaveValue("C01234567");
   });
 });
 

@@ -20,10 +20,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Keyboard shortcuts dialog, opened with `?`.
 - Discard-changes guard on dialogs with unsaved edits.
 - Ask shows the attached thread as a removable context chip and keeps the conversation for the session.
+- Sources: guided Gmail and Slack connection cards. Gmail signs in with your own Google Desktop client, keeps a refresh token in Keychain so sign-in survives token expiry, and syncs incrementally (only new mail inside the approved search and dates).
+- Sources: in-app Slack sign-in with your own Slack app. Slack redirects to a static code page on the project site (`apps/web/slack/callback.html`); you paste the one-time code into Knov, which exchanges it on your Mac for a read-only user token. Channels are picked by name (up to 10) instead of typed IDs.
 
 ### Changed
 
 - README, tester guide, PRD, and docs reconciled with the app's current behavior and supported platform.
+- Disconnecting Gmail revokes the stored refresh token. Pasting a token remains available under Advanced. Live Google and Slack sign-in, refresh, and channel listing have not yet been exercised against the real services.
 
 ## [0.2.0] - 2026-10-20
 
