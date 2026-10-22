@@ -108,7 +108,7 @@ Requirements:
 - Apple Silicon Mac running macOS 26
 - Git
 - Xcode Command Line Tools
-- Node.js 20.19+ or 22.12+ and npm
+- Node.js 22.23.4+ (or 24.22.1+ / 26.12.1+) and npm
 - current stable Rust toolchain
 - Google Chrome (required for selected-profile history import; Chrome 120+ for
   the optional companion extension)

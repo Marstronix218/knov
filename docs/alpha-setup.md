@@ -12,7 +12,7 @@ Intel Macs or older macOS. That is untested and unsupported.
 Install:
 
 - Xcode Command Line Tools (`xcode-select --install` if absent)
-- Node.js 20.19+ or 22.12+ and npm
+- Node.js 22.23.4+ (or 24.22.1+ / 26.12.1+) and npm
 - current stable Rust through `rustup`
 - Google Chrome
 - `sqlite3` for optional local-state diagnostics (included with macOS)

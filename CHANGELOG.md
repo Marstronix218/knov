@@ -28,6 +28,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - README, tester guide, PRD, and docs reconciled with the app's current behavior and supported platform.
 - Disconnecting Gmail revokes the stored refresh token. Pasting a token remains available under Advanced. Live Google and Slack sign-in, refresh, and channel listing have not yet been exercised against the real services.
 
+### Security
+
+- Node.js pinned to the October 21, 2026 security releases (`.nvmrc` 22.23.4; `engines` requires 22.23.4+, 24.22.1+, or 26.12.1+), covering the Brotli decoder RCE (CVE-2026-111497) and TLS/DNS fixes. Node 20 (end of life) is no longer accepted. CI and release builds read `.nvmrc`.
+- Upgraded Vite (7.3.7 desktop, 6.4.5 extension) and Vitest (4.1.12 in both workspaces), clearing the Vite, Vitest, Tinypool, nanoid, and source-map-js advisories reported by `npm audit`.
+
 ## [0.2.0] - 2026-10-20
 
 ### Added

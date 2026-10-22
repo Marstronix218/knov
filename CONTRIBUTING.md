@@ -3,10 +3,10 @@
 ## Setup
 
 Follow the source setup in [README.md](README.md). You need Node.js 22 (see
-`.nvmrc`; `>=20.19 <21` or `>=22.12` is accepted) and the stable Rust
-toolchain with `rustfmt` and `clippy`. `rust-toolchain.toml` tracks the
-latest stable release (it is not pinned to a version) and installs both
-components.
+`.nvmrc`; patched releases `>=22.23.4`, `>=24.22.1` or `>=26.12.1` are
+accepted) and the stable Rust toolchain with `rustfmt` and `clippy`.
+`rust-toolchain.toml` tracks the latest stable release (it is not pinned to a
+version) and installs both components.
 The desktop crate uses macOS-only APIs, so Rust checks run on macOS.
 
 ```sh
